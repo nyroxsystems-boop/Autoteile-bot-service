@@ -1,5 +1,7 @@
 import { insertShopOffers } from "./supabaseService";
 import { ApifyClient } from "./apifyClient";
+import { ProxyAgent } from "proxy-agent";
+import fetch from "node-fetch";
 
 export interface ScrapedOffer {
   shopName: string;
@@ -29,6 +31,8 @@ class MockAutodocAdapter implements ShopAdapter {
 
   async fetchOffers(oem: string): Promise<ScrapedOffer[]> {
     // MOCK-Daten – später durch echten Scraper ersetzt
+    const searchUrl = `https://en.wikipedia.org/wiki/Oil_filter`;
+
     return [
       {
         shopName: this.name,
@@ -37,9 +41,9 @@ class MockAutodocAdapter implements ShopAdapter {
         currency: "EUR",
         availability: "In stock",
         deliveryTimeDays: 2,
-        productUrl: `https://autodoc.example.com/parts/${encodeURIComponent(oem)}`,
-        imageUrl: null,
-        description: "Marken-Ölfilter ATE passend zu OEM " + oem,
+        productUrl: searchUrl,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/6/6b/Oil_filter.jpg",
+        description: `ATE Marken-Teil passend zu OEM ${oem}`,
         rating: 4.7,
         isRecommended: true
       },
@@ -50,9 +54,9 @@ class MockAutodocAdapter implements ShopAdapter {
         currency: "EUR",
         availability: "In stock",
         deliveryTimeDays: 4,
-        productUrl: `https://autodoc.example.com/parts/${encodeURIComponent(oem)}?cheap=1`,
-        imageUrl: null,
-        description: "Budget-Ölfilter passend zu OEM " + oem,
+        productUrl: searchUrl,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/7/7b/Brake_disc.jpg",
+        description: `Budget-Teil passend zu OEM ${oem}`,
         rating: 3.8,
         isRecommended: false
       }
@@ -67,6 +71,7 @@ class MockKfzteileAdapter implements ShopAdapter {
   name = "KFZTeile24";
 
   async fetchOffers(oem: string): Promise<ScrapedOffer[]> {
+    const searchUrl = `https://en.wikipedia.org/wiki/Brake_pad`;
     return [
       {
         shopName: this.name,
@@ -75,14 +80,67 @@ class MockKfzteileAdapter implements ShopAdapter {
         currency: "EUR",
         availability: "In stock",
         deliveryTimeDays: 1,
-        productUrl: `https://kfzteile24.example.com/search?q=${encodeURIComponent(oem)}`,
-        imageUrl: null,
-        description: "Brembo-Ölfilter passend zu OEM " + oem,
+        productUrl: searchUrl,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/1/1c/Disc_brake_pads_with_caliper.jpg",
+        description: `Brembo Marken-Teil passend zu OEM ${oem}`,
         rating: 4.6,
         isRecommended: true
       }
     ];
   }
+}
+
+// Proxy-Agent wie im OEM-Resolver/WebFinder – nutzt HTTPS_PROXY/HTTP_PROXY/SCRAPE_PROXY_URL
+export const scrapeProxyAgent =
+  process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.SCRAPE_PROXY_URL
+    ? new ProxyAgent({
+        getProxyForUrl: () =>
+          process.env.HTTPS_PROXY || process.env.HTTP_PROXY || (process.env.SCRAPE_PROXY_URL as string)
+      })
+    : undefined;
+
+// Best-effort: versuche, aus einer Produkt-URL ein Bild zu extrahieren (og:image oder erstes <img>)
+async function tryExtractImage(url: string): Promise<string | null> {
+  if (!url || !url.startsWith("http")) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      // @ts-ignore proxy agent for node-fetch
+      agent: scrapeProxyAgent,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; AutoteileBot/1.0; +https://autoteile-assistent.local)",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "de,en;q=0.9"
+      }
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // og:image
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    if (ogMatch?.[1]?.startsWith("http")) return ogMatch[1];
+
+    // erstes <img src>
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+    if (imgMatch?.[1]) {
+      const src = imgMatch[1];
+      if (src.startsWith("http")) return src;
+      // relative Pfad -> auf URL-Basis auflösen
+      try {
+        const absolute = new URL(src, url).toString();
+        return absolute;
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+  return null;
 }
 
 // If APIFY_SHOP_ACTORS is set (JSON array of { shopName, actorId }), we create Apify adapters
@@ -186,6 +244,16 @@ export async function scrapeOffersForOrder(orderId: string, oemNumber: string) {
   }
 
   const sortedByPrice = deduped.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+
+  // Versuche fehlende Bilder anzureichern (max 5 Requests, um Rate/Time zu schonen)
+  let enrichAttempts = 0;
+  for (const offer of sortedByPrice) {
+    if (offer.imageUrl || !offer.productUrl) continue;
+    if (enrichAttempts >= 5) break;
+    const img = await tryExtractImage(offer.productUrl);
+    enrichAttempts += 1;
+    if (img) offer.imageUrl = img;
+  }
 
   if (sortedByPrice.length === 0) {
     console.warn("[SCRAPE] no offers found", { orderId, oemNumber });

@@ -2012,6 +2012,14 @@ export async function handleIncomingBotMessage(
             return pa - pb;
           });
 
+          const pickImage = (offer: any): string | null => {
+            const candidate = offer?.imageUrl ?? orderData?.offerMedia?.[offer?.id] ?? null;
+            if (typeof candidate !== "string") return null;
+            const url = candidate.trim();
+            if (!url.startsWith("http")) return null;
+            return url;
+          };
+
           logger.info("Show offers", { orderId: order.id, offersCount: sorted.length });
           if (!sorted || sorted.length === 0) {
             replyText =
@@ -2038,7 +2046,7 @@ export async function handleIncomingBotMessage(
             replyMessages = [
               {
                 text: replyText,
-                mediaUrl: null // only send product images when we have trusted product media
+                mediaUrl: pickImage(offer)
               }
             ];
 
@@ -2088,7 +2096,7 @@ export async function handleIncomingBotMessage(
 
             replyMessages.push({
               text: lines,
-              mediaUrl: null // only send product images when we have trusted product media
+              mediaUrl: pickImage(o)
             });
           });
 
