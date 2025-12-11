@@ -572,10 +572,11 @@ function buildOfferReplyMessages(
       orderData?.requestedPart ??
       partDescription ??
       (lang === "en" ? "Matching part" : "Passendes Teil");
+    const name = offer.productName ?? offer.brand ?? (lang === "en" ? "Product" : "Produkt");
     const text =
       lang === "en"
-        ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDescription: ${desc}\n\nIf this works for you, please reply with "Yes" or "OK".`
-        : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nBeschreibung: ${desc}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
+        ? `I’ve found a suitable offer:\n\nProdukt: ${name}\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDescription: ${desc}\n\nIf this works for you, please reply with "Yes" or "OK".`
+        : `Ich habe ein passendes Angebot gefunden:\n\nProdukt: ${name}\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nBeschreibung: ${desc}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
 
     return {
       messages: [{ text, mediaUrl: pickImage(offer) }],
@@ -601,8 +602,9 @@ function buildOfferReplyMessages(
       partDescription ??
       (lang === "en" ? "Matching part" : "Passendes Teil");
     const rating = o.rating ? `${lang === "en" ? "Rating" : "Bewertung"}: ${o.rating}/5` : null;
+    const productName = o.productName ?? o.brand ?? (lang === "en" ? "Product" : "Produkt");
     const lines = [
-      `${idx + 1}) ${o.brand ?? (lang === "en" ? "unknown brand" : "unbekannte Marke")} @ ${o.shopName}`,
+      `${idx + 1}) ${productName} @ ${o.shopName}`,
       `${lang === "en" ? "Price" : "Preis"}: ${o.price} ${o.currency || "EUR"}`,
       `${lang === "en" ? "Description" : "Beschreibung"}: ${desc}`,
       rating

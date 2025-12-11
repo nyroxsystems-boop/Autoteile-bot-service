@@ -439,6 +439,7 @@ export async function insertShopOffers(
   oemNumber: string,
   offers: Array<{
     shopName: string;
+    productName?: string | null;
     brand?: string | null;
     price: number;
     currency?: string;
@@ -453,12 +454,13 @@ export async function insertShopOffers(
 ): Promise<ShopOffer[]> {
   const client = getClient();
 
-  const buildPayload = (includeImages: boolean) =>
+  const buildPayload = (includeImages: boolean, includeNames: boolean, includeDescriptions: boolean) =>
     offers.map((o) => {
       const base: Record<string, any> = {
         order_id: orderId,
         oem_number: oemNumber,
         shop_name: o.shopName,
+        product_name: includeNames ? o.productName ?? o.brand ?? o.shopName ?? null : undefined,
         brand: o.brand ?? null,
         price: o.price,
         currency: o.currency ?? "EUR",
@@ -466,48 +468,49 @@ export async function insertShopOffers(
         delivery_time_days: o.deliveryTimeDays ?? null,
         product_url: o.productUrl ?? null,
         url: o.productUrl ?? null, // Compatibility: some DBs may use "url" instead of "product_url"
-        product_description: o.description ?? null,
-        description: o.description ?? null,
+        product_description: includeDescriptions ? o.description ?? null : undefined,
+        description: includeDescriptions ? o.description ?? null : undefined,
         rating: o.rating ?? null,
         is_recommended: o.isRecommended ?? null
       };
       if (includeImages && o.imageUrl !== undefined) {
         base.image_url = o.imageUrl;
       }
+      // Entferne Felder, die explizit weggelassen werden sollen (undefined)
+      Object.keys(base).forEach((k) => {
+        if (base[k] === undefined) delete base[k];
+      });
       return base;
     });
 
   const wantsImages = offers.some((o) => o.imageUrl !== undefined);
+  const wantsNames = offers.some((o) => o.productName !== undefined);
   let data: any[] | null = null;
   let error: any = null;
 
-  if (wantsImages) {
-    const resp = await client.from("shop_offers").insert(buildPayload(true)).select("*");
+  const attemptInsert = async (opts: { includeImages: boolean; includeNames: boolean; includeDescriptions: boolean }) =>
+    client.from("shop_offers").insert(buildPayload(opts.includeImages, opts.includeNames, opts.includeDescriptions)).select("*");
+
+  // Start optimistic: include everything we have
+  let resp = await attemptInsert({ includeImages: wantsImages, includeNames: wantsNames, includeDescriptions: true });
+  data = resp.data;
+  error = resp.error;
+
+  if (error && `${error.message}`.toLowerCase().includes("image")) {
+    console.warn("shop_offers insert with image_url failed, retrying without image_url", { error: error.message });
+    resp = await attemptInsert({ includeImages: false, includeNames: wantsNames, includeDescriptions: true });
     data = resp.data;
     error = resp.error;
-
-    if (error && `${error.message}`.toLowerCase().includes("image")) {
-      console.warn("shop_offers insert with image_url failed, retrying without image_url", { error: error.message });
-      const respNoImg = await client.from("shop_offers").insert(buildPayload(false)).select("*");
-      data = respNoImg.data;
-      error = respNoImg.error;
-    }
-    if (error && `${error.message}`.toLowerCase().includes("description")) {
-      console.warn("shop_offers insert with description failed, retrying without description", { error: error.message });
-      const respNoDesc = await client
-        .from("shop_offers")
-        .insert(
-          buildPayload(false).map((p) => {
-            const { product_description, description, ...rest } = p;
-            return rest;
-          })
-        )
-        .select("*");
-      data = respNoDesc.data;
-      error = respNoDesc.error;
-    }
-  } else {
-    const resp = await client.from("shop_offers").insert(buildPayload(false)).select("*");
+  }
+  if (error && `${error.message}`.toLowerCase().includes("description")) {
+    console.warn("shop_offers insert with description failed, retrying without description", { error: error.message });
+    resp = await attemptInsert({ includeImages: false, includeNames: wantsNames, includeDescriptions: false });
+    data = resp.data;
+    error = resp.error;
+  }
+  if (error && `${error.message}`.toLowerCase().includes("product_name")) {
+    console.warn("shop_offers insert with product_name failed, retrying without product_name", { error: error.message });
+    resp = await attemptInsert({ includeImages: false, includeNames: false, includeDescriptions: false });
     data = resp.data;
     error = resp.error;
   }
@@ -525,6 +528,7 @@ export async function insertShopOffers(
         orderId: row.order_id,
         oemNumber: row.oem_number,
         shopName: row.shop_name,
+        productName: row.product_name ?? row.productName ?? original?.productName ?? null,
         brand: row.brand,
         price: Number(row.price),
         currency: row.currency,
@@ -564,6 +568,7 @@ export async function listShopOffersByOrderId(orderId: string): Promise<ShopOffe
       orderId: row.order_id,
       oemNumber: row.oem_number,
       shopName: row.shop_name,
+      productName: row.product_name ?? row.productName ?? null,
       brand: row.brand,
       price: Number(row.price),
       currency: row.currency,

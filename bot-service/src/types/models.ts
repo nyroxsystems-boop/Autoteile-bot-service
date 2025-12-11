@@ -64,6 +64,7 @@ export interface ShopOffer {
   orderId: string;
   oemNumber: string;
   shopName: string; // z.B. "Autodoc"
+  productName?: string | null;
   brand?: string | null; // z.B. ATE, Brembo
   price: number;
   currency: string; // z.B. "EUR"

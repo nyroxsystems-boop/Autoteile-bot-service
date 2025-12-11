@@ -5,6 +5,7 @@ import fetch from "node-fetch";
 
 export interface ScrapedOffer {
   shopName: string;
+  productName?: string | null;
   brand?: string | null;
   price: number;
   currency?: string;
@@ -36,6 +37,7 @@ class MockAutodocAdapter implements ShopAdapter {
     return [
       {
         shopName: this.name,
+        productName: `ATE Ölfilter (${oem})`,
         brand: "ATE",
         price: 89.99,
         currency: "EUR",
@@ -75,6 +77,7 @@ class MockKfzteileAdapter implements ShopAdapter {
     return [
       {
         shopName: this.name,
+        productName: `Brembo Bremsbeläge (${oem})`,
         brand: "Brembo",
         price: 94.5,
         currency: "EUR",
@@ -99,8 +102,14 @@ export const scrapeProxyAgent =
       })
     : undefined;
 
-// Best-effort: versuche, aus einer Produkt-URL ein Bild zu extrahieren (og:image oder erstes <img>)
-async function tryExtractImage(url: string): Promise<string | null> {
+type ProductMetadata = {
+  image?: string | null;
+  title?: string | null;
+  description?: string | null;
+};
+
+// Best-effort: versuche, aus einer Produkt-URL Metadaten zu extrahieren (Titel, Bild, Beschreibung)
+async function tryExtractProductMetadata(url: string): Promise<ProductMetadata | null> {
   if (!url || !url.startsWith("http")) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -118,23 +127,45 @@ async function tryExtractImage(url: string): Promise<string | null> {
     if (!res.ok) return null;
     const html = await res.text();
 
+    const pick = (pattern: RegExp): string | null => {
+      const m = html.match(pattern);
+      if (m?.[1]) return m[1].trim();
+      return null;
+    };
+
     // og:image
-    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
-    if (ogMatch?.[1]?.startsWith("http")) return ogMatch[1];
+    const ogImg = pick(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    const imgFromOg = ogImg && ogImg.startsWith("http") ? ogImg : null;
 
     // erstes <img src>
     const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+    let imgFromTag: string | null = null;
     if (imgMatch?.[1]) {
       const src = imgMatch[1];
-      if (src.startsWith("http")) return src;
-      // relative Pfad -> auf URL-Basis auflösen
-      try {
-        const absolute = new URL(src, url).toString();
-        return absolute;
-      } catch {
-        /* ignore */
+      if (src.startsWith("http")) {
+        imgFromTag = src;
+      } else {
+        try {
+          imgFromTag = new URL(src, url).toString(); // resolve relative Pfad
+        } catch {
+          /* ignore */
+        }
       }
     }
+
+    const titleFromOg = pick(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+    const titleFromMeta = pick(/<meta[^>]+name=["']title["'][^>]+content=["']([^"']+)["']/i);
+    const titleFromH1 = pick(/<h1[^>]*>([^<]+)<\/h1>/i);
+    const titleFromTag = pick(/<title[^>]*>([^<]+)<\/title>/i);
+
+    const descriptionFromOg = pick(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+    const descriptionFromMeta = pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+
+    return {
+      image: imgFromOg ?? imgFromTag ?? null,
+      title: titleFromOg ?? titleFromMeta ?? titleFromH1 ?? titleFromTag ?? null,
+      description: descriptionFromOg ?? descriptionFromMeta ?? null
+    };
   } catch {
     return null;
   } finally {
@@ -178,6 +209,7 @@ function buildAdapters(): ShopAdapter[] {
               deliveryTimeDays: it.deliveryTimeDays ?? it.delivery_time_days ?? null,
               productUrl: it.productUrl ?? it.product_url ?? null,
               imageUrl: it.imageUrl ?? it.image_url ?? null,
+              productName: it.productName ?? it.product_name ?? it.title ?? it.name ?? null,
               description: it.description ?? it.productDescription ?? it.product_description ?? null,
               rating: it.rating ?? null,
               isRecommended: it.isRecommended ?? it.is_recommended ?? null
@@ -239,20 +271,34 @@ export async function scrapeOffersForOrder(orderId: string, oemNumber: string) {
       ...offer,
       currency: offer.currency || "EUR",
       imageUrl: offer.imageUrl ?? null,
-      description: offer.description ?? null
+      description: offer.description ?? null,
+      productName: offer.productName ?? null
     });
   }
 
   const sortedByPrice = deduped.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
 
-  // Versuche fehlende Bilder anzureichern (max 5 Requests, um Rate/Time zu schonen)
+  // Versuche fehlende Metadaten anzureichern (max 5 Requests, um Rate/Time zu schonen)
   let enrichAttempts = 0;
   for (const offer of sortedByPrice) {
-    if (offer.imageUrl || !offer.productUrl) continue;
+    const needsImage = !offer.imageUrl;
+    const needsName = !offer.productName;
+    const needsDescription = !offer.description;
+    if ((!needsImage && !needsName && !needsDescription) || !offer.productUrl) continue;
     if (enrichAttempts >= 5) break;
-    const img = await tryExtractImage(offer.productUrl);
+    const meta = await tryExtractProductMetadata(offer.productUrl);
     enrichAttempts += 1;
-    if (img) offer.imageUrl = img;
+    if (meta?.image && !offer.imageUrl) offer.imageUrl = meta.image;
+    if (meta?.title && !offer.productName) offer.productName = meta.title;
+    if (meta?.description && !offer.description) offer.description = meta.description;
+  }
+
+  // Fallback: stelle sicher, dass es einen Produktnamen gibt (für Dashboard und Kundentexte)
+  for (const offer of sortedByPrice) {
+    if (!offer.productName) {
+      const base = [offer.brand, offer.description?.split("\n")[0], offer.shopName].filter(Boolean).join(" - ");
+      offer.productName = base || `${offer.shopName} ${oemNumber}`;
+    }
   }
 
   if (sortedByPrice.length === 0) {
