@@ -180,7 +180,7 @@ async function openAiRerank(bestOem: string | null, candidates: OemCandidate[], 
 }
 
 // ----------------------------------
-// Quellen: 5 echte Seiten (teils als Platzhalter)
+// Quellen: EPC-/Parts-Seiten (wird laufend erweitert)
 // ----------------------------------
 
 async function searchOemOnPartSouq(ctx: SearchContext): Promise<OemCandidate[]> {
@@ -300,6 +300,62 @@ async function searchOemOn7zap(ctx: SearchContext): Promise<OemCandidate[]> {
   }
 }
 
+// Generische EPC-/OEM-Sites: wir schießen einfache GET-Requests auf gängige Teilekataloge
+const GENERIC_EPC_SITES: Array<{ name: string; urlTemplate: string }> = [
+  { name: "realoem", urlTemplate: "https://www.realoem.com/bmw/enUS/partxref?q={q}" },
+  { name: "catcar", urlTemplate: "https://www.catcar.info/en/?l=catalog&vin={q}" },
+  { name: "bmwfans", urlTemplate: "https://bmwfans.info/parts-catalog/search?q={q}" },
+  { name: "partslink24", urlTemplate: "https://www.partslink24.com/search?q={q}" },
+  { name: "daparto", urlTemplate: "https://www.daparto.de/Teilenummernsuche/{q}" },
+  { name: "autodoc", urlTemplate: "https://www.autodoc.de/search?keyword={q}" },
+  { name: "fcpeuro", urlTemplate: "https://www.fcpeuro.com/search?keywords={q}" },
+  { name: "7zap-oem", urlTemplate: "https://7zap.com/en/search/?keyword={q}" },
+  { name: "ilcats", urlTemplate: "https://www.ilcats.ru/search?q={q}" },
+  { name: "oemepc", urlTemplate: "https://www.oemepc.com/?query={q}" },
+  { name: "etkcc", urlTemplate: "https://www.etk.cc/bmw/ru/parts/search?q={q}" },
+  { name: "lingshonda", urlTemplate: "https://www.lingshondaparts.com/partscatalog/search/{q}" },
+  { name: "toyodiy", urlTemplate: "https://www.toyodiy.com/parts/q.html?part={q}" },
+  { name: "volkswagen-7zap", urlTemplate: "https://volkswagen.7zap.com/en/search/?keyword={q}" },
+  { name: "audi-7zap", urlTemplate: "https://audi.7zap.com/en/search/?keyword={q}" },
+  { name: "skoda-7zap", urlTemplate: "https://skoda.7zap.com/en/search/?keyword={q}" },
+  { name: "seat-7zap", urlTemplate: "https://seat.7zap.com/en/search/?keyword={q}" },
+  { name: "honda-epc", urlTemplate: "https://honda.epc-data.com/search?q={q}" },
+  { name: "nissan-epc", urlTemplate: "https://nissan.epc-data.com/search?q={q}" },
+  { name: "subaru-epc", urlTemplate: "https://subaru.epc-data.com/search?q={q}" },
+  { name: "mazda-epc", urlTemplate: "https://mazda.epc-data.com/search?q={q}" },
+  { name: "mitsubishi-epc", urlTemplate: "https://mitsubishi.epc-data.com/search?q={q}" },
+  { name: "kia-epc", urlTemplate: "https://kia.epc-data.com/search?q={q}" },
+  { name: "hyundai-epc", urlTemplate: "https://hyundai.epc-data.com/search?q={q}" },
+  { name: "opel-7zap", urlTemplate: "https://opel.7zap.com/en/search/?keyword={q}" },
+  { name: "ford-7zap", urlTemplate: "https://ford.7zap.com/en/search/?keyword={q}" },
+  { name: "vagcat", urlTemplate: "https://www.vagcat.com/search/?keyword={q}" },
+  { name: "mercedes-mbteile", urlTemplate: "https://mb-teilekatalog.info/?q={q}" }
+];
+
+async function searchOemOnGenericSites(ctx: SearchContext): Promise<OemCandidate[]> {
+  const q = ctx.vehicle.vin ? ctx.vehicle.vin : [ctx.vehicle.brand, ctx.vehicle.model, ctx.userQuery].filter(Boolean).join(" ");
+  const limitedQ = q.slice(0, 80);
+
+  const tasks = GENERIC_EPC_SITES.map(async (site) => {
+    const url = site.urlTemplate.replace("{q}", encodeURIComponent(limitedQ));
+    try {
+      const html = await fetchTextWithFallback(url);
+      const oems = extractOemsFromHtml(html);
+      if (oems.length === 0) return [];
+      return oems.map((o) => ({ source: site.name, rawValue: o, normalized: o }));
+    } catch {
+      return [];
+    }
+  });
+
+  const results = await Promise.allSettled(tasks);
+  const candidates: OemCandidate[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") candidates.push(...r.value);
+  }
+  return candidates;
+}
+
 // ----------------------------------
 // Fallback-Resolver (Platzhalter)
 // ----------------------------------
@@ -384,7 +440,8 @@ export async function findBestOemForVehicle(ctx: SearchContext, useFallback = tr
       searchOemOnAutodocParts(subCtx),
       searchOemOnSpareto(subCtx),
       searchOemOn7zap(subCtx),
-      searchOemOnSite5(subCtx)
+      searchOemOnSite5(subCtx),
+      searchOemOnGenericSites(subCtx)
     ]);
     const cands: OemCandidate[] = [];
     for (const r of results) {
