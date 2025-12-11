@@ -168,13 +168,32 @@ export async function scrapeOffersForOrder(orderId: string, oemNumber: string) {
     }
   }
 
-  if (allOffers.length === 0) {
+  // Basic validation, de-duplication and sorting for cleaner inserts
+  const validOffers = allOffers.filter((o) => Number.isFinite(o.price) && o.price > 0 && !!o.shopName);
+
+  const seen = new Set<string>();
+  const deduped: ScrapedOffer[] = [];
+  for (const offer of validOffers) {
+    const key = `${offer.shopName}::${offer.productUrl ?? offer.brand ?? ""}::${offer.price}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({
+      ...offer,
+      currency: offer.currency || "EUR",
+      imageUrl: offer.imageUrl ?? null,
+      description: offer.description ?? null
+    });
+  }
+
+  const sortedByPrice = deduped.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+
+  if (sortedByPrice.length === 0) {
     console.warn("[SCRAPE] no offers found", { orderId, oemNumber });
     return [];
   }
 
-  console.log("[SCRAPE] inserting offers into DB", { orderId, offersCount: allOffers.length });
-  const inserted = await insertShopOffers(orderId, oemNumber, allOffers);
+  console.log("[SCRAPE] inserting offers into DB", { orderId, offersCount: sortedByPrice.length });
+  const inserted = await insertShopOffers(orderId, oemNumber, sortedByPrice);
   console.log("[SCRAPE] done", { orderId, offersSaved: inserted.length });
   return inserted;
 }
