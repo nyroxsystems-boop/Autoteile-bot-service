@@ -70,6 +70,7 @@ export interface ShopOffer {
   availability?: string | null; // z.B. "In stock"
   deliveryTimeDays?: number | null;
   productUrl?: string | null;
+  imageUrl?: string | null;
   rating?: number | null; // z.B. 4.7
   isRecommended?: boolean | null; // vom System gesetzt
 }

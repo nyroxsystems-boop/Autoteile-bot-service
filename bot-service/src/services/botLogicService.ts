@@ -687,6 +687,22 @@ async function runOemLookupAndScraping(
         } catch (uErr: any) {
           logger.warn("Failed to persist scrape result", { orderId, error: uErr?.message ?? uErr });
         }
+
+        if (Array.isArray(scrapeResult)) {
+          const offerMedia: Record<string, string> = {};
+          for (const offer of scrapeResult) {
+            if (offer?.id && offer.imageUrl) {
+              offerMedia[offer.id] = offer.imageUrl;
+            }
+          }
+          if (Object.keys(offerMedia).length > 0) {
+            try {
+              await updateOrderData(orderId, { offerMedia });
+            } catch (err: any) {
+              logger.warn("Failed to persist offer media map", { orderId, error: err?.message });
+            }
+          }
+        }
       }
 
       const cautionNote =
@@ -1255,7 +1271,7 @@ function shortOrderLabel(o: { id: string; vehicle_description?: string | null; p
 // ------------------------------
 export async function handleIncomingBotMessage(
   payload: BotMessagePayload
-): Promise<{ reply: string; orderId: string }> {
+): Promise<{ reply: string; orderId: string; replies?: Array<{ text: string; mediaUrl?: string | null }> }> {
   return withConversationLock(payload.from, async () => {
   const userText = sanitizeText(payload.text || "", 1000);
   const hasVehicleImage = Array.isArray(payload.mediaUrls) && payload.mediaUrls.length > 0;
@@ -1588,6 +1604,7 @@ export async function handleIncomingBotMessage(
     // respond with the generic fallback below instead of special-casing smalltalk here.
 
     let replyText = "";
+    let replyMessages: Array<{ text: string; mediaUrl?: string | null }> = [];
 
     switch (nextStatus) {
       case "choose_language": {
@@ -1997,10 +2014,18 @@ export async function handleIncomingBotMessage(
           if (sorted.length === 1) {
             const offer = sorted[0];
             const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
+            const link = offer.productUrl ? `\nLink: ${offer.productUrl}` : "";
+            const availability = offer.availability ? `\n${language === "en" ? "Availability" : "Verfügbarkeit"}: ${offer.availability}` : "";
             replyText =
               language === "en"
-                ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDelivery time: ${delivery} days.\n\nIf this works for you, please reply with "Yes" or "OK".`
-                : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nLieferzeit: ${delivery} Tage.\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
+                ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDelivery time: ${delivery} days.${availability}${link}\n\nIf this works for you, please reply with "Yes" or "OK".`
+                : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nLieferzeit: ${delivery} Tage.${availability}${link}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
+            replyMessages = [
+              {
+                text: replyText,
+                mediaUrl: offer.imageUrl ?? orderData?.offerMedia?.[offer.id] ?? null
+              }
+            ];
 
             try {
               await updateOrderData(order.id, {
@@ -2022,29 +2047,41 @@ export async function handleIncomingBotMessage(
           }
 
           const top = sorted.slice(0, 3);
-          const lines =
+          const intro =
             language === "en"
-              ? top.map(
-                  (o, idx) =>
-                    `${idx + 1}) ${o.brand ?? "n/a"} at ${o.shopName}, ${o.price} ${o.currency}, delivery about ${
-                      o.deliveryTimeDays ?? "n/a"
-                    } days`
-                )
-              : top.map(
-                  (o, idx) =>
-                    `${idx + 1}) ${o.brand ?? "k.A."} bei ${o.shopName}, ${o.price} ${o.currency}, Lieferung ca. ${
-                      o.deliveryTimeDays ?? "k.A."
-                    } Tage`
-                );
+              ? "Here are the top 3 offers I found. Reply with 1, 2 or 3 to pick one:"
+              : "Hier sind die Top 3 Angebote. Antworte mit 1, 2 oder 3, um eines auszuwählen:";
 
-          replyText =
-            language === "en"
-              ? "I found some offers. Please choose one:\n\n" +
-                lines.join("\n") +
-                "\n\nReply with 1, 2 or 3."
-              : "Ich habe passende Angebote gefunden. Bitte wähle eines:\n\n" +
-                lines.join("\n") +
-                "\n\nAntworte einfach mit 1, 2 oder 3.";
+          replyMessages.push({ text: intro });
+
+          top.forEach((o, idx) => {
+            const delivery = o.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
+            const availability = o.availability
+              ? language === "en"
+                ? `Availability: ${o.availability}`
+                : `Verfügbarkeit: ${o.availability}`
+              : null;
+            const rating = o.rating ? `${language === "en" ? "Rating" : "Bewertung"}: ${o.rating}/5` : null;
+            const lines = [
+              `${idx + 1}) ${o.brand ?? (language === "en" ? "unknown brand" : "unbekannte Marke")} @ ${o.shopName}`,
+              `${language === "en" ? "Price" : "Preis"}: ${o.price} ${o.currency || "EUR"}`,
+              `${language === "en" ? "Delivery" : "Lieferung"}: ${delivery} ${
+                language === "en" ? "days" : "Tage"
+              }`,
+              availability,
+              rating,
+              o.productUrl ? `${language === "en" ? "Link" : "Link"}: ${o.productUrl}` : null
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            replyMessages.push({
+              text: lines,
+              mediaUrl: o.imageUrl ?? orderData?.offerMedia?.[o.id] ?? null
+            });
+          });
+
+          replyText = replyMessages[0].text;
 
           try {
             await updateOrderData(order.id, {
@@ -2234,11 +2271,17 @@ export async function handleIncomingBotMessage(
     }
 
     // Fallback, falls keine Antwort gesetzt wurde
+    if (!replyText && replyMessages.length > 0) {
+      replyText = replyMessages[0].text;
+    }
     if (!replyText) {
       replyText =
         (language ?? "de") === "en"
           ? "I'm working on your request. I'll update you soon."
           : "Ich arbeite an deiner Anfrage und melde mich gleich.";
+    }
+    if (replyMessages.length === 0) {
+      replyMessages = [{ text: replyText }];
     }
 
     const vehicleDescToSave = hasVehicleImage
@@ -2262,6 +2305,6 @@ export async function handleIncomingBotMessage(
       });
     }
 
-    return { reply: replyText, orderId: order.id };
+    return { reply: replyMessages[0].text, orderId: order.id, replies: replyMessages };
   });
 }

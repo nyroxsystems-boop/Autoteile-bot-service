@@ -37,31 +37,35 @@ router.post("/", async (req: Request, res: Response) => {
       orderId,
       hasMedia: Array.isArray(mediaUrls) && mediaUrls.length > 0
     });
-    const result: { reply: string; orderId: string } = await handleIncomingBotMessage({
-      from,
-      text,
-      orderId: orderId ?? null,
-      mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : undefined
-    });
-
-    // Antwort als outgoing message speichern
-    try {
-      await insertMessage({
-        orderId: result.orderId || null,
-        direction: "outgoing",
-        channel: "whatsapp",
-        fromIdentifier: null,
-        toIdentifier: from,
-        content: result.reply,
-        rawPayload: null
+    const result: { reply: string; orderId: string; replies?: Array<{ text: string; mediaUrl?: string | null }> } =
+      await handleIncomingBotMessage({
+        from,
+        text,
+        orderId: orderId ?? null,
+        mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : undefined
       });
-    } catch (dbErr: any) {
-      console.error("Failed to store outgoing bot message", { error: dbErr?.message, orderId: result.orderId });
-      // Do not fail the whole request if logging to DB fails
+
+    const messages = result.replies && result.replies.length > 0 ? result.replies : [{ text: result.reply }];
+
+    // Antworten als outgoing messages speichern
+    for (const msg of messages) {
+      try {
+        await insertMessage({
+          orderId: result.orderId || null,
+          direction: "outgoing",
+          channel: "whatsapp",
+          fromIdentifier: null,
+          toIdentifier: from,
+          content: msg.text,
+          rawPayload: msg.mediaUrl ? { mediaUrl: msg.mediaUrl } : null
+        });
+      } catch (dbErr: any) {
+        console.error("Failed to store outgoing bot message", { error: dbErr?.message, orderId: result.orderId });
+      }
     }
 
-    console.log("[Bot] Outgoing reply", { orderId: result.orderId, reply: result.reply });
-    res.json(result);
+    console.log("[Bot] Outgoing reply", { orderId: result.orderId, replies: messages.map((m) => m.text) });
+    res.json({ orderId: result.orderId, reply: messages[0]?.text, replies: messages });
   } catch (err: any) {
     console.error("BotFlow Error:", err);
     res.status(500).json({

@@ -445,52 +445,80 @@ export async function insertShopOffers(
     availability?: string | null;
     deliveryTimeDays?: number | null;
     productUrl?: string | null;
+    imageUrl?: string | null;
     rating?: number | null;
     isRecommended?: boolean | null;
   }>
 ): Promise<ShopOffer[]> {
   const client = getClient();
 
-  const payload = offers.map((o) => ({
-    order_id: orderId,
-    oem_number: oemNumber,
-    shop_name: o.shopName,
-    brand: o.brand ?? null,
-    price: o.price,
-    currency: o.currency ?? "EUR",
-    availability: o.availability ?? null,
-    delivery_time_days: o.deliveryTimeDays ?? null,
-    product_url: o.productUrl ?? null,
-    url: o.productUrl ?? null, // Compatibility: some DBs may use "url" instead of "product_url"
-    rating: o.rating ?? null,
-    is_recommended: o.isRecommended ?? null
-  }));
+  const buildPayload = (includeImages: boolean) =>
+    offers.map((o) => {
+      const base: Record<string, any> = {
+        order_id: orderId,
+        oem_number: oemNumber,
+        shop_name: o.shopName,
+        brand: o.brand ?? null,
+        price: o.price,
+        currency: o.currency ?? "EUR",
+        availability: o.availability ?? null,
+        delivery_time_days: o.deliveryTimeDays ?? null,
+        product_url: o.productUrl ?? null,
+        url: o.productUrl ?? null, // Compatibility: some DBs may use "url" instead of "product_url"
+        rating: o.rating ?? null,
+        is_recommended: o.isRecommended ?? null
+      };
+      if (includeImages && o.imageUrl !== undefined) {
+        base.image_url = o.imageUrl;
+      }
+      return base;
+    });
 
-  const { data, error } = await client
-    .from("shop_offers")
-    .insert(payload)
-    .select("*");
+  const wantsImages = offers.some((o) => o.imageUrl !== undefined);
+  let data: any[] | null = null;
+  let error: any = null;
+
+  if (wantsImages) {
+    const resp = await client.from("shop_offers").insert(buildPayload(true)).select("*");
+    data = resp.data;
+    error = resp.error;
+
+    if (error && `${error.message}`.toLowerCase().includes("image")) {
+      console.warn("shop_offers insert with image_url failed, retrying without image_url", { error: error.message });
+      const respNoImg = await client.from("shop_offers").insert(buildPayload(false)).select("*");
+      data = respNoImg.data;
+      error = respNoImg.error;
+    }
+  } else {
+    const resp = await client.from("shop_offers").insert(buildPayload(false)).select("*");
+    data = resp.data;
+    error = resp.error;
+  }
 
   if (error) {
     throw new Error(`Failed to insert shop offers: ${error.message}`);
   }
 
   const mapped: ShopOffer[] =
-    (data ?? []).map((row: any) => ({
-      id: row.id,
-      createdAt: row.created_at,
-      orderId: row.order_id,
-      oemNumber: row.oem_number,
-      shopName: row.shop_name,
-      brand: row.brand,
-      price: Number(row.price),
-      currency: row.currency,
-      availability: row.availability,
-      deliveryTimeDays: row.delivery_time_days,
-      productUrl: row.product_url ?? row.url ?? null,
-      rating: row.rating != null ? Number(row.rating) : null,
-      isRecommended: row.is_recommended
-    })) ?? [];
+    (data ?? []).map((row: any, idx: number) => {
+      const original = offers[idx];
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        orderId: row.order_id,
+        oemNumber: row.oem_number,
+        shopName: row.shop_name,
+        brand: row.brand,
+        price: Number(row.price),
+        currency: row.currency,
+        availability: row.availability,
+        deliveryTimeDays: row.delivery_time_days,
+        productUrl: row.product_url ?? row.url ?? null,
+        imageUrl: row.image_url ?? row.imageUrl ?? original?.imageUrl ?? null,
+        rating: row.rating != null ? Number(row.rating) : null,
+        isRecommended: row.is_recommended
+      };
+    }) ?? [];
 
   return mapped;
 }
@@ -523,7 +551,8 @@ export async function listShopOffersByOrderId(orderId: string): Promise<ShopOffe
       currency: row.currency,
       availability: row.availability,
       deliveryTimeDays: row.delivery_time_days,
-      productUrl: row.product_url,
+      productUrl: row.product_url ?? row.url ?? null,
+      imageUrl: row.image_url ?? row.imageUrl ?? null,
       rating: row.rating != null ? Number(row.rating) : null,
       isRecommended: row.is_recommended
     })) ?? [];

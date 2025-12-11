@@ -127,37 +127,38 @@ router.post("/", async (req, res) => {
       throw new Error(`Bot API returned status ${botResponse.status}`);
     }
 
-    const data = (await botResponse.json()) as { reply?: string };
-    replyText = data.reply || replyText;
+    const data = (await botResponse.json()) as { reply?: string; replies?: Array<{ text: string; mediaUrl?: string | null }> };
+    const replies = data.replies && data.replies.length > 0 ? data.replies : data.reply ? [{ text: data.reply }] : [];
+    const messagesToSend = replies.length > 0 ? replies : [{ text: replyFallback }];
+
+    // Send WhatsApp reply/replies via Twilio REST API
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const fromNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886"; // Twilio sandbox default
+
+    if (!accountSid || !authToken) {
+      console.error("[Twilio Webhook] Missing Twilio credentials, cannot send reply");
+      return res.status(500).json({ error: "Twilio not configured" });
+    }
+
+    const client = twilio(accountSid, authToken);
+    for (const msg of messagesToSend) {
+      await client.messages.create({
+        from: fromNumber,
+        to: from,
+        body: msg.text,
+        mediaUrl: msg.mediaUrl ? [msg.mediaUrl] : undefined
+      });
+    }
+    const preview = messagesToSend.map((m) => m.text).join(" | ").slice(0, 120);
+    console.log("[Twilio Webhook] WhatsApp reply sent", { to: from, bodyPreview: preview });
+    return res.status(200).json({ ok: true });
   } catch (err: any) {
     console.error("[Twilio Webhook] Error calling bot/message", { error: err?.message });
     replyText = `${replyText} / A technical error occurred. Please try again later.`;
   }
 
-  // Send WhatsApp reply via Twilio REST API
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber =
-    process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886"; // Twilio sandbox default
-
-  if (!accountSid || !authToken) {
-    console.error("[Twilio Webhook] Missing Twilio credentials, cannot send reply");
-    return res.status(500).json({ error: "Twilio not configured" });
-  }
-
-  try {
-    const client = twilio(accountSid, authToken);
-    await client.messages.create({
-      from: fromNumber,
-      to: from,
-      body: replyText
-    });
-    console.log("[Twilio Webhook] WhatsApp reply sent", { to: from, bodyPreview: replyText.slice(0, 120) });
-    return res.status(200).json({ ok: true });
-  } catch (err: any) {
-    console.error("[Twilio Webhook] Failed to send WhatsApp reply", { error: err?.message, to: from });
-    return res.status(500).json({ error: "Failed to send reply", details: err?.message });
-  }
+  return res.status(500).json({ error: "Failed to send reply" });
 });
 
 export default router;
