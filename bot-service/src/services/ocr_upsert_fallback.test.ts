@@ -49,7 +49,7 @@ import * as botLogic from './botLogicService';
 jest.mock('./supabaseService', () => ({
   insertMessage: jest.fn(() => Promise.resolve()),
   findOrCreateOrder: jest.fn(() => Promise.resolve({ id: 'order-ocr-1', status: 'collect_vehicle', language: 'de' })),
-  getOrderById: jest.fn(() => Promise.resolve({ orderData: { requestedPart: 'Bremsscheiben' } })),
+  getOrderById: jest.fn(() => Promise.resolve({ orderData: { requestedPart: 'Bremsscheiben', partClarificationAsked: true } })),
   updateOrderData: jest.fn(() => Promise.resolve()),
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => { throw new Error('DB column missing'); }),

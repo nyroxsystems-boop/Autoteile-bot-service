@@ -590,7 +590,23 @@ async function runOemLookupAndScraping(
       replyText:
         langPrompt === "en"
           ? "Got the vehicle data. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-          : "Fahrzeugdaten sind da. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.",
+        : "Fahrzeugdaten sind da. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.",
+      nextStatus: "collect_part"
+    };
+  }
+
+  // Ask once for more precise preferences before running OEM lookup (e.g., Keramikbremsen, Markenwunsch, Preisrahmen).
+  if (!orderData?.partClarificationAsked) {
+    try {
+      await updateOrderData(orderId, { partClarificationAsked: true, requestedPart: partText });
+    } catch (err: any) {
+      logger.warn("Failed to persist part clarification flag", { orderId, error: err?.message });
+    }
+    return {
+      replyText:
+        langPrompt === "en"
+          ? "Got it. Do you have preferences (brand, ceramic/performance option, budget, comfort/noise)?"
+          : "Alles klar. Hast du Wünsche? (z. B. Marke, Keramik/Performance, Budget, Komfort/Laufruhe)",
       nextStatus: "collect_part"
     };
   }
