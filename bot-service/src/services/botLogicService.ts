@@ -36,7 +36,7 @@ const client = new OpenAI({
 
 async function answerGeneralQuestion(params: {
   userText: string;
-  language: "de" | "en";
+  language: "de" | "en" | "pl" | "tr";
   missingVehicleInfo: string[];
   knownVehicleSummary: string;
 }): Promise<string> {
@@ -98,7 +98,7 @@ async function runCollectPartBrain(params: {
   parsed: ParsedUserMessage;
   order: any;
   orderData: any;
-  language: "de" | "en";
+  language: "de" | "en" | "pl" | "tr";
   lastQuestionType: string | null;
 }): Promise<CollectPartBrainResult> {
   const payload = {
@@ -249,7 +249,7 @@ async function verifyOemWithAi(params: {
   vehicle: any;
   part: string;
   oem: string;
-  language: "de" | "en";
+  language: "de" | "en" | "pl" | "tr";
 }): Promise<boolean> {
   if (!process.env.OPENAI_API_KEY) return true;
   try {
@@ -532,7 +532,7 @@ function mergePartInfo(existing: any, parsed: ParsedUserMessage) {
 
 async function runOemLookupAndScraping(
   orderId: string,
-  language: "de" | "en" | null,
+  language: "de" | "en" | "pl" | "tr" | null,
   parsed: ParsedUserMessage,
   orderData: any,
   partDescription: string | null,
@@ -551,6 +551,7 @@ async function runOemLookupAndScraping(
   }
 ): Promise<{ replyText: string; nextStatus: ConversationStatus }> {
   const vehicle = vehicleOverride ?? (await getVehicleForOrder(orderId));
+  const langPrompt: "de" | "en" = language === "en" ? "en" : "de";
   const engineVal = (vehicle as any)?.engineCode ?? (vehicle as any)?.engine ?? undefined;
   const vehicleForOem = {
     make: (vehicle as any)?.make ?? undefined,
@@ -565,11 +566,11 @@ async function runOemLookupAndScraping(
 
   const missingVehicleFields = determineRequiredFields(vehicleForOem);
   if (missingVehicleFields.length > 0) {
-    const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
+    const q = buildVehicleFollowUpQuestion(missingVehicleFields, langPrompt);
     return {
       replyText:
         q ||
-        (language === "en"
+        (langPrompt === "en"
           ? "I need a bit more vehicle info."
           : "Ich brauche noch ein paar Fahrzeugdaten."),
       nextStatus: "collect_vehicle"
@@ -581,7 +582,7 @@ async function runOemLookupAndScraping(
     orderData?.requestedPart ||
     orderData?.partText ||
     partDescription ||
-    (language === "en" ? "the part you mentioned" : "das genannte Teil");
+    (langPrompt === "en" ? "the part you mentioned" : "das genannte Teil");
 
   try {
     const oemResult = await resolveOEMForOrder(
@@ -1155,6 +1156,20 @@ function sanitizeText(input: string, maxLen = 500): string {
   return trimmed.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
+// Simple heuristic language detection for short WhatsApp messages
+function detectLanguageAuto(text: string): "de" | "en" | "pl" | "tr" | null {
+  const t = text.toLowerCase();
+  // Turkish characters/words
+  if (/[ığüşöçİĞÜŞÖÇ]/.test(text) || /\b(merhaba|nasılsın|evet|hayır|teşekkür|lütfen)\b/.test(t)) return "tr";
+  // Polish diacritics/words
+  if (/[ąćęłńóśżź]/.test(text) || /\b(cześć|dzień dobry|tak|nie|proszę|dziękuję)\b/.test(t)) return "pl";
+  // German keywords/umlauts
+  if (/[äöüß]/.test(text) || /\b(hallo|bitte|danke|lieferung|rechnung|teil|fahrzeug|auto)\b/.test(t)) return "de";
+  // English keywords
+  if (/\b(hello|hi|thanks|please|delivery|part|vehicle|car)\b/.test(t)) return "en";
+  return null;
+}
+
 type MessageIntent = "new_order" | "order_question" | "unknown";
 function detectIntent(text: string, hasVehicleImage: boolean): MessageIntent {
   if (hasVehicleImage) return "new_order";
@@ -1231,21 +1246,46 @@ export async function handleIncomingBotMessage(
       text: userText,
       status: order.status
     });
-    let language: "de" | "en" | null = order.language ?? null;
+    let language: "de" | "en" | "pl" | "tr" | null = (order.language as any) ?? null;
     let languageChanged = false;
 
-    // Only accept explicit language choice (1 / 2 / de / en). Do NOT auto-persist language based on free text
-    // to avoid incorrect auto-detections that break the flow.
+    // Sprache bestimmen: erst explizit, sonst Auto-Heuristik
     if (!language) {
       const detectedLang = detectLanguageSelection(userText); // explicit choices only
       if (detectedLang) {
         language = detectedLang;
         languageChanged = true;
         try {
-          await updateOrder(order.id, { language });
+          await updateOrder(order.id, { language: language as any });
           logger.info("Language detected and stored", { orderId: order.id, language });
         } catch (err: any) {
           logger.error("Failed to persist detected language", { error: err?.message, orderId: order.id });
+        }
+      }
+      // Wenn keine explizite Wahl, versuche Auto-Detection
+      if (!language && userText.trim().length > 0) {
+        const autoLang = detectLanguageAuto(userText);
+        if (autoLang) {
+          language = autoLang;
+          languageChanged = true;
+          try {
+            await updateOrder(order.id, { language: language as any });
+            logger.info("Language auto-detected and stored", { orderId: order.id, language });
+          } catch (err: any) {
+            logger.error("Failed to persist auto language", { error: err?.message, orderId: order.id });
+          }
+        }
+      }
+
+      // Letzter Fallback: Deutsch
+      if (!language && userText.trim().length > 0) {
+        language = "de";
+        languageChanged = true;
+        try {
+          await updateOrder(order.id, { language: language as any });
+          logger.info("Language defaulted to de", { orderId: order.id });
+        } catch (err: any) {
+          logger.error("Failed to persist default language", { error: err?.message, orderId: order.id });
         }
       }
     }
@@ -1617,7 +1657,7 @@ export async function handleIncomingBotMessage(
                 try {
                   await updateOrder(order.id, {
                     status: nextStatus,
-                    language,
+                    language: language as any,
                     vehicle_description: vehicleDescription || null,
                     part_description: partDescription ?? null
                   });
@@ -1759,18 +1799,19 @@ export async function handleIncomingBotMessage(
           tsn: vehicle?.tsn
         });
 
+        const langTwo: "de" | "en" = language === "en" ? "en" : "de";
         if (missingVehicleFields.length > 0) {
-          const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
+          const q = buildVehicleFollowUpQuestion(missingVehicleFields, langTwo);
           replyText =
             q ||
-            (language === "en"
+            (langTwo === "en"
               ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
               : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.");
           nextStatus = "collect_vehicle";
         } else {
           nextStatus = "collect_part";
           replyText =
-            language === "en"
+            langTwo === "en"
               ? "Thanks, I have enough vehicle info. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
               : "Danke, ich habe genug Fahrzeugdaten. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
         }
@@ -2148,7 +2189,7 @@ export async function handleIncomingBotMessage(
     try {
       await updateOrder(order.id, {
         status: nextStatus,
-        language,
+        language: language as any,
         vehicle_description: vehicleDescToSave || null,
         part_description: partDescription ?? null
       });

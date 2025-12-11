@@ -1,0 +1,11 @@
+[
+  {
+    "id": "demo-local-1",
+    "name": "Demo-WWS Lokal",
+    "type": "demo_wws",
+    "baseUrl": "http://localhost:4000",
+    "isActive": true,
+    "authConfig": null,
+    "config": null
+  }
+]

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getOrder, getOrderOffers } from '../api/orders';
 import type { Order, OrderData, SelectedOfferSummary, ShopOffer } from '../api/types';
+import Card from '../ui/Card';
+import Badge from '../ui/Badge';
 
 type OfferRow = ShopOffer & { priceValue: number; currencyValue: string };
 
@@ -84,103 +86,95 @@ const OrderDetailPage = () => {
     : null);
 
   if (!orderId) {
-    return <div style={styles.wrapper}>No order id provided.</div>;
+    return <div style={styles.wrapper}>Keine Bestell-ID übergeben.</div>;
   }
+
+  const statusVariant = (status?: string | null): 'success' | 'danger' | 'neutral' => {
+    const s = (status ?? '').toLowerCase();
+    if (s.includes('done') || s.includes('complete') || s.includes('show_offers')) return 'success';
+    if (s.includes('fail') || s.includes('error') || s.includes('abort')) return 'danger';
+    return 'neutral';
+  };
 
   return (
     <div style={styles.wrapper}>
       <div style={styles.breadcrumbs}>
-        <Link to="/orders">← Back to orders</Link>
+        <Link to="/orders">← Zurück zur Bestellübersicht</Link>
         <span style={styles.routeInfo}>/orders/{orderId}</span>
       </div>
 
       {orderError ? (
-        <div style={styles.errorBox}>
-          <strong>Order error:</strong> {orderError}
+        <div className="error-box">
+          <strong>Fehler beim Laden der Bestellung:</strong> {orderError}
         </div>
       ) : null}
 
-      <section style={styles.card}>
-        <header style={styles.sectionHeader}>
-          <div>
-            <p style={styles.subtitle}>Order #{orderId}</p>
-            <h2 style={styles.title}>{order?.status ?? 'Loading...'}</h2>
-          </div>
-          <div style={styles.badge}>{order?.language ?? 'n/a'}</div>
-        </header>
+      <Card
+        title={`Bestellung #${orderId}`}
+        subtitle="Status und Metadaten"
+        actions={<Badge variant="neutral">{order?.language ?? 'n/a'}</Badge>}
+      >
         <div style={styles.rowGrid}>
           <div>
-            <div style={styles.label}>Created at</div>
+            <div style={styles.label}>Erstellt am</div>
             <div style={styles.value}>
               {order?.created_at
-                ? new Date(order.created_at).toLocaleString(undefined, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short'
-                  })
+                ? new Date(order.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
                 : '—'}
             </div>
           </div>
           <div>
-            <div style={styles.label}>Updated at</div>
+            <div style={styles.label}>Aktualisiert am</div>
             <div style={styles.value}>
               {order?.updated_at
-                ? new Date(order.updated_at).toLocaleString(undefined, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short'
-                  })
+                ? new Date(order.updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
                 : '—'}
             </div>
           </div>
           <div>
             <div style={styles.label}>Status</div>
-            <div style={styles.value}>{order?.status ?? '—'}</div>
+            <Badge variant={statusVariant(order?.status) as any}>{order?.status ?? '—'}</Badge>
           </div>
           <div>
-            <div style={styles.label}>Conversation</div>
+            <div style={styles.label}>Dialog-Status</div>
             <div style={styles.value}>{orderData?.conversationStatus ?? '—'}</div>
           </div>
         </div>
-      </section>
+      </Card>
 
-      <section style={styles.card}>
-        <header style={styles.sectionHeader}>
-          <h3 style={styles.title}>Order Summary</h3>
-        </header>
+      <Card title="Bestellübersicht">
         <div style={styles.rowGrid}>
           <div>
-            <div style={styles.label}>Customer</div>
+            <div style={styles.label}>Kunde</div>
             <div style={styles.value}>{(order as any)?.customerName ?? '—'}</div>
           </div>
           <div>
-            <div style={styles.label}>Contact</div>
+            <div style={styles.label}>Kontakt</div>
             <div style={styles.value}>{(order as any)?.customerPhone ?? (order as any)?.customerContact ?? '—'}</div>
           </div>
           <div>
-            <div style={styles.label}>Requested Part</div>
+            <div style={styles.label}>Angefragtes Teil</div>
             <div style={styles.value}>{(order as any)?.requestedPartName ?? orderData?.partDescription ?? '—'}</div>
           </div>
           <div>
-            <div style={styles.label}>Language</div>
+            <div style={styles.label}>Sprache</div>
             <div style={styles.value}>{order?.language ?? '—'}</div>
           </div>
         </div>
         <div style={styles.detailBox}>
-          <div style={styles.label}>Vehicle (description)</div>
+          <div style={styles.label}>Fahrzeug (Beschreibung)</div>
           <div style={styles.value}>{orderData?.vehicleDescription ?? '—'}</div>
         </div>
-      </section>
+      </Card>
 
-      <section style={styles.card}>
-        <header style={styles.sectionHeader}>
-          <h3 style={styles.title}>
-            {order?.language === 'en' ? "Customer's selected product" : 'Gewähltes Produkt des Kunden'}
-          </h3>
-          {selectedOfferId ? <span style={styles.selectedBadge}>Selected by customer</span> : null}
-        </header>
+      <Card
+        title="Gewähltes Produkt"
+        actions={selectedOfferId ? <Badge variant="success">Ausgewählt</Badge> : null}
+      >
         {selectedCardOffer ? (
           <div style={styles.selectedGrid}>
             <div>
-              <div style={styles.label}>{order?.language === 'en' ? 'Brand' : 'Marke'}</div>
+              <div style={styles.label}>Marke</div>
               <div style={styles.value}>{(selectedCardOffer as any).brand ?? '—'}</div>
             </div>
             <div>
@@ -188,20 +182,17 @@ const OrderDetailPage = () => {
               <div style={styles.value}>{(selectedCardOffer as any).shopName ?? '—'}</div>
             </div>
             <div>
-              <div style={styles.label}>{order?.language === 'en' ? 'Price' : 'Preis'}</div>
+              <div style={styles.label}>Preis</div>
               <div style={styles.value}>
                 {Number.isFinite((selectedCardOffer as any).priceValue)
-                  ? `${(selectedCardOffer as any).priceValue.toFixed(2)} ${
-                      (selectedCardOffer as any).currencyValue ?? 'EUR'
-                    }`
+                  ? `${(selectedCardOffer as any).priceValue.toFixed(2)} ${(selectedCardOffer as any).currencyValue ?? 'EUR'}`
                   : '—'}
               </div>
             </div>
             <div>
-              <div style={styles.label}>{order?.language === 'en' ? 'Delivery' : 'Lieferzeit'}</div>
+              <div style={styles.label}>Lieferzeit</div>
               <div style={styles.value}>
-                {(selectedCardOffer as any).deliveryTimeDays ??
-                  (order?.language === 'en' ? 'n/a' : 'k.A.')}
+                {(selectedCardOffer as any).deliveryTimeDays ?? 'k.A.'}
               </div>
             </div>
             <div>
@@ -209,8 +200,6 @@ const OrderDetailPage = () => {
               <div style={styles.value}>
                 {(selectedCardOffer as any).rating
                   ? `${(selectedCardOffer as any).rating}/5`
-                  : order?.language === 'en'
-                  ? 'n/a'
                   : 'k.A.'}
               </div>
             </div>
@@ -220,55 +209,63 @@ const OrderDetailPage = () => {
                   href={(selectedCardOffer as any).productUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={styles.linkButton}
+                  className="ui-btn ui-btn-primary ui-btn-sm"
                 >
-                  {order?.language === 'en' ? 'Open product' : 'Zum Produkt'}
+                  Zum Produkt
                 </a>
               </div>
             ) : null}
           </div>
         ) : (
-          <div style={styles.emptyBox}>
-            {order?.language === 'en'
-              ? 'The customer has not selected an offer yet.'
-              : 'Der Kunde hat noch kein Angebot ausgewählt.'}
+          <div className="empty-state">
+            Der Kunde hat noch kein Angebot ausgewählt.
           </div>
         )}
-      </section>
+      </Card>
 
-      <section style={styles.card}>
-        <header style={styles.sectionHeader}>
-          <h3 style={styles.title}>
-            {order?.language === 'en' ? 'All offers for this order' : 'Alle Angebote zu dieser Bestellung'}
-          </h3>
-        </header>
-
+      <Card title="Alle Angebote zu dieser Bestellung">
         {offersError ? (
-          <div style={styles.errorBox}>
-            <strong>Offers error:</strong> {offersError}
+          <div className="error-box">
+            <strong>Fehler beim Laden der Angebote:</strong> {offersError}
           </div>
         ) : null}
 
         {isOffersLoading ? (
-          <div style={styles.loading}>Loading offers…</div>
+          <div style={styles.tableWrapper}>
+            <table className="table">
+              <tbody>
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <tr key={idx}>
+                    <td colSpan={7}>
+                      <div className="skeleton-row">
+                        <div className="skeleton-block" />
+                        <div className="skeleton-block" />
+                        <div className="skeleton-block" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : offers.length === 0 ? (
-          <div style={styles.emptyBox}>
+          <div className="empty-state">
             {order?.language === 'en'
               ? 'No offers have been found for this order yet.'
               : 'Es wurden noch keine Angebote zu dieser Bestellung gefunden.'}
           </div>
         ) : (
           <div style={styles.tableWrapper}>
-            <table style={styles.table}>
+            <table className="table">
               <thead>
                 <tr>
-                  <th style={styles.th}>Shop</th>
-                  <th style={styles.th}>Brand</th>
-                  <th style={styles.th}>Preis</th>
-                  <th style={styles.th}>Verfügbarkeit</th>
-                  <th style={styles.th}>Lieferzeit</th>
-                  <th style={styles.th}>Rating</th>
-                  <th style={styles.th}>Link</th>
+                  <th>Shop</th>
+                  <th>Brand</th>
+                  <th>Preis</th>
+                  <th>Verfügbarkeit</th>
+                  <th>Lieferzeit</th>
+                  <th>Rating</th>
+                  <th>Link</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,40 +277,27 @@ const OrderDetailPage = () => {
                   return (
                     <tr
                       key={offer.id}
-                      style={{
-                        ...styles.tr,
-                        ...(isSelected ? styles.selectedRow : {})
-                      }}
+                      className="table-row"
+                      style={isSelected ? { background: 'rgba(37,99,235,0.08)' } : undefined}
                     >
-                      <td style={styles.td}>
+                      <td>
                         <div style={styles.cellStack}>
                           <div style={styles.value}>{offer.shopName ?? '—'}</div>
-                      {isSelected ? (
-                        <span style={styles.selectedBadgeSmall}>
-                          {order?.language === 'en' ? 'Selected' : 'Ausgewählt'}
-                        </span>
-                      ) : null}
+                          {isSelected ? <Badge variant="success">{order?.language === 'en' ? 'Selected' : 'Ausgewählt'}</Badge> : null}
                         </div>
                       </td>
-                      <td style={styles.td}>{offer.brand ?? '—'}</td>
-                      <td style={styles.td}>{priceLabel}</td>
-                      <td style={styles.td}>{offer.availability ?? '—'}</td>
-                      <td style={styles.td}>
+                      <td>{offer.brand ?? '—'}</td>
+                      <td>{priceLabel}</td>
+                      <td>{offer.availability ?? '—'}</td>
+                      <td>
                         {offer.deliveryTimeDays !== null && offer.deliveryTimeDays !== undefined
                           ? `${offer.deliveryTimeDays} Tage`
                           : '—'}
                       </td>
-                      <td style={styles.td}>
-                        {offer.rating !== null && offer.rating !== undefined ? `${offer.rating}/5` : '—'}
-                      </td>
-                      <td style={styles.td}>
+                      <td>{offer.rating !== null && offer.rating !== undefined ? `${offer.rating}/5` : '—'}</td>
+                      <td>
                         {offer.productUrl ? (
-                          <a
-                            href={offer.productUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={styles.link}
-                          >
+                          <a href={offer.productUrl} target="_blank" rel="noopener noreferrer" style={styles.link}>
                             {order?.language === 'en' ? 'Open product' : 'Zum Produkt'}
                           </a>
                         ) : (
@@ -327,7 +311,7 @@ const OrderDetailPage = () => {
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };

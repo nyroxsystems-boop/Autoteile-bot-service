@@ -9,10 +9,14 @@ create table if not exists public.vehicles (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
 
+  order_id uuid unique references public.orders(id), -- eindeutige Verknüpfung zur Order
   make text,          -- z.B. BMW
   model text,         -- z.B. 316ti
   year integer,
   engine_code text,   -- optional Motorcode / Kurzbezeichnung
+  engine_kw numeric,  -- Motorisierung in kW (aus Fahrzeugschein)
+  fuel_type text,     -- z.B. Benzin / Diesel
+  emission_class text, -- z.B. EURO 4
   vin text,
   hsn text,
   tsn text,

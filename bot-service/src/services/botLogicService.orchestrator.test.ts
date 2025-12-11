@@ -11,7 +11,8 @@ jest.mock('./supabaseService', () => ({
   getOrderById: jest.fn(() => Promise.resolve({ orderData: {} })),
   updateOrderData: jest.fn(() => Promise.resolve()),
   updateOrder: jest.fn(() => Promise.resolve()),
-  getVehicleForOrder: jest.fn(() => Promise.resolve(null))
+  getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([]))
 }));
 
 import { generateChatCompletion } from './openAiService';

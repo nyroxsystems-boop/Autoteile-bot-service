@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listOrders } from '../api/orders';
 import type { Order } from '../api/types';
+import Card from '../ui/Card';
+import Button from '../ui/Button';
+import Badge from '../ui/Badge';
+import Input from '../ui/Input';
 
 const statusLabelMap: Record<string, string> = {
   collect_vehicle: 'Fahrzeugdaten sammeln',
@@ -16,21 +20,16 @@ const OrdersListPage = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'done' | 'failed'>('all');
   const navigate = useNavigate();
 
   useEffect(() => {
-    console.log('[OrdersListPage] mounted');
-    return () => console.log('[OrdersListPage] unmounted');
-  }, []);
-
-  useEffect(() => {
     const fetchOrders = async () => {
-      console.log('[OrdersListPage] Bestellungen werden geladen...');
       setIsLoading(true);
       setError(null);
       try {
         const data = await listOrders();
-        console.log('[OrdersListPage] Bestellungen geladen:', data.length);
         setOrders(data);
       } catch (err) {
         console.error('[OrdersListPage] Fehler beim Laden der Bestellungen', err);
@@ -43,11 +42,35 @@ const OrdersListPage = () => {
     fetchOrders();
   }, []);
 
-  const rows = useMemo(() => orders, [orders]);
+  const rows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return orders
+      .filter((o) => {
+        if (statusFilter === 'done') return String(o.status).includes('done');
+        if (statusFilter === 'failed') return String(o.status).includes('fail') || String(o.status).includes('error');
+        if (statusFilter === 'open')
+          return ['collect_vehicle', 'collect_part', 'oem_lookup', 'choose_language'].includes(String(o.status));
+        return true;
+      })
+      .filter((o) => {
+        if (!term) return true;
+        const customer = `${o.customerId ?? ''} ${o.customerPhone ?? ''}`.toLowerCase();
+        const id = String(o.id ?? '').toLowerCase();
+        const part = String((o as any)?.part?.partText ?? '').toLowerCase();
+        return customer.includes(term) || id.includes(term) || part.includes(term);
+      });
+  }, [orders, search, statusFilter]);
 
   const renderDate = (date?: string) => {
     if (!date) return '–';
     return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  };
+
+  const statusVariant = (status: string): 'success' | 'danger' | 'neutral' => {
+    const s = status.toLowerCase();
+    if (s.includes('done') || s.includes('completed') || s.includes('show_offers')) return 'success';
+    if (s.includes('fail') || s.includes('error') || s.includes('aborted')) return 'danger';
+    return 'neutral';
   };
 
   const renderStatus = (status: string) => statusLabelMap[status] ?? status ?? '–';
@@ -103,196 +126,146 @@ const OrdersListPage = () => {
     );
   };
 
+  const handleRowNavigate = (orderId: string) => navigate(`/orders/${orderId}`);
+
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.headerRow}>
-        <div>
-          <p style={styles.subtitle}>Alle Bestellungen aus dem WhatsApp-Bot</p>
-          <h2 style={styles.title}>Bestellungen</h2>
-        </div>
-        <div style={styles.meta}>
-          {isLoading ? <span style={styles.pill}>Lädt…</span> : null}
-          {!isLoading ? <span style={styles.pill}>{rows.length} sichtbar</span> : null}
-        </div>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card
+        title="Bestellungen"
+        subtitle="Alle Bestellungen aus dem WhatsApp-Bot"
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button size="sm" variant={statusFilter === 'all' ? 'primary' : 'ghost'} onClick={() => setStatusFilter('all')}>
+              Alle
+            </Button>
+            <Button size="sm" variant={statusFilter === 'open' ? 'primary' : 'ghost'} onClick={() => setStatusFilter('open')}>
+              Offen
+            </Button>
+            <Button size="sm" variant={statusFilter === 'done' ? 'primary' : 'ghost'} onClick={() => setStatusFilter('done')}>
+              Abgeschlossen
+            </Button>
+            <Button size="sm" variant={statusFilter === 'failed' ? 'primary' : 'ghost'} onClick={() => setStatusFilter('failed')}>
+              Fehlgeschlagen
+            </Button>
+            {isLoading ? <span className="pill">Lädt…</span> : <span className="pill">{rows.length} sichtbar</span>}
+          </div>
+        }
+      >
+        {error ? (
+          <div className="error-box" role="status" aria-live="polite">
+            <strong>Fehler:</strong> {error}
+          </div>
+        ) : null}
 
-      {error ? (
-        <div style={styles.errorBox}>
-          <strong>Fehler:</strong> {error}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
+          <Input
+            label="Suchen"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ID oder Kundenname"
+            helperText="Filtert nach ID oder Kundenname."
+            style={{ maxWidth: 320 }}
+          />
         </div>
-      ) : null}
 
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Bestellung</th>
-              <th style={styles.th}>Kunde</th>
-              <th style={styles.th}>Fahrzeug</th>
-              <th style={styles.th}>Teil</th>
-              <th style={styles.th}>Preis</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Erstellt</th>
-              <th style={styles.th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
+        <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)' }}>
+          <table className="table">
+            <thead>
               <tr>
-                <td style={styles.td} colSpan={8}>
-                  Bestellungen werden geladen…
-                </td>
+                <th>Bestellung</th>
+                <th>Kunde</th>
+                <th>Fahrzeug</th>
+                <th>Teil</th>
+                <th>Preis</th>
+                <th>Status</th>
+                <th>Erstellt</th>
+                <th></th>
               </tr>
-            ) : null}
+            </thead>
+            <tbody>
+              {isLoading
+                ? Array.from({ length: 4 }).map((_, idx) => (
+                    <tr key={idx}>
+                      <td colSpan={8}>
+                        <div className="skeleton-row">
+                          <div className="skeleton-block" />
+                          <div className="skeleton-block" />
+                          <div className="skeleton-block" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                : null}
 
-            {!isLoading && rows.length === 0 ? (
-              <tr>
-                <td style={styles.td} colSpan={8}>
-                  Keine Bestellungen vorhanden.
-                </td>
-              </tr>
-            ) : null}
-
-            {!isLoading &&
-              rows.map((order) => (
-                <tr key={order.id} style={styles.tr}>
-                  <td style={styles.td}>{order.id}</td>
-                  <td style={styles.td}>{renderCustomer(order)}</td>
-                  <td style={styles.td}>{renderVehicle(order)}</td>
-                  <td style={styles.td}>
-                    {renderPart(order)}
-                    {renderSelectedBadge(order)}
-                  </td>
-                  <td style={styles.td}>{renderPrice(order)}</td>
-                  <td style={styles.td}>{renderStatus(String(order.status))}</td>
-                  <td style={styles.td}>
-                    {renderDate(order.created_at ?? order.createdAt ?? undefined)}
-                  </td>
-                  <td style={styles.tdAction}>
-                    <button
-                      style={styles.viewButton}
-                      onClick={() => {
-                        console.log('[OrdersListPage] navigating to order', order.id);
-                        navigate(`/orders/${order.id}`);
-                      }}
-                    >
-                      Details ansehen
-                    </button>
-                  </td>
+              {!isLoading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: 14 }}>Es liegen noch keine Bestellungen vor.</td>
                 </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+              ) : null}
+
+              {!isLoading &&
+                rows.map((order) => (
+                  <tr
+                    key={order.id}
+                    className="table-row table-row-clickable"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleRowNavigate(order.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleRowNavigate(order.id);
+                      }
+                    }}
+                  >
+                    <td>{order.id}</td>
+                    <td>{renderCustomer(order)}</td>
+                    <td>{renderVehicle(order)}</td>
+                    <td>
+                      {renderPart(order)}
+                      {renderSelectedBadge(order)}
+                    </td>
+                    <td>{renderPrice(order)}</td>
+                    <td>
+                      <Badge variant={statusVariant(String(order.status)) as any}>{renderStatus(String(order.status))}</Badge>
+                    </td>
+                    <td>{renderDate(order.created_at ?? order.createdAt ?? undefined)}</td>
+                    <td>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRowNavigate(order.id);
+                        }}
+                      >
+                        Details
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 };
 
-const styles: Record<string, CSSProperties> = {
-  wrapper: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16
-  },
-  headerRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12
-  },
-  subtitle: {
-    margin: 0,
-    color: '#475569',
-    fontSize: 14
-  },
-  title: {
-    margin: '4px 0 0',
-    fontSize: 22,
-    color: '#0f172a'
-  },
-  meta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8
-  },
-  pill: {
-    padding: '6px 10px',
-    backgroundColor: '#e2e8f0',
-    borderRadius: 9999,
-    fontWeight: 600,
-    color: '#0f172a',
-    border: '1px solid #cbd5e1'
-  },
-  errorBox: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#fef2f2',
-    color: '#991b1b',
-    border: '1px solid #fecdd3'
-  },
-  tableWrapper: {
-    overflowX: 'auto',
-    borderRadius: 12,
-    border: '1px solid #e2e8f0',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 12px 32px rgba(15, 23, 42, 0.06)'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    minWidth: 1000
-  },
-  th: {
-    textAlign: 'left',
-    padding: '12px 14px',
-    fontSize: 13,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#475569',
-    borderBottom: '1px solid #e2e8f0'
-  },
-  tr: {
-    borderBottom: '1px solid #e2e8f0'
-  },
-  td: {
-    padding: '12px 14px',
-    verticalAlign: 'top',
-    fontSize: 14,
-    color: '#0f172a'
-  },
-  tdAction: {
-    padding: '12px 14px',
-    verticalAlign: 'middle'
-  },
-  cellStack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4
-  },
-  muted: {
-    color: '#64748b',
-    fontSize: 13
-  },
-  viewButton: {
-    padding: '8px 12px',
-    backgroundColor: '#1d4ed8',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontWeight: 700,
-    cursor: 'pointer'
-  },
+export default OrdersListPage;
+
+const styles = {
+  muted: { color: 'var(--muted)', fontSize: 13 },
+  cellStack: { display: 'flex', flexDirection: 'column', gap: 4 },
   selectedBadge: {
     marginTop: 6,
     display: 'inline-block',
     padding: '4px 8px',
     borderRadius: 9999,
-    backgroundColor: '#ecfdf3',
-    color: '#166534',
-    border: '1px solid #bbf7d0',
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    color: '#22c55e',
+    border: '1px solid rgba(34,197,94,0.4)',
     fontSize: 12,
     fontWeight: 700
   }
-};
-
-export default OrdersListPage;
+} as const;

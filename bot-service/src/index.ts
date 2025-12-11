@@ -13,6 +13,8 @@ import orderAutoOrderRouter from "./routes/orderAutoOrder";
 import whatsappWebhookRouter from "./routes/whatsappWebhook";
 import { registerDashboardRoutes } from "./routes/dashboardRoutes";
 import { createInternalRouter } from "./routes/internalRoutes";
+import botInventoryRouter from "./routes/botInventoryRoutes";
+import wwsConnectionsRouter from "./routes/wwsConnectionsRoutes";
 
 const app = express();
 
@@ -50,6 +52,10 @@ app.use("/api/orders", orderAutoOrderRouter);
 
 // OEM-Ermittlung (Mock)
 app.use("/api/oem", oemRouter);
+
+// Inventory-Orchestrator für Bot + WWS-Connections für Dashboard
+app.use("/api/bot/inventory", botInventoryRouter);
+app.use("/api/wws-connections", wwsConnectionsRouter);
 
 // Bot-Pipeline für eingehende Nachrichten
 app.use("/bot/message", botMessageRouter);

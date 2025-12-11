@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Autoteile WWS Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="login-view" class="centered-card">
+      <h1>Autoteile WWS</h1>
+      <p class="muted">Demo-Login erforderlich</p>
+      <label>
+        Benutzername
+        <input type="text" id="login-username" placeholder="admin" />
+      </label>
+      <label>
+        Passwort
+        <input type="password" id="login-password" placeholder="••••••" />
+      </label>
+      <button id="login-btn">Login</button>
+      <div id="login-message" class="message"></div>
+    </div>
+
+    <div id="app-view" style="display: none;">
+      <header>
+        <div>
+          <h1>Autoteile Warenwirtschaftssystem (Demo)</h1>
+          <p class="muted">Basis für KI-Autoteile-Bot</p>
+        </div>
+        <div class="user-info">
+          <span id="user-display"></span>
+          <button id="logout-btn" class="secondary">Logout</button>
+        </div>
+      </header>
+
+      <section class="layout">
+        <div class="panel">
+          <h2>Suche & Teileliste</h2>
+          <div class="filters">
+            <input type="text" id="search-text" placeholder="OEM oder Freitext" />
+            <select id="filter-brand">
+              <option value="">Alle Marken</option>
+              <option value="BMW">BMW</option>
+              <option value="Audi">Audi</option>
+              <option value="Mercedes">Mercedes</option>
+            </select>
+            <button id="search-btn">Suchen</button>
+          </div>
+          <div class="table-wrapper">
+            <table id="parts-table">
+              <thead>
+                <tr>
+                  <th>OEM</th>
+                  <th>Marke</th>
+                  <th>Modell</th>
+                  <th>Titel</th>
+                  <th>Preis</th>
+                  <th>Lokal</th>
+                  <th>Reserviert</th>
+                </tr>
+              </thead>
+              <tbody id="parts-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Details & Bestand</h2>
+          <div id="part-detail" class="detail">
+            <div id="part-empty">Bitte ein Teil aus der Tabelle auswählen.</div>
+            <div id="part-content" style="display: none;">
+              <div class="detail-grid">
+                <label>OEM<input id="detail-oem" disabled /></label>
+                <label>Interne SKU<input id="detail-sku" /></label>
+                <label>Marke<input id="detail-brand" /></label>
+                <label>Modell<input id="detail-model" /></label>
+                <label>Modellcode<input id="detail-modelCode" /></label>
+                <label>Kategorie<input id="detail-category" /></label>
+                <label>Titel<input id="detail-title" /></label>
+                <label>Beschreibung<textarea id="detail-description"></textarea></label>
+                <label>Preis (€)<input id="detail-price" type="number" step="0.01" /></label>
+                <label>Währung<input id="detail-currency" /></label>
+                <label>Lagerbestand lokal<input id="detail-stockLocal" type="number" /></label>
+                <label>Reserviert<input id="detail-stockReserved" type="number" /></label>
+                <label>Lagerort<input id="detail-stockLocation" /></label>
+                <label>Lieferant<input id="detail-supplier" /></label>
+              </div>
+              <div class="compatible">
+                <label>Kompatible Modelle (kommagetrennt)
+                  <input id="detail-compatibleModels" />
+                </label>
+              </div>
+              <div class="actions">
+                <button id="save-part-btn">Speichern</button>
+                <input id="qty-input" type="number" min="1" placeholder="Menge" />
+                <button id="reserve-btn" class="secondary">Reservieren</button>
+                <button id="release-btn" class="secondary">Release</button>
+                <button id="book-btn" class="danger">Buchen</button>
+              </div>
+              <div id="detail-message" class="message"></div>
+            </div>
+          </div>
+
+          <div class="availability">
+            <h3>Verfügbarkeit prüfen (lokal + extern)</h3>
+            <div class="availability-form">
+              <input type="text" id="availability-oem" placeholder="OEM eingeben" />
+              <button id="availability-btn">Prüfen</button>
+            </div>
+            <div id="availability-results" class="availability-results"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

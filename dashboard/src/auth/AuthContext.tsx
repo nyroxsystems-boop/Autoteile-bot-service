@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 
 type MerchantSession = {
   merchantId: string;
@@ -82,12 +82,8 @@ export function useAuth() {
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!session) navigate('/auth');
-  }, [session, navigate]);
-
-  if (!session) return null;
+  if (!session) {
+    return <Navigate to="/auth" replace />;
+  }
   return <>{children}</>;
 }

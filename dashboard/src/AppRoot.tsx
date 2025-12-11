@@ -1,12 +1,22 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { I18nProvider, useI18n } from './i18n';
+import Button from './ui/Button';
+import Badge from './ui/Badge';
 
 const navItems = [
   { path: '/', label: 'Übersicht' },
-  { path: '/orders', label: 'Bestellungen' }
+  { path: '/orders', label: 'Bestellungen' },
+  { path: '/wws', label: 'Warenwirtschaftssystem' }
 ];
+
+const pageTitleMap: Record<string, string> = {
+  '/': 'Übersicht',
+  '/orders': 'Bestellungen',
+  '/orders/': 'Bestellungen',
+  '/wws': 'Warenwirtschaftssystem'
+};
 
 const App: React.FC = () => (
   <I18nProvider>
@@ -18,174 +28,120 @@ const InnerApp: React.FC = () => {
   const location = useLocation();
   const auth = useAuth();
   const { t, lang, setLang } = useI18n();
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof localStorage === 'undefined') return 'dark';
+    const stored = localStorage.getItem('theme');
+    return stored === 'light' ? 'light' : 'dark';
+  });
 
   useEffect(() => {
-    console.log('[Layout] mounted');
-    return () => console.log('[Layout] unmounted');
-  }, []);
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
-  useEffect(() => {
-    console.log('[Layout] route changed to', location.pathname);
-  }, [location]);
+  const pageTitle =
+    pageTitleMap[location.pathname] ||
+    (location.pathname.startsWith('/orders/') ? 'Bestelldetails' : t('brandTitle'));
 
   return (
-    <div style={styles.shell} className="container">
-      <header style={styles.header}>
-        <div style={styles.brandBlock}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={styles.logo} />
-            <div>
-              <div style={styles.brandTitle}>{t('brandTitle')}</div>
-              <p style={styles.brandSubtitle}>{t('brandSubtitle')}</p>
-            </div>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-icon" />
+          <div>
+            <div style={{ fontWeight: 800, letterSpacing: 0.3 }}>PartsBot Dashboard</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>{t('brandSubtitle')}</div>
           </div>
         </div>
-
-        <nav style={styles.nav}>
+        <nav className="sidebar-nav">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {})
-              })}
+              className={({ isActive }) => ['sidebar-link', isActive ? 'active' : ''].join(' ')}
             >
-              {item.label}
+              <span className="sidebar-link-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
-
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          {auth?.session ? (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <div style={styles.merchantInfo}>
-                <div style={styles.avatar}>{auth.session.merchantId?.slice(0, 2).toUpperCase()}</div>
-                <div style={{ color: '#cbd5e1', fontWeight: 700 }}>{auth.session.merchantId}</div>
+        {auth?.session ? (
+          <div className="account-card">
+            <div className="account-header">
+              <div className="account-avatar">
+                {auth.session.merchantId?.slice(0, 2).toUpperCase()}
               </div>
-              <button style={styles.logoutButton} onClick={() => auth.logout()}>
-                {t('logout')}
-              </button>
+              <div className="account-meta">
+                <div className="account-name">{auth.session.merchantId}</div>
+                <Badge variant="success">Plan aktiv</Badge>
+              </div>
             </div>
-          ) : null}
+            <details className="account-settings">
+              <summary>Settings</summary>
+              <div className="settings-list">
+                <Button variant="ghost" size="sm" fullWidth>
+                  Marge & Shops
+                </Button>
+                <Button variant="ghost" size="sm" fullWidth>
+                  Billing & Konto
+                </Button>
+                <Button variant="ghost" size="sm" fullWidth>
+                  Mitarbeiteraccounts
+                </Button>
+                <Button variant="ghost" size="sm" fullWidth onClick={() => auth.logout()}>
+                  {t('logout')}
+                </Button>
+              </div>
+            </details>
+          </div>
+        ) : null}
+      </aside>
 
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value as any)}
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff' }}
-            aria-label="language"
-          >
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-            <option value="pl">Polski</option>
-          </select>
+      <div className="main-area">
+        <div className="topbar">
+          <div className="topbar-title">{pageTitle}</div>
+          <div className="topbar-actions">
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as any)}
+              className="topbar-select"
+              aria-label="language"
+            >
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+              <option value="pl">Polski</option>
+            </select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+              aria-label="Theme umschalten"
+            >
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </Button>
+            {auth?.session ? (
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800
+                }}
+              >
+                {auth.session.merchantId?.slice(0, 2).toUpperCase()}
+              </div>
+            ) : null}
+          </div>
         </div>
-      </header>
-
-      <main style={styles.main}>
-        <div style={styles.pageWrapper}>
+        <main className="page">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
-};
-
-type CSSProperties = React.CSSProperties;
-
-const styles: Record<string, CSSProperties> = {
-  shell: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '18px 28px',
-    backgroundColor: '#0f172a',
-    color: '#e2e8f0',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
-  },
-  brandBlock: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4
-  },
-  logo: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    background: 'linear-gradient(135deg,#2563eb,#06b6d4)'
-  },
-  brandTitle: {
-    fontSize: 20,
-    fontWeight: 800,
-    letterSpacing: 0.3
-  },
-  brandSubtitle: {
-    margin: 0,
-    color: '#cbd5e1',
-    fontSize: 13
-  },
-  nav: {
-    display: 'flex',
-    gap: 10
-  },
-  navLink: {
-    padding: '10px 14px',
-    borderRadius: 10,
-    color: '#e2e8f0',
-    textDecoration: 'none',
-    border: '1px solid transparent',
-    fontWeight: 700,
-    letterSpacing: 0.2,
-    transition: 'all 0.15s ease'
-  },
-  navLinkActive: {
-    backgroundColor: '#1d4ed8',
-    borderColor: '#3b82f6',
-    color: '#ffffff',
-    boxShadow: '0 8px 18px rgba(59,130,246,0.35)'
-  },
-  merchantInfo: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center'
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    background: '#0f172a',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 800
-  },
-  main: {
-    flex: 1,
-    padding: '20px 28px'
-  },
-  pageWrapper: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    border: '1px solid #e2e8f0',
-    padding: 24,
-    boxShadow: '0 10px 30px rgba(15, 23, 42, 0.08)'
-  },
-  logoutButton: {
-    background: 'transparent',
-    border: '1px solid rgba(226,232,240,0.08)',
-    color: '#e2e8f0',
-    padding: '6px 10px',
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontWeight: 700
-  }
 };
 
 export default App;

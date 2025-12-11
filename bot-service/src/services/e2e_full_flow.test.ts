@@ -22,7 +22,11 @@ jest.mock('./openAiService', () => ({
 }));
 
 jest.mock('./oemService', () => ({
-  resolveOEM: jest.fn(async () => ({ success: true, oemNumber: 'OEM-E2E-1' }))
+  resolveOEMForOrder: jest.fn(async () => ({
+    primaryOEM: 'OEM-E2E-1',
+    candidates: [{ oem: 'OEM-E2E-1', source: 'mock', confidence: 0.95 }],
+    overallConfidence: 0.95
+  }))
 }));
 
 // Mock scraping service to return offers (but keep real insertShopOffers in supabaseService mocked)
@@ -39,6 +43,7 @@ jest.mock('./supabaseService', () => ({
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => Promise.resolve({ id: 'veh-1' })),
   getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([])),
   insertShopOffers: jest.fn(async (orderId: string, oem: string, offers: any[]) => {
     // capture inserted offers and pretend DB returned them with ids
     const mapped = offers.map((o, idx) => ({ id: `so-${idx + 1}`, orderId, oemNumber: oem, ...o }));
@@ -50,7 +55,7 @@ jest.mock('./supabaseService', () => ({
 
 import { handleIncomingBotMessage } from './botLogicService';
 import { generateChatCompletion } from './openAiService';
-import { resolveOEM } from './oemService';
+import { resolveOEMForOrder } from './oemService';
 import { scrapeOffersForOrder } from './scrapingService';
 import { insertShopOffers, listShopOffersByOrderId } from './supabaseService';
 
@@ -65,7 +70,7 @@ describe('E2E mocked: WhatsApp -> Orchestrator -> OEM -> Scrape -> Dashboard', (
     const res = await handleIncomingBotMessage(payload);
 
   expect(generateChatCompletion).toHaveBeenCalled();
-  expect(resolveOEM).toHaveBeenCalled();
+  expect(resolveOEMForOrder).toHaveBeenCalled();
 
   // insertShopOffers should have been invoked by scrapingService (the real scrapingService calls adapters then insertShopOffers)
   expect(insertShopOffers).toHaveBeenCalled();

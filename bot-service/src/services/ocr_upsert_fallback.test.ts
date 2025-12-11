@@ -54,12 +54,19 @@ jest.mock('./supabaseService', () => ({
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => { throw new Error('DB column missing'); }),
   getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([])),
   updateOrderScrapeTask: jest.fn(() => Promise.resolve())
 }));
 
 // Mock OEM resolver and scrapers
 jest.mock('./oemService', () => ({
-  resolveOEM: jest.fn(() => Promise.resolve({ success: true, oemNumber: 'OEM-1111' }))
+  resolveOEMForOrder: jest.fn(() =>
+    Promise.resolve({
+      primaryOEM: 'OEM-1111',
+      candidates: [{ oem: 'OEM-1111', source: 'mock', confidence: 0.95 }],
+      overallConfidence: 0.95
+    })
+  )
 }));
 
 jest.mock('./scrapingService', () => ({

@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import Card from '../ui/Card';
+import Button from '../ui/Button';
+import Badge from '../ui/Badge';
 
 type Supplier = {
   id: string;
@@ -159,112 +162,118 @@ const DealerSuppliersPage: React.FC<Props> = ({ dealerId }) => {
 
   return (
     <div style={styles.wrapper}>
-      <div style={styles.headerRow}>
-        <div>
-          <p style={styles.subtitle}>Supplier-Konfiguration pro Händler</p>
-          <h2 style={styles.title}>Lieferanten verwalten</h2>
-        </div>
-        <div style={styles.meta}>
-          {isLoading ? <span style={styles.pill}>Lädt…</span> : null}
-          {isSaving ? <span style={styles.pill}>Speichern…</span> : null}
-          {!isLoading ? <span style={styles.pill}>{sortedItems.length} Lieferanten</span> : null}
-        </div>
-      </div>
+      <Card
+        title="Lieferanten verwalten"
+        subtitle="Supplier-Konfiguration pro Händler. Hinweis: 1 = höchste Priorität."
+        actions={
+          <div style={{ display: 'flex', gap: 8 }}>
+            {isLoading ? <span className="pill">Lädt…</span> : null}
+            {isSaving ? <span className="pill">Speichern…</span> : null}
+            {!isLoading ? <span className="pill">{sortedItems.length} Lieferanten</span> : null}
+          </div>
+        }
+      >
+        {error ? (
+          <div className="error-box" role="status" aria-live="polite">
+            <strong>Fehler:</strong> {error}
+          </div>
+        ) : null}
 
-      {error ? (
-        <div style={styles.errorBox}>
-          <strong>Fehler:</strong> {error}
-        </div>
-      ) : null}
+        {success ? <div className="success-box" role="status" aria-live="polite">{success}</div> : null}
 
-      {success ? <div style={styles.successBox}>{success}</div> : null}
-
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Aktiv</th>
-              <th style={styles.th}>Default</th>
-              <th style={styles.th}>Supplier</th>
-              <th style={styles.th}>Priorität</th>
-              <th style={styles.th}>Aktion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
+        <div style={styles.tableWrapper}>
+          <table className="table">
+            <thead>
               <tr>
-                <td style={styles.td} colSpan={5}>
-                  Lieferanten werden geladen…
-                </td>
+                <th>Aktiv</th>
+                <th>Default</th>
+                <th>Supplier</th>
+                <th>Priorität</th>
+                <th>Aktion</th>
               </tr>
-            ) : null}
-
-            {!isLoading && sortedItems.length === 0 ? (
-              <tr>
-                <td style={styles.td} colSpan={5}>
-                  Keine Lieferanten gefunden.
-                </td>
-              </tr>
-            ) : null}
-
-            {!isLoading &&
-              sortedItems.map((item, index) => (
-                <tr key={item.supplier.id} style={styles.tr}>
-                  <td style={styles.td}>
-                    <input
-                      type="checkbox"
-                      checked={item.enabled}
-                      onChange={() => toggleEnabled(item.supplier.id)}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <input
-                      type="radio"
-                      name="defaultSupplier"
-                      checked={item.is_default}
-                      onChange={() => setDefaultSupplier(item.supplier.id)}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <div style={styles.cellStack}>
-                      <div style={styles.supplierName}>{item.supplier.name}</div>
-                      {item.supplier.actor_variant ? (
-                        <div style={styles.muted}>Variant: {item.supplier.actor_variant}</div>
-                      ) : null}
-                      <div style={styles.muted}>#{item.supplier.id}</div>
-                      <div style={styles.badge}>Land: {item.supplier.country}</div>
-                    </div>
-                  </td>
-                  <td style={styles.td}>{item.priority}</td>
-                  <td style={styles.tdAction}>
-                    <div style={styles.actionButtons}>
-                      <button
-                        style={styles.smallButton}
-                        disabled={index === 0}
-                        onClick={() => moveUp(item.supplier.id)}
-                      >
-                        ↑ Hoch
-                      </button>
-                      <button
-                        style={styles.smallButton}
-                        disabled={index === sortedItems.length - 1}
-                        onClick={() => moveDown(item.supplier.id)}
-                      >
-                        ↓ Runter
-                      </button>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 14 }}>
+                    <div className="skeleton-row">
+                      <div className="skeleton-block" />
+                      <div className="skeleton-block" />
+                      <div className="skeleton-block" />
                     </div>
                   </td>
                 </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+              ) : null}
 
-      <div style={styles.footer}>
-        <button style={styles.saveButton} onClick={handleSave} disabled={isSaving || isLoading}>
-          Speichern
-        </button>
-      </div>
+              {!isLoading && sortedItems.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 14 }}>
+                    Du hast noch keine Lieferanten hinterlegt.
+                  </td>
+                </tr>
+              ) : null}
+
+              {!isLoading &&
+                sortedItems.map((item, index) => (
+                  <tr key={item.supplier.id} className="table-row">
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={item.enabled}
+                        onChange={() => toggleEnabled(item.supplier.id)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="radio"
+                        name="defaultSupplier"
+                        checked={item.is_default}
+                        onChange={() => setDefaultSupplier(item.supplier.id)}
+                      />
+                    </td>
+                    <td>
+                      <div style={styles.cellStack}>
+                        <div style={styles.supplierName}>{item.supplier.name}</div>
+                        {item.supplier.actor_variant ? (
+                          <div style={styles.muted}>Variant: {item.supplier.actor_variant}</div>
+                        ) : null}
+                        <div style={styles.muted}>#{item.supplier.id}</div>
+                        <Badge variant="neutral">Land: {item.supplier.country}</Badge>
+                      </div>
+                    </td>
+                    <td>{item.priority}</td>
+                    <td style={styles.tdAction}>
+                      <div style={styles.actionButtons}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={index === 0}
+                          onClick={() => moveUp(item.supplier.id)}
+                        >
+                          ↑ Hoch
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={index === sortedItems.length - 1}
+                          onClick={() => moveDown(item.supplier.id)}
+                        >
+                          ↓ Runter
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={styles.footer}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isLoading}>
+            Speichern
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 };

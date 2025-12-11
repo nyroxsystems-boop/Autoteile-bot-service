@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listOrders } from '../api/orders';
 import { fetchOverviewStats, type OverviewStats } from '../api/stats';
 import type { Order } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { fetchMerchantSettings, saveMerchantSettings, type MerchantSettings } from '../api/merchant';
+import Card from '../ui/Card';
+import Button from '../ui/Button';
+import Badge from '../ui/Badge';
+import Input from '../ui/Input';
 
 const OverviewPage = () => {
   const [timeRange, setTimeRange] = useState<'Heute' | 'Diese Woche' | 'Dieser Monat'>('Heute');
@@ -14,23 +18,20 @@ const OverviewPage = () => {
   const [step, setStep] = useState<number>(0);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
   const auth = useAuth();
 
   // a small default list of known shops (can be replaced by a real backend list later)
   const KNOWN_SHOPS = ['Autodoc', 'Stahlgruber', 'Mister Auto'];
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('[OverviewPage] mounted');
-    return () => console.log('[OverviewPage] unmounted');
-  }, []);
+  const isStatsLoading = !stats && !error;
 
   useEffect(() => {
     const loadStats = async () => {
       try {
         const result = await fetchOverviewStats(timeRange);
         setStats(result);
-        console.log('[OverviewPage] Statistiken aktualisiert', result);
       } catch (err) {
         console.error('[OverviewPage] Fehler beim Laden der Statistiken', err);
         setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
@@ -42,10 +43,8 @@ const OverviewPage = () => {
 
   useEffect(() => {
     const loadOrders = async () => {
-      console.log('[OverviewPage] Bestellungen für KPIs werden geladen...');
       try {
         const data = await listOrders();
-        console.log('[OverviewPage] Bestellungen geladen:', data.length);
         setOrders(data);
       } catch (err) {
         console.error('[OverviewPage] Fehler beim Laden der Bestellungen', err);
@@ -65,6 +64,7 @@ const OverviewPage = () => {
         if (s) {
           setSelectedShops(s.selectedShops ?? []);
           setDefaultMargin(s.marginPercent ?? null);
+          setShowSettings(false);
         }
       } catch (err) {
         console.error('[OverviewPage] Fehler beim Laden der Merchant-Settings', err);
@@ -119,6 +119,7 @@ const OverviewPage = () => {
       });
       setError(null);
       setStep(0);
+      setShowSettings(false);
       console.log('[OverviewPage] Merchant settings saved');
     } catch (err) {
       console.error('[OverviewPage] Fehler beim Speichern der Merchant-Settings', err);
@@ -128,152 +129,175 @@ const OverviewPage = () => {
     }
   };
 
-  console.log('[OverviewPage] Hinweis-Sektion gerendert');
-
   return (
-    <div style={styles.wrapper} className="container">
-      <div className="card" style={{ padding: 20 }}>
-      <div style={styles.header}>
-        <div>
-          <p style={styles.eyebrow}>Schnellüberblick</p>
-          <h1 style={styles.title}>Übersicht</h1>
-        </div>
-        <div style={styles.rangeSelector}>
-          <label htmlFor="zeitraum" style={styles.label}>
-            Zeitraum
-          </label>
-          <select
-            id="zeitraum"
-            value={timeRange}
-            onChange={(e) => handleRangeChange(e.target.value as typeof timeRange)}
-            style={styles.select}
-          >
-            <option value="Heute">Heute</option>
-            <option value="Diese Woche">Diese Woche</option>
-            <option value="Dieser Monat">Dieser Monat</option>
-          </select>
-        </div>
-      </div>
-
-      {error ? (
-        <div style={styles.errorBox}>
-          <strong>Fehler:</strong> {error}
-        </div>
-      ) : null}
-
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Kennzahlen</h2>
-        <div style={styles.kpiGrid}>
-          <KpiCard
-            title="Bestellungen im Zeitraum"
-            value={stats?.ordersInPeriod ?? '–'}
-            description="Alle neu gestarteten Bestellungen im gewählten Zeitraum."
-          />
-          <KpiCard
-            title="Offene Bestellungen (OEM-Prüfung)"
-            value={oemIssuesCount}
-            description="Bestellungen mit offener oder problematischer OEM-Ermittlung."
-          />
-          <KpiCard
-            title="Empfangene Nachrichten"
-            value={stats?.incomingMessages ?? '–'}
-            description="Eingehende WhatsApp-Nachrichten im Zeitraum."
-          />
-          <KpiCard
-            title="Abgebrochene Bestellungen"
-            value={stats?.abortedOrders ?? '–'}
-            description="Begonnene, aber nicht abgeschlossene Vorgänge. (TODO: echte Definition)"
-          />
-          <KpiCard
-            title="Konversionsrate (%)"
-            value={`${stats?.conversionRate ?? '–'}%`}
-            description="Abschlussrate gegenüber gestarteten Anfragen."
-          />
-          <KpiCard
-            title="Durchschnittliche Marge (%)"
-            value={`${stats?.averageMargin ?? '–'}%`}
-            description="Mittelwert der angewendeten Marge pro Bestellung."
-          />
-          <KpiCard
-            title="Durchschnittlicher Warenkorb (€)"
-            value={`€ ${stats?.averageBasket ?? '–'}`}
-            description="Durchschnittlicher Endpreis pro Bestellung."
-          />
-        </div>
-      </section>
-      </div>
-
-      <section style={styles.section} className="card">
-        <h2 style={styles.sectionTitle}>Onboarding & Grundeinstellungen</h2>
-        <p style={styles.muted}>Einmalig auswählen: Shops und Standard-Marge. Später jederzeit änderbar.</p>
-
-  <div style={styles.stepper}>
-          <div style={styles.stepHeader}>
-            <div style={{ ...styles.stepPill, ...(step === 0 ? styles.stepActive : {}) }}>1</div>
-            <div style={styles.stepTitle}>Shops auswählen</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card
+        title="Übersicht"
+        subtitle="Schnellüberblick über Anfragen, Bestellungen und Marge."
+        actions={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button
+              variant={timeRange === 'Heute' ? 'primary' : 'secondary'}
+              onClick={() => handleRangeChange('Heute')}
+              size="sm"
+            >
+              Heute
+            </Button>
+            <Button
+              variant={timeRange === 'Diese Woche' ? 'primary' : 'secondary'}
+              onClick={() => handleRangeChange('Diese Woche')}
+              size="sm"
+            >
+              Diese Woche
+            </Button>
+            <Button
+              variant={timeRange === 'Dieser Monat' ? 'primary' : 'secondary'}
+              onClick={() => handleRangeChange('Dieser Monat')}
+              size="sm"
+            >
+              Dieser Monat
+            </Button>
           </div>
-          {step === 0 ? (
-            <div style={styles.stepBody}>
-              <p style={styles.muted}>Wähle die Shops aus, die bei der Angebotssuche berücksichtigt werden sollen.</p>
-              <div style={styles.shopsGrid}>
-                {KNOWN_SHOPS.map((s) => (
-                  <label key={s} style={styles.shopCard}>
-                    <input type="checkbox" checked={selectedShops.includes(s)} onChange={() => handleToggleShop(s)} />
-                    <div style={styles.shopName}>{s}</div>
-                  </label>
-                ))}
-              </div>
-              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                <button style={styles.primaryButton} onClick={() => setStep(1)} disabled={selectedShops.length === 0}>
-                  Weiter
-                </button>
-                <button style={styles.ghostButton} onClick={() => setSelectedShops([])}>
-                  Zurücksetzen
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div style={styles.stepBody}>
-              <div style={styles.stepHeader}>
-                <div style={{ ...styles.stepPill, ...(step === 1 ? styles.stepActive : {}) }}>2</div>
-                <div style={styles.stepTitle}>Standard-Marge</div>
-              </div>
-              <p style={styles.muted}>Diese Marge wird prozentual auf den Teilepreis aufgeschlagen.</p>
-              <div style={styles.marginRow}>
-                <label htmlFor="defaultMargin" style={styles.label}>
-                  Standard-Marge (%)
-                </label>
-                <input
-                  id="defaultMargin"
-                  type="number"
-                  value={defaultMargin ?? ''}
-                  placeholder="z.B. 20"
-                  onChange={(e) => handleMarginChange(e.target.value)}
-                  style={styles.input}
+        }
+      >
+        {error ? (
+          <div className="error-box">
+            <strong>Fehler:</strong> {error}
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 12
+          }}
+        >
+          {isStatsLoading
+            ? Array.from({ length: 4 }).map((_, idx) => (
+                <Card key={idx}>
+                  <div className="skeleton-row" style={{ gridTemplateColumns: '1fr' }}>
+                    <div className="skeleton-block" style={{ height: 14 }} />
+                    <div className="skeleton-block" style={{ height: 20, width: '60%' }} />
+                    <div className="skeleton-block" style={{ height: 12, width: '80%' }} />
+                  </div>
+                </Card>
+              ))
+            : (
+              <>
+                <KpiCard
+                  title="Bestellungen im Zeitraum"
+                  value={stats?.ordersInPeriod ?? '–'}
+                  description="Alle neu gestarteten Bestellungen im gewählten Zeitraum."
                 />
-              </div>
-
-              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                <button style={styles.primaryButton} onClick={handleSaveSettings} disabled={isSavingSettings}>
-                  {isSavingSettings ? 'Speichert…' : 'Speichern & Abschließen'}
-                </button>
-                <button style={styles.ghostButton} onClick={() => setStep(0)}>
-                  Zurück
-                </button>
-              </div>
-            </div>
-          )}
+                <KpiCard
+                  title="Offene Bestellungen (OEM)"
+                  value={oemIssuesCount}
+                  description="Bestellungen mit offener oder problematischer OEM-Ermittlung."
+                />
+                <KpiCard
+                  title="Empfangene Nachrichten"
+                  value={stats?.incomingMessages ?? '–'}
+                  description="Eingehende WhatsApp-Nachrichten im Zeitraum."
+                />
+                <KpiCard
+                  title="Abgebrochene Bestellungen"
+                  value={stats?.abortedOrders ?? '–'}
+                  description="Begonnene, aber nicht abgeschlossene Vorgänge."
+                />
+                <KpiCard
+                  title="Konversionsrate"
+                  value={`${stats?.conversionRate ?? '–'}%`}
+                  description="Abschlussrate gegenüber gestarteten Anfragen."
+                />
+                <KpiCard
+                  title="Ø Marge"
+                  value={`${stats?.averageMargin ?? '–'}%`}
+                  description="Mittelwert der angewendeten Marge pro Bestellung."
+                />
+                <KpiCard
+                  title="Ø Warenkorb"
+                  value={stats?.averageBasket ? `€ ${stats.averageBasket}` : '–'}
+                  description="Durchschnittlicher Endpreis pro Bestellung."
+                />
+              </>
+            )}
         </div>
-      </section>
+      </Card>
 
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Hinweise & Status</h2>
-        <ul style={styles.list}>
-          <li>Empfangene Nachrichten heute: {stats?.incomingMessages ?? '–'} (TODO: live)</li>
-          <li>Abgebrochene Bestellungen heute: {stats?.abortedOrders ?? '–'} (TODO)</li>
+      <Card
+        title="Onboarding & Grundeinstellungen"
+        subtitle="Shops auswählen und Standard-Marge festlegen."
+      >
+        {!showSettings && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ color: 'var(--muted)' }}>
+              Einstellungen hinterlegt. Shops: {selectedShops.join(', ') || '–'} · Standard-Marge: {defaultMargin ?? '–'}%
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => setShowSettings(true)}>
+              Einstellungen bearbeiten
+            </Button>
+          </div>
+        )}
+        {showSettings && (
+          <>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <Badge variant={step === 0 ? 'success' : 'neutral'}>Schritt 1</Badge>
+              <Badge variant={step === 1 ? 'success' : 'neutral'}>Schritt 2</Badge>
+            </div>
+            {step === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ color: 'var(--muted)' }}>Wähle die Shops aus, die bei der Angebotssuche berücksichtigt werden sollen.</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {KNOWN_SHOPS.map((s) => (
+                    <label key={s} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10, borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <input type="checkbox" checked={selectedShops.includes(s)} onChange={() => handleToggleShop(s)} />
+                      <div style={{ fontWeight: 700 }}>{s}</div>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="primary" onClick={() => setStep(1)} disabled={selectedShops.length === 0}>
+                    Weiter
+                  </Button>
+                  <Button variant="ghost" onClick={() => setSelectedShops([])}>
+                    Zurücksetzen
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ color: 'var(--muted)' }}>Diese Marge wird prozentual auf den Teilepreis aufgeschlagen.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 200px)', gap: 12 }}>
+                  <Input
+                    label="Standard-Marge (%)"
+                    type="number"
+                    value={defaultMargin ?? ''}
+                    placeholder="z.B. 20"
+                    onChange={(e) => handleMarginChange(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="primary" onClick={handleSaveSettings} disabled={isSavingSettings}>
+                    {isSavingSettings ? 'Speichert…' : 'Speichern & Abschließen'}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setStep(0)}>
+                    Zurück
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Card title="Hinweise & Status">
+        <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <li>Empfangene Nachrichten heute: {stats?.incomingMessages ?? '–'}</li>
+          <li>Abgebrochene Bestellungen heute: {stats?.abortedOrders ?? '–'}</li>
           <li>Bestellungen, die auf OEM-Klärung warten: {oemIssuesCount}</li>
         </ul>
-      </section>
+      </Card>
     </div>
   );
 };
@@ -286,191 +310,11 @@ type KpiCardProps = {
 
 const KpiCard = ({ title, value, description }: KpiCardProps) => {
   return (
-    <div style={styles.kpiCard}>
-      <div style={styles.kpiTitle}>{title}</div>
-      <div style={styles.kpiValue}>{value}</div>
-      <div style={styles.kpiDescription}>{description}</div>
-    </div>
+    <Card>
+      <div style={{ color: 'var(--muted)', fontSize: 13, fontWeight: 700 }}>{title}</div>
+      <div style={{ fontSize: 26, fontWeight: 800 }}>{value}</div>
+      <div style={{ color: 'var(--muted)', fontSize: 13 }}>{description}</div>
+    </Card>
   );
 };
-
-const styles: Record<string, CSSProperties> = {
-  wrapper: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 20
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  eyebrow: {
-    margin: 0,
-    color: '#475569',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    fontSize: 12
-  },
-  title: {
-    margin: '4px 0 0',
-    fontSize: 26,
-    color: '#0f172a'
-  },
-  rangeSelector: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8
-  },
-  label: {
-    fontWeight: 700,
-    color: '#0f172a'
-  },
-  select: {
-    padding: '8px 10px',
-    borderRadius: 8,
-    border: '1px solid #cbd5e1',
-    fontSize: 14
-  },
-  section: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: 20,
-    color: '#0f172a'
-  },
-  kpiGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 12
-  },
-  kpiCard: {
-    border: '1px solid #e2e8f0',
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#f8fafc',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6
-  },
-  kpiTitle: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: 700
-  },
-  kpiValue: {
-    fontSize: 24,
-    fontWeight: 800,
-    color: '#0f172a'
-  },
-  kpiDescription: {
-    fontSize: 13,
-    color: '#64748b'
-  },
-  muted: {
-    color: '#475569'
-  },
-  marginRow: {
-    display: 'flex',
-    gap: 10,
-    alignItems: 'center'
-  },
-  input: {
-    padding: '8px 10px',
-    borderRadius: 8,
-    border: '1px solid #cbd5e1',
-    fontSize: 14,
-    minWidth: 140
-  },
-  primaryButton: {
-    padding: '10px 14px',
-    backgroundColor: '#1d4ed8',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: 10,
-    fontWeight: 700,
-    cursor: 'pointer'
-  },
-  list: {
-    margin: 0,
-    paddingLeft: 20,
-    color: '#334155',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6
-  },
-  errorBox: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#fef2f2',
-    color: '#991b1b',
-    border: '1px solid #fecdd3'
-  }
-  ,
-  stepper: {
-    border: '1px solid #e6eef8',
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12
-  },
-  stepHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12
-  },
-  stepPill: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e6eef8',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 800,
-    color: '#0f172a'
-  },
-  stepActive: {
-    backgroundColor: '#1d4ed8',
-    color: '#fff'
-  },
-  stepTitle: {
-    fontWeight: 800,
-    color: '#0f172a'
-  },
-  stepBody: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12
-  },
-  shopsGrid: {
-    display: 'flex',
-    gap: 10,
-    flexWrap: 'wrap'
-  },
-  shopCard: {
-    border: '1px solid #e2e8f0',
-    padding: 10,
-    borderRadius: 8,
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center'
-  },
-  shopName: {
-    fontWeight: 700
-  },
-  ghostButton: {
-    padding: '10px 14px',
-    background: 'transparent',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    cursor: 'pointer'
-  }
-};
-
 export default OverviewPage;

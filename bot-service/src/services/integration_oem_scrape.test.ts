@@ -34,12 +34,17 @@ jest.mock('./supabaseService', () => ({
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => Promise.resolve()),
   getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([])),
   updateOrderScrapeTask: jest.fn(() => Promise.resolve())
 }));
 
 // Mock OEM resolver to return success
 jest.mock('./oemService', () => ({
-  resolveOEM: jest.fn(async () => ({ success: true, oemNumber: 'OEM-INT-123' }))
+  resolveOEMForOrder: jest.fn(async () => ({
+    primaryOEM: 'OEM-INT-123',
+    candidates: [{ oem: 'OEM-INT-123', source: 'mock', confidence: 0.95 }],
+    overallConfidence: 0.95
+  }))
 }));
 
 // Mock scraping service to simulate synchronous scrape result
@@ -54,7 +59,7 @@ jest.mock('../utils/httpClient', () => ({
 
 import { handleIncomingBotMessage } from './botLogicService';
 import { generateChatCompletion } from './openAiService';
-import { resolveOEM } from './oemService';
+import { resolveOEMForOrder } from './oemService';
 import { scrapeOffersForOrder } from './scrapingService';
 
 const supa = require('./supabaseService');
@@ -73,7 +78,8 @@ describe('integration: orchestrator -> OEM -> scrape', () => {
     expect(generateChatCompletion).toHaveBeenCalled();
 
     // OEM resolver should be called with vehicle info and part
-    expect(resolveOEM).toHaveBeenCalledWith(
+    expect(resolveOEMForOrder).toHaveBeenCalledWith(
+      'order-int-1',
       expect.objectContaining({ make: 'VW', model: 'Golf', year: 2015, vin: 'WVWZZZ1JZXW000001' }),
       expect.stringContaining('Bremsscheiben')
     );

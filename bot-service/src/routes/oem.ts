@@ -44,7 +44,8 @@ router.post("/resolve", async (req: Request, res: Response) => {
   // OEM erfolgreich
   await updateOrderOEM(orderId, {
     oemStatus: "resolved",
-    oemData: { oem: result.oemNumber }
+    oemData: { oem: result.oemNumber },
+    oemNumber: result.oemNumber ?? null
   });
 
   res.json({
