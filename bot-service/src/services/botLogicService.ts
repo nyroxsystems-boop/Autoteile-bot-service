@@ -568,6 +568,7 @@ function buildOfferReplyMessages(
     const offer = offers[0];
     const desc =
       offer.description ??
+      offer.productName ??
       orderData?.offerDescriptions?.[offer.id] ??
       orderData?.requestedPart ??
       partDescription ??
@@ -597,6 +598,7 @@ function buildOfferReplyMessages(
   top.forEach((o, idx) => {
     const desc =
       o.description ??
+      o.productName ??
       orderData?.offerDescriptions?.[o.id] ??
       orderData?.requestedPart ??
       partDescription ??

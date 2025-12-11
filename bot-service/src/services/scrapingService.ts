@@ -58,7 +58,8 @@ class MockAutodocAdapter implements ShopAdapter {
         deliveryTimeDays: 4,
         productUrl: searchUrl,
         imageUrl: "https://upload.wikimedia.org/wikipedia/commons/7/7b/Brake_disc.jpg",
-        description: `Budget-Teil passend zu OEM ${oem}`,
+        productName: `Oil filter - Wikipedia`,
+        description: `Ölfilter mit Standardgewinde, passend zu OEM ${oem}`,
         rating: 3.8,
         isRecommended: false
       }
