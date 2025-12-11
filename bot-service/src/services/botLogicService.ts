@@ -1583,48 +1583,53 @@ export async function handleIncomingBotMessage(
         }
 
         if (orch.action === "ask_slot") {
-          const vehicleCandidate = {
-            make: orch.slots.make ?? ocrResult?.make ?? orderData?.make ?? null,
-            model: orch.slots.model ?? ocrResult?.model ?? orderData?.model ?? null,
-            year: orch.slots.year ?? ocrResult?.year ?? orderData?.year ?? null,
-            engine: orch.slots.engine ?? orch.slots.engineCode ?? ocrResult?.engine ?? null,
-            engineKw: orch.slots.engineKw ?? ocrResult?.engineKw ?? null,
-            vin: orch.slots.vin ?? ocrResult?.vin ?? null,
-            hsn: orch.slots.hsn ?? ocrResult?.hsn ?? null,
-            tsn: orch.slots.tsn ?? ocrResult?.tsn ?? null
-          };
+          const lockOfferFlow = ["show_offers", "await_offer_choice", "await_offer_confirmation"].includes(order.status);
+          if (lockOfferFlow) {
+            // Offer selection in progress: ignore orchestrator ask_slot and continue with offer handling below.
+          } else {
+            const vehicleCandidate = {
+              make: orch.slots.make ?? ocrResult?.make ?? orderData?.make ?? null,
+              model: orch.slots.model ?? ocrResult?.model ?? orderData?.model ?? null,
+              year: orch.slots.year ?? ocrResult?.year ?? orderData?.year ?? null,
+              engine: orch.slots.engine ?? orch.slots.engineCode ?? ocrResult?.engine ?? null,
+              engineKw: orch.slots.engineKw ?? ocrResult?.engineKw ?? null,
+              vin: orch.slots.vin ?? ocrResult?.vin ?? null,
+              hsn: orch.slots.hsn ?? ocrResult?.hsn ?? null,
+              tsn: orch.slots.tsn ?? ocrResult?.tsn ?? null
+            };
 
-          const partCandidate =
-            orch.slots.requestedPart ??
-            orch.slots.part ??
-            orderData?.requestedPart ??
-            orderData?.partText ??
-            (userText && userText.length > 0 ? userText : null);
+            const partCandidate =
+              orch.slots.requestedPart ??
+              orch.slots.part ??
+              orderData?.requestedPart ??
+              orderData?.partText ??
+              (userText && userText.length > 0 ? userText : null);
 
-          if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
-          const oemFlow = await runOemLookupAndScraping(
-            order.id,
-            language ?? "de",
-            {
-              intent: "request_part",
-                normalizedPartName: partCandidate,
-                userPartText: partCandidate,
-                isAutoPart: true
-              } as ParsedUserMessage,
-              orderData,
-              partCandidate,
-              vehicleCandidate
-            );
-            await persistStatusSafely({
-              orderId: order.id,
-              status: oemFlow.nextStatus,
-              language,
-              partDescription: partCandidate
-            });
-            return { reply: oemFlow.replyText, orderId: order.id, replies: oemFlow.replyMessages };
+            if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
+              const oemFlow = await runOemLookupAndScraping(
+                order.id,
+                language ?? "de",
+                {
+                  intent: "request_part",
+                  normalizedPartName: partCandidate,
+                  userPartText: partCandidate,
+                  isAutoPart: true
+                } as ParsedUserMessage,
+                orderData,
+                partCandidate,
+                vehicleCandidate
+              );
+              await persistStatusSafely({
+                orderId: order.id,
+                status: oemFlow.nextStatus,
+                language,
+                partDescription: partCandidate
+              });
+              return { reply: oemFlow.replyText, orderId: order.id, replies: oemFlow.replyMessages };
+            }
+
+            return { reply: orch.reply || "", orderId: order.id };
           }
-
-          return { reply: orch.reply || "", orderId: order.id };
         }
 
         if (orch.action === "oem_lookup") {
