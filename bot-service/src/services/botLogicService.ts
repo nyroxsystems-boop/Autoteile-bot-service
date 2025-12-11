@@ -577,12 +577,23 @@ async function runOemLookupAndScraping(
     };
   }
 
+  // If we don't have any part description yet, ask for it instead of guessing an OEM.
   const partText =
     parsed.part ||
     orderData?.requestedPart ||
     orderData?.partText ||
     partDescription ||
-    (langPrompt === "en" ? "the part you mentioned" : "das genannte Teil");
+    null;
+
+  if (!partText || !partText.trim()) {
+    return {
+      replyText:
+        langPrompt === "en"
+          ? "Got the vehicle data. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
+          : "Fahrzeugdaten sind da. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.",
+      nextStatus: "collect_part"
+    };
+  }
 
   try {
     const oemResult = await resolveOEMForOrder(
@@ -597,7 +608,7 @@ async function runOemLookupAndScraping(
         hsn: vehicleForOem.hsn ?? null,
         tsn: vehicleForOem.tsn ?? null
       },
-      partText
+      partText || (langPrompt === "en" ? "the part you mentioned" : "das genannte Teil")
     );
 
     try {
