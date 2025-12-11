@@ -74,7 +74,7 @@ function xmlEscape(str: string): string {
     .replace(/\n/g, "&#10;");
 }
 
-router.post("/", async (req, res) => {
+router.post("/", (req, res) => {
   if (!validateTwilioSignature(req)) {
     const twimlReject = `<Response><Message>${xmlEscape(
       "Es ist ein technischer Fehler aufgetreten. Bitte versuche es später erneut."
@@ -97,15 +97,18 @@ router.post("/", async (req, res) => {
 
   // Log incoming Twilio webhook payload
   console.log("[Twilio Webhook] Incoming", { from, text, numMedia, mediaUrls });
-  console.log("[Twilio Webhook] Forwarding to bot/message", {
+  console.log("[Twilio Webhook] Forwarding to bot/message (async)", {
     from,
     safeText: text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : ""),
     hasMedia: mediaUrls.length > 0
   });
-  const replyFallback = "Es ist ein technischer Fehler aufgetreten. Bitte versuche es später erneut.";
-  let replyText: string = replyFallback;
 
-  try {
+  // Respond immediately to Twilio to avoid 15s timeout (11200)
+  res.type("text/xml").status(200).send("<Response></Response>");
+
+  // Process asynchronously after acknowledging Twilio
+  (async () => {
+    const replyFallback = "Es ist ein technischer Fehler aufgetreten. Bitte versuche es später erneut.";
     const safeText = text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : "");
     const botPayload = {
       from,
@@ -114,57 +117,52 @@ router.post("/", async (req, res) => {
       mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined
     };
 
-    const botResponse = await fetch("https://autoteile-bot-service.onrender.com/bot/message", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(env.botApiSecret ? { "x-bot-secret": env.botApiSecret } : {})
-      },
-      body: JSON.stringify(botPayload)
-    });
-
-    if (!botResponse.ok) {
-      throw new Error(`Bot API returned status ${botResponse.status}`);
-    }
-
-    const data = (await botResponse.json()) as { reply?: string; replies?: Array<{ text: string; mediaUrl?: string | null }> };
-    const replies = data.replies && data.replies.length > 0 ? data.replies : data.reply ? [{ text: data.reply }] : [];
-    const messagesToSend = replies.length > 0 ? replies : [{ text: replyFallback }];
-
-    // Send WhatsApp reply/replies via Twilio REST API
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const fromNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886"; // Twilio sandbox default
-
-    if (!accountSid || !authToken) {
-      console.error("[Twilio Webhook] Missing Twilio credentials, cannot send reply");
-      const twimlMissingCreds = `<Response><Message>${xmlEscape(
-        "Technischer Fehler: Twilio nicht konfiguriert."
-      )}</Message></Response>`;
-      return res.type("text/xml").status(500).send(twimlMissingCreds);
-    }
-
-    const client = twilio(accountSid, authToken);
-    for (const msg of messagesToSend) {
-      await client.messages.create({
-        from: fromNumber,
-        to: from,
-        body: msg.text,
-        mediaUrl: msg.mediaUrl ? [msg.mediaUrl] : undefined
+    try {
+      const botResponse = await fetch("https://autoteile-bot-service.onrender.com/bot/message", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(env.botApiSecret ? { "x-bot-secret": env.botApiSecret } : {})
+        },
+        body: JSON.stringify(botPayload)
       });
+
+      if (!botResponse.ok) {
+        throw new Error(`Bot API returned status ${botResponse.status}`);
+      }
+
+      const data = (await botResponse.json()) as {
+        reply?: string;
+        replies?: Array<{ text: string; mediaUrl?: string | null }>;
+      };
+      const replies = data.replies && data.replies.length > 0 ? data.replies : data.reply ? [{ text: data.reply }] : [];
+      const messagesToSend = replies.length > 0 ? replies : [{ text: replyFallback }];
+
+      // Send WhatsApp reply/replies via Twilio REST API
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      const fromNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886"; // Twilio sandbox default
+
+      if (!accountSid || !authToken) {
+        console.error("[Twilio Webhook] Missing Twilio credentials, cannot send reply");
+        return;
+      }
+
+      const client = twilio(accountSid, authToken);
+      for (const msg of messagesToSend) {
+        await client.messages.create({
+          from: fromNumber,
+          to: from,
+          body: msg.text,
+          mediaUrl: msg.mediaUrl ? [msg.mediaUrl] : undefined
+        });
+      }
+      const preview = messagesToSend.map((m) => m.text).join(" | ").slice(0, 120);
+      console.log("[Twilio Webhook] WhatsApp reply sent", { to: from, bodyPreview: preview });
+    } catch (err: any) {
+      console.error("[Twilio Webhook] Error calling bot/message or sending reply", { error: err?.message });
     }
-    const preview = messagesToSend.map((m) => m.text).join(" | ").slice(0, 120);
-    console.log("[Twilio Webhook] WhatsApp reply sent", { to: from, bodyPreview: preview });
-
-    // Respond with empty TwiML so Twilio is happy with Content-Type text/xml
-    return res.type("text/xml").status(200).send("<Response></Response>");
-  } catch (err: any) {
-    console.error("[Twilio Webhook] Error calling bot/message", { error: err?.message });
-    replyText = `${replyText} / A technical error occurred. Please try again later.`;
-  }
-
-  const twimlError = `<Response><Message>${xmlEscape(replyText)}</Message></Response>`;
-  return res.type("text/xml").status(500).send(twimlError);
+  })().catch((err) => console.error("[Twilio Webhook] async handler failed", err?.message ?? err));
 });
 
 export default router;
