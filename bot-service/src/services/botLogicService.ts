@@ -530,6 +530,101 @@ function mergePartInfo(existing: any, parsed: ParsedUserMessage) {
   return merged;
 }
 
+function buildOfferReplyMessages(
+  orderId: string,
+  offers: any[],
+  language: "de" | "en" | "pl" | "tr" | null,
+  orderData: any,
+  partDescription: string | null
+): {
+  messages: Array<{ text: string; mediaUrl?: string | null }>;
+  nextStatus: ConversationStatus;
+  dataPatch?: Record<string, any>;
+} {
+  const lang: "de" | "en" = language === "en" ? "en" : "de";
+  const pickImage = (offer: any): string | null => {
+    const candidate = offer?.imageUrl ?? orderData?.offerMedia?.[offer?.id] ?? null;
+    if (typeof candidate !== "string") return null;
+    const url = candidate.trim();
+    if (!url.startsWith("http")) return null;
+    return url;
+  };
+
+  if (!offers || offers.length === 0) {
+    return {
+      messages: [
+        {
+          text:
+            lang === "en"
+              ? "I’m still collecting offers for you. You’ll get a selection shortly."
+              : "Ich suche noch passende Angebote. Du bekommst gleich eine Auswahl."
+        }
+      ],
+      nextStatus: "show_offers"
+    };
+  }
+
+  if (offers.length === 1) {
+    const offer = offers[0];
+    const desc =
+      offer.description ??
+      orderData?.offerDescriptions?.[offer.id] ??
+      orderData?.requestedPart ??
+      partDescription ??
+      (lang === "en" ? "Matching part" : "Passendes Teil");
+    const text =
+      lang === "en"
+        ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDescription: ${desc}\n\nIf this works for you, please reply with "Yes" or "OK".`
+        : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nBeschreibung: ${desc}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
+
+    return {
+      messages: [{ text, mediaUrl: pickImage(offer) }],
+      nextStatus: "await_offer_confirmation",
+      dataPatch: {
+        selectedOfferCandidateId: offer.id
+      }
+    };
+  }
+
+  const top = offers.slice(0, 3);
+  const intro =
+    lang === "en"
+      ? "Here are the top 3 offers I found. Reply with 1, 2 or 3 to pick one:"
+      : "Hier sind die Top 3 Angebote. Antworte mit 1, 2 oder 3, um eines auszuwählen:";
+
+  const messages: Array<{ text: string; mediaUrl?: string | null }> = [{ text: intro }];
+  top.forEach((o, idx) => {
+    const desc =
+      o.description ??
+      orderData?.offerDescriptions?.[o.id] ??
+      orderData?.requestedPart ??
+      partDescription ??
+      (lang === "en" ? "Matching part" : "Passendes Teil");
+    const rating = o.rating ? `${lang === "en" ? "Rating" : "Bewertung"}: ${o.rating}/5` : null;
+    const lines = [
+      `${idx + 1}) ${o.brand ?? (lang === "en" ? "unknown brand" : "unbekannte Marke")} @ ${o.shopName}`,
+      `${lang === "en" ? "Price" : "Preis"}: ${o.price} ${o.currency || "EUR"}`,
+      `${lang === "en" ? "Description" : "Beschreibung"}: ${desc}`,
+      rating
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    messages.push({
+      text: lines,
+      mediaUrl: pickImage(o)
+    });
+  });
+
+  return {
+    messages,
+    nextStatus: "await_offer_choice",
+    dataPatch: {
+      offerChoiceIds: top.map((o) => o.id)
+    }
+  };
+}
+
 async function runOemLookupAndScraping(
   orderId: string,
   language: "de" | "en" | "pl" | "tr" | null,
@@ -549,7 +644,7 @@ async function runOemLookupAndScraping(
     fuelType?: string;
     emissionClass?: string;
   }
-): Promise<{ replyText: string; nextStatus: ConversationStatus }> {
+): Promise<{ replyText: string; nextStatus: ConversationStatus; replyMessages?: Array<{ text: string; mediaUrl?: string | null }> }> {
   const vehicle = vehicleOverride ?? (await getVehicleForOrder(orderId));
   const langPrompt: "de" | "en" = language === "en" ? "en" : "de";
   const engineVal = (vehicle as any)?.engineCode ?? (vehicle as any)?.engine ?? undefined;
@@ -716,25 +811,38 @@ async function runOemLookupAndScraping(
         }
       }
 
-      const cautionNote =
-        cautious && language === "de"
-          ? " (bitte kurz prüfen)"
-          : cautious && language === "en"
-            ? " (please double-check)"
-            : "";
+      let replyMessages: Array<{ text: string; mediaUrl?: string | null }> | undefined;
+      let immediateStatus: ConversationStatus = "show_offers";
+
+      try {
+        const offers = Array.isArray(scrapeResult) ? scrapeResult : await listShopOffersByOrderId(orderId);
+        const offerReply = buildOfferReplyMessages(orderId, offers ?? [], language, orderData, partDescription ?? null);
+        replyMessages = offerReply.messages;
+        immediateStatus = offerReply.nextStatus;
+
+        if (offerReply.dataPatch) {
+          await updateOrderData(orderId, offerReply.dataPatch);
+          orderData = { ...orderData, ...offerReply.dataPatch };
+        }
+      } catch (err: any) {
+        logger.warn("Failed to build immediate offer reply", { orderId, error: err?.message });
+      }
 
       const reply =
-        language === "en"
-          ? `I found a suitable product and am checking offers now.${cautionNote}`
-          : `Ich habe ein passendes Produkt gefunden und prüfe Angebote.${cautionNote}`;
+        replyMessages && replyMessages.length > 0
+          ? replyMessages[0].text
+          : language === "en"
+            ? "I found a suitable product and am checking offers now."
+            : "Ich habe ein passendes Produkt gefunden und prüfe Angebote.";
       try {
-        await updateOrder(orderId, { status: "show_offers" });
+        await updateOrder(orderId, { status: immediateStatus });
       } catch (err: any) {
         logger.warn("Failed to persist show_offers status after OEM", { orderId, error: err?.message });
       }
       return {
         replyText: reply,
-        nextStatus: "show_offers"
+        nextStatus: immediateStatus,
+        replyMessages
       };
       } catch (err: any) {
         logger.error("Scrape after OEM failed", { error: err?.message, orderId });
@@ -1513,7 +1621,7 @@ export async function handleIncomingBotMessage(
               language,
               partDescription: partCandidate
             });
-            return { reply: oemFlow.replyText, orderId: order.id };
+            return { reply: oemFlow.replyText, orderId: order.id, replies: oemFlow.replyMessages };
           }
 
           return { reply: orch.reply || "", orderId: order.id };
@@ -1555,7 +1663,7 @@ export async function handleIncomingBotMessage(
             language: order.language ?? language,
             partDescription: orch.slots.requestedPart ?? orch.slots.part ?? null
           });
-          return { reply: oemFlow.replyText, orderId: order.id };
+          return { reply: oemFlow.replyText, orderId: order.id, replies: oemFlow.replyMessages };
         }
 
         // orch.action === confirm / noop => set parsed from slots and continue legacy flow
@@ -1985,6 +2093,7 @@ export async function handleIncomingBotMessage(
             partDescription ?? null
           );
           replyText = oemFlow.replyText;
+          if (oemFlow.replyMessages) replyMessages = oemFlow.replyMessages;
           nextStatus = oemFlow.nextStatus;
         }
         break;
@@ -1999,6 +2108,7 @@ export async function handleIncomingBotMessage(
           partDescription ?? null
         );
         replyText = oemFlow.replyText;
+        if (oemFlow.replyMessages) replyMessages = oemFlow.replyMessages;
         nextStatus = oemFlow.nextStatus;
         break;
       }
