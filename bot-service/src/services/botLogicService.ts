@@ -690,9 +690,13 @@ async function runOemLookupAndScraping(
 
         if (Array.isArray(scrapeResult)) {
           const offerMedia: Record<string, string> = {};
+          const offerDescriptions: Record<string, string> = {};
           for (const offer of scrapeResult) {
             if (offer?.id && offer.imageUrl) {
               offerMedia[offer.id] = offer.imageUrl;
+            }
+            if (offer?.id && offer.description) {
+              offerDescriptions[offer.id] = offer.description;
             }
           }
           if (Object.keys(offerMedia).length > 0) {
@@ -700,6 +704,13 @@ async function runOemLookupAndScraping(
               await updateOrderData(orderId, { offerMedia });
             } catch (err: any) {
               logger.warn("Failed to persist offer media map", { orderId, error: err?.message });
+            }
+          }
+          if (Object.keys(offerDescriptions).length > 0) {
+            try {
+              await updateOrderData(orderId, { offerDescriptions });
+            } catch (err: any) {
+              logger.warn("Failed to persist offer descriptions map", { orderId, error: err?.message });
             }
           }
         }
@@ -2013,17 +2024,21 @@ export async function handleIncomingBotMessage(
 
           if (sorted.length === 1) {
             const offer = sorted[0];
-            const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
-            const link = offer.productUrl ? `\nLink: ${offer.productUrl}` : "";
+            const desc =
+              offer.description ??
+              orderData?.offerDescriptions?.[offer.id] ??
+              orderData?.requestedPart ??
+              partDescription ??
+              (language === "en" ? "Passendes Ersatzteil" : "Passendes Ersatzteil");
             const availability = offer.availability ? `\n${language === "en" ? "Availability" : "Verfügbarkeit"}: ${offer.availability}` : "";
             replyText =
               language === "en"
-                ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDelivery time: ${delivery} days.${availability}${link}\n\nIf this works for you, please reply with "Yes" or "OK".`
-                : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nLieferzeit: ${delivery} Tage.${availability}${link}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
+                ? `I’ve found a suitable offer:\n\nBrand: ${offer.brand ?? "n/a"}\nShop: ${offer.shopName}\nPrice: ${offer.price} ${offer.currency}\nDescription: ${desc}\n\nIf this works for you, please reply with "Yes" or "OK".`
+                : `Ich habe ein passendes Angebot gefunden:\n\nMarke: ${offer.brand ?? "unbekannt"}\nShop: ${offer.shopName}\nPreis: ${offer.price} ${offer.currency}\nBeschreibung: ${desc}\n\nWenn das für dich passt, antworte bitte mit "Ja" oder "OK".`;
             replyMessages = [
               {
                 text: replyText,
-                mediaUrl: offer.imageUrl ?? orderData?.offerMedia?.[offer.id] ?? null
+                mediaUrl: null // only send product images when we have trusted product media
               }
             ];
 
@@ -2055,29 +2070,25 @@ export async function handleIncomingBotMessage(
           replyMessages.push({ text: intro });
 
           top.forEach((o, idx) => {
-            const delivery = o.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
-            const availability = o.availability
-              ? language === "en"
-                ? `Availability: ${o.availability}`
-                : `Verfügbarkeit: ${o.availability}`
-              : null;
+            const desc =
+              o.description ??
+              orderData?.offerDescriptions?.[o.id] ??
+              orderData?.requestedPart ??
+              partDescription ??
+              (language === "en" ? "Matching part" : "Passendes Teil");
             const rating = o.rating ? `${language === "en" ? "Rating" : "Bewertung"}: ${o.rating}/5` : null;
             const lines = [
               `${idx + 1}) ${o.brand ?? (language === "en" ? "unknown brand" : "unbekannte Marke")} @ ${o.shopName}`,
               `${language === "en" ? "Price" : "Preis"}: ${o.price} ${o.currency || "EUR"}`,
-              `${language === "en" ? "Delivery" : "Lieferung"}: ${delivery} ${
-                language === "en" ? "days" : "Tage"
-              }`,
-              availability,
+              `${language === "en" ? "Description" : "Beschreibung"}: ${desc}`,
               rating,
-              o.productUrl ? `${language === "en" ? "Link" : "Link"}: ${o.productUrl}` : null
             ]
               .filter(Boolean)
               .join("\n");
 
             replyMessages.push({
               text: lines,
-              mediaUrl: o.imageUrl ?? orderData?.offerMedia?.[o.id] ?? null
+              mediaUrl: null // only send product images when we have trusted product media
             });
           });
 

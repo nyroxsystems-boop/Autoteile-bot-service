@@ -446,6 +446,7 @@ export async function insertShopOffers(
     deliveryTimeDays?: number | null;
     productUrl?: string | null;
     imageUrl?: string | null;
+    description?: string | null;
     rating?: number | null;
     isRecommended?: boolean | null;
   }>
@@ -465,6 +466,8 @@ export async function insertShopOffers(
         delivery_time_days: o.deliveryTimeDays ?? null,
         product_url: o.productUrl ?? null,
         url: o.productUrl ?? null, // Compatibility: some DBs may use "url" instead of "product_url"
+        product_description: o.description ?? null,
+        description: o.description ?? null,
         rating: o.rating ?? null,
         is_recommended: o.isRecommended ?? null
       };
@@ -488,6 +491,20 @@ export async function insertShopOffers(
       const respNoImg = await client.from("shop_offers").insert(buildPayload(false)).select("*");
       data = respNoImg.data;
       error = respNoImg.error;
+    }
+    if (error && `${error.message}`.toLowerCase().includes("description")) {
+      console.warn("shop_offers insert with description failed, retrying without description", { error: error.message });
+      const respNoDesc = await client
+        .from("shop_offers")
+        .insert(
+          buildPayload(false).map((p) => {
+            const { product_description, description, ...rest } = p;
+            return rest;
+          })
+        )
+        .select("*");
+      data = respNoDesc.data;
+      error = respNoDesc.error;
     }
   } else {
     const resp = await client.from("shop_offers").insert(buildPayload(false)).select("*");
@@ -515,6 +532,7 @@ export async function insertShopOffers(
         deliveryTimeDays: row.delivery_time_days,
         productUrl: row.product_url ?? row.url ?? null,
         imageUrl: row.image_url ?? row.imageUrl ?? original?.imageUrl ?? null,
+        description: row.product_description ?? row.description ?? original?.description ?? null,
         rating: row.rating != null ? Number(row.rating) : null,
         isRecommended: row.is_recommended
       };
@@ -553,6 +571,7 @@ export async function listShopOffersByOrderId(orderId: string): Promise<ShopOffe
       deliveryTimeDays: row.delivery_time_days,
       productUrl: row.product_url ?? row.url ?? null,
       imageUrl: row.image_url ?? row.imageUrl ?? null,
+      description: row.product_description ?? row.description ?? null,
       rating: row.rating != null ? Number(row.rating) : null,
       isRecommended: row.is_recommended
     })) ?? [];

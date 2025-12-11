@@ -71,6 +71,7 @@ export interface ShopOffer {
   deliveryTimeDays?: number | null;
   productUrl?: string | null;
   imageUrl?: string | null;
+  description?: string | null;
   rating?: number | null; // z.B. 4.7
   isRecommended?: boolean | null; // vom System gesetzt
 }

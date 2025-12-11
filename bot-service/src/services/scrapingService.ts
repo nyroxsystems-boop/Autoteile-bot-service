@@ -10,6 +10,7 @@ export interface ScrapedOffer {
   deliveryTimeDays?: number | null;
   productUrl?: string | null;
   imageUrl?: string | null;
+  description?: string | null;
   rating?: number | null;
   isRecommended?: boolean | null;
 }
@@ -37,7 +38,8 @@ class MockAutodocAdapter implements ShopAdapter {
         availability: "In stock",
         deliveryTimeDays: 2,
         productUrl: `https://autodoc.example.com/parts/${encodeURIComponent(oem)}`,
-        imageUrl: "https://dummyimage.com/600x400/232323/ffffff&text=Autodoc+ATE",
+        imageUrl: null,
+        description: "Marken-Ölfilter ATE passend zu OEM " + oem,
         rating: 4.7,
         isRecommended: true
       },
@@ -49,7 +51,8 @@ class MockAutodocAdapter implements ShopAdapter {
         availability: "In stock",
         deliveryTimeDays: 4,
         productUrl: `https://autodoc.example.com/parts/${encodeURIComponent(oem)}?cheap=1`,
-        imageUrl: "https://dummyimage.com/600x400/555555/ffffff&text=Autodoc+Budget",
+        imageUrl: null,
+        description: "Budget-Ölfilter passend zu OEM " + oem,
         rating: 3.8,
         isRecommended: false
       }
@@ -73,7 +76,8 @@ class MockKfzteileAdapter implements ShopAdapter {
         availability: "In stock",
         deliveryTimeDays: 1,
         productUrl: `https://kfzteile24.example.com/search?q=${encodeURIComponent(oem)}`,
-        imageUrl: "https://dummyimage.com/600x400/333333/ffffff&text=KFZTeile24",
+        imageUrl: null,
+        description: "Brembo-Ölfilter passend zu OEM " + oem,
         rating: 4.6,
         isRecommended: true
       }
@@ -116,6 +120,7 @@ function buildAdapters(): ShopAdapter[] {
               deliveryTimeDays: it.deliveryTimeDays ?? it.delivery_time_days ?? null,
               productUrl: it.productUrl ?? it.product_url ?? null,
               imageUrl: it.imageUrl ?? it.image_url ?? null,
+              description: it.description ?? it.productDescription ?? it.product_description ?? null,
               rating: it.rating ?? null,
               isRecommended: it.isRecommended ?? it.is_recommended ?? null
             }));
