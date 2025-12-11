@@ -700,6 +700,11 @@ async function runOemLookupAndScraping(
         language === "en"
           ? `I found a suitable product and am checking offers now.${cautionNote}`
           : `Ich habe ein passendes Produkt gefunden und prüfe Angebote.${cautionNote}`;
+      try {
+        await updateOrder(orderId, { status: "show_offers" });
+      } catch (err: any) {
+        logger.warn("Failed to persist show_offers status after OEM", { orderId, error: err?.message });
+      }
       return {
         replyText: reply,
         nextStatus: "show_offers"
