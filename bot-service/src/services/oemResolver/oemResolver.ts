@@ -6,18 +6,20 @@ import { tecdocVinRestSource } from "./sources/tecdocVinRestSource";
 import { tecdocNumberSource } from "./sources/tecdocNumberSource";
 import { shopSearchSource } from "./sources/shopSearchSource";
 import { webScrapeSource } from "./sources/webScrapeSource";
+import { aiGuessSource } from "./sources/aiGuessSource";
 import { llmHeuristicSource } from "./sources/llmHeuristicSource";
-import { clampConfidence } from "./sources/baseSource";
+import { clampConfidence, OEMSource } from "./sources/baseSource";
 import { backsearchOEM } from "./backsearch";
 import { filterByPartMatch } from "./sources/partMatchHelper";
 
-const SOURCES = [
+const SOURCES: OEMSource[] = [
   cacheSource,
   tecdocNumberSource,
   tecdocVinRestSource,
   tecdocLightSource,
   shopSearchSource,
   webScrapeSource,
+  aiGuessSource,
   llmHeuristicSource
 ];
 
@@ -76,7 +78,7 @@ function pickPrimary(candidates: OEMCandidate[]): { primaryOEM?: string; note?: 
 export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverResult> {
   const allCandidates: OEMCandidate[] = [];
 
-  const results = await Promise.all(
+  const results: OEMCandidate[][] = await Promise.all(
     SOURCES.map(async (source) => {
       try {
         logger.debug?.("OEM resolver: calling source", { source: source.name, orderId: req.orderId });
@@ -90,7 +92,7 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     })
   );
 
-  results.forEach((arr) => allCandidates.push(...arr));
+  results.forEach((arr: OEMCandidate[]) => allCandidates.push(...arr));
 
   // Teil-Plausibilität prüfen (verwirft OEMs, die nicht zum Teiltext passen)
   const filtered = await filterByPartMatch(allCandidates, req);

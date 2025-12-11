@@ -195,7 +195,7 @@ async function searchOemOnPartSouq(ctx: SearchContext): Promise<OemCandidate[]> 
     if (!oems.length) {
       oems = await aiExtractOemsFromHtml(html, ctx);
     }
-    return oems.map((o) => ({ source: "PartSouq", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "PartSouq", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -215,7 +215,7 @@ async function searchOemOnAmayama(ctx: SearchContext): Promise<OemCandidate[]> {
     if (!oems.length) {
       oems = await aiExtractOemsFromHtml(html, ctx);
     }
-    return oems.map((o) => ({ source: "Amayama", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "Amayama", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -237,7 +237,7 @@ async function searchOemOnAutodocParts(ctx: SearchContext): Promise<OemCandidate
     if (!oems.length) {
       oems = await aiExtractOemsFromHtml(html, ctx);
     }
-    return oems.map((o) => ({ source: "Autodoc.parts", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "Autodoc.parts", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -266,7 +266,7 @@ async function searchOemOnSpareto(ctx: SearchContext): Promise<OemCandidate[]> {
     if (!oems.length) {
       oems = await aiExtractOemsFromHtml(html, ctx);
     }
-    return oems.map((o) => ({ source: "Spareto", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "Spareto", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -282,7 +282,7 @@ async function searchOemOnSite5(ctx: SearchContext): Promise<OemCandidate[]> {
     if (!oems.length) {
       oems = await aiExtractOemsFromHtml(html, ctx);
     }
-    return oems.map((o) => ({ source: "MegaZip", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "MegaZip", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -294,7 +294,7 @@ async function searchOemOn7zap(ctx: SearchContext): Promise<OemCandidate[]> {
     const url = `https://7zap.com/en/search/?keyword=${encodeURIComponent(q)}`;
     const html = await fetchText(url);
     const oems = extractOemsFromHtml(html);
-    return oems.map((o) => ({ source: "7zap", rawValue: o, normalized: o }));
+    return oems.map((o: string) => ({ source: "7zap", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
