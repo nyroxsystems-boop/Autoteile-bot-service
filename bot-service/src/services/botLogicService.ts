@@ -1173,6 +1173,25 @@ function extractVinHsnTsn(text: string): { vin?: string; hsn?: string; tsn?: str
   return { vin, hsn, tsn };
 }
 
+async function persistStatusSafely(params: {
+  orderId: string;
+  status: ConversationStatus;
+  language?: "de" | "en" | "pl" | "tr" | null;
+  vehicleDescription?: string | null;
+  partDescription?: string | null;
+}) {
+  try {
+    await updateOrder(params.orderId, {
+      status: params.status,
+      language: (params.language ?? undefined) as any,
+      vehicle_description: params.vehicleDescription ?? undefined,
+      part_description: params.partDescription ?? undefined
+    });
+  } catch (err: any) {
+    logger.warn("Failed to persist status", { orderId: params.orderId, status: params.status, error: err?.message });
+  }
+}
+
 // Helper: detect if user text contains vehicle hints (brand/model/year)
 function hasVehicleHints(text: string): boolean {
   const t = text.toLowerCase();
@@ -1448,11 +1467,11 @@ export async function handleIncomingBotMessage(
             (userText && userText.length > 0 ? userText : null);
 
           if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
-            const oemFlow = await runOemLookupAndScraping(
-              order.id,
-              language ?? "de",
-              {
-                intent: "request_part",
+          const oemFlow = await runOemLookupAndScraping(
+            order.id,
+            language ?? "de",
+            {
+              intent: "request_part",
                 normalizedPartName: partCandidate,
                 userPartText: partCandidate,
                 isAutoPart: true
@@ -1461,6 +1480,12 @@ export async function handleIncomingBotMessage(
               partCandidate,
               vehicleCandidate
             );
+            await persistStatusSafely({
+              orderId: order.id,
+              status: oemFlow.nextStatus,
+              language,
+              partDescription: partCandidate
+            });
             return { reply: oemFlow.replyText, orderId: order.id };
           }
 
@@ -1497,7 +1522,12 @@ export async function handleIncomingBotMessage(
             orch.slots.requestedPart ?? null,
             vehicleOverride
           );
-
+          await persistStatusSafely({
+            orderId: order.id,
+            status: oemFlow.nextStatus,
+            language: order.language ?? language,
+            partDescription: orch.slots.requestedPart ?? orch.slots.part ?? null
+          });
           return { reply: oemFlow.replyText, orderId: order.id };
         }
 
