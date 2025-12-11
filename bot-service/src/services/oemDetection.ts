@@ -1,12 +1,14 @@
+import { normalizeOem, looksLikeOem } from "./oemScraper";
+
 // Sehr einfache OEM-Erkennung als Platzhalter.
 // In einem echten Bot würdest du hier ein Modell / Regex + Wissensbasis nutzen.
 
 export async function detectOemFromUserMessage(message: string): Promise<string | null> {
-  // Naive Heuristik: erste 5+ stellige Zahl oder Kombination aus Buchstaben/Zahlen.
-  const regex = /[A-Z0-9]{5,}/gi;
-  const match = message.match(regex);
-  if (match && match.length) {
-    return match[0];
+  const regex = /\b[A-Z0-9][A-Z0-9\.\-\s]{4,20}[A-Z0-9]\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(message)) !== null) {
+    const norm = normalizeOem(match[0]);
+    if (norm && looksLikeOem(norm)) return norm;
   }
   return null;
 }
