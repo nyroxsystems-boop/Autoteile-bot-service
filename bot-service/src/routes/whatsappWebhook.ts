@@ -138,7 +138,10 @@ router.post("/", async (req, res) => {
 
     if (!accountSid || !authToken) {
       console.error("[Twilio Webhook] Missing Twilio credentials, cannot send reply");
-      return res.status(500).json({ error: "Twilio not configured" });
+      const twimlMissingCreds = `<Response><Message>${xmlEscape(
+        "Technischer Fehler: Twilio nicht konfiguriert."
+      )}</Message></Response>`;
+      return res.type("text/xml").status(500).send(twimlMissingCreds);
     }
 
     const client = twilio(accountSid, authToken);
@@ -152,13 +155,16 @@ router.post("/", async (req, res) => {
     }
     const preview = messagesToSend.map((m) => m.text).join(" | ").slice(0, 120);
     console.log("[Twilio Webhook] WhatsApp reply sent", { to: from, bodyPreview: preview });
-    return res.status(200).json({ ok: true });
+
+    // Respond with empty TwiML so Twilio is happy with Content-Type text/xml
+    return res.type("text/xml").status(200).send("<Response></Response>");
   } catch (err: any) {
     console.error("[Twilio Webhook] Error calling bot/message", { error: err?.message });
     replyText = `${replyText} / A technical error occurred. Please try again later.`;
   }
 
-  return res.status(500).json({ error: "Failed to send reply" });
+  const twimlError = `<Response><Message>${xmlEscape(replyText)}</Message></Response>`;
+  return res.type("text/xml").status(500).send(twimlError);
 });
 
 export default router;
