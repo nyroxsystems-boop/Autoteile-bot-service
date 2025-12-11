@@ -37,6 +37,20 @@ const SCRAPE_TIMEOUT_MS = 8000;
 const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.SCRAPE_PROXY_URL;
 const proxyAgent = proxyUrl ? new ProxyAgent({ getProxyForUrl: () => proxyUrl }) : undefined;
 
+// Lazy-load OpenAI client to avoid hard dependency when KEY fehlt
+let openAiModule: any = null;
+async function getOpenAiClient() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  if (openAiModule) return openAiModule;
+  try {
+    openAiModule = await import("./openAiService");
+    return openAiModule;
+  } catch (err) {
+    console.error("OpenAI client load failed", (err as any)?.message || err);
+    return null;
+  }
+}
+
 async function fetchText(url: string): Promise<string> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
@@ -89,14 +103,88 @@ function buildGenericSearchString(ctx: SearchContext): string {
   return parts.filter(Boolean).join(" ");
 }
 
+// --------------------------
+// OpenAI-gestützte Filter (kein OEM-Guessing!)
+// --------------------------
+
+async function aiFilterHtmlForContext(html: string, ctx: SearchContext): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) return html;
+  if (!html) return "";
+  const client = await getOpenAiClient();
+  if (!client?.generateChatCompletion) return html;
+
+  const prompt = `
+Gesuchtes Teil: ${ctx.userQuery}
+Fahrzeug: ${ctx.vehicle.brand ?? ""} ${ctx.vehicle.model ?? ""} ${ctx.vehicle.year ?? ""}
+
+HTML (gekürzt):
+${html.slice(0, 15000)}
+
+Extrahiere NUR die HTML-Segmente, die Teilelisten oder OEM/MPN-Nummern enthalten
+und thematisch zum gesuchten Teil passen. Gib ausschließlich Original-HTML-Auszüge zurück.
+KEINE neuen Inhalte erzeugen.`;
+
+  try {
+    const res = await client.generateChatCompletion({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: "Gib nur relevante HTML-Auszüge zurück, nichts hinzufügen oder verändern." },
+        { role: "user", content: prompt }
+      ]
+    });
+    return res || html;
+  } catch (err) {
+    console.error("aiFilterHtmlForContext failed", (err as any)?.message || err);
+    return html;
+  }
+}
+
+async function aiFilterRelevantOems(oems: string[], ctx: SearchContext): Promise<string[]> {
+  if (!process.env.OPENAI_API_KEY) return oems;
+  if (!oems || oems.length === 0) return [];
+  const client = await getOpenAiClient();
+  if (!client?.generateChatCompletion) return oems;
+
+  const prompt = `
+Fahrzeug: ${ctx.vehicle.brand ?? ""} ${ctx.vehicle.model ?? ""} ${ctx.vehicle.year ?? ""}
+Gesuchtes Teil: ${ctx.userQuery}
+
+OEM-Kandidaten:
+${JSON.stringify(oems)}
+
+Markiere jede OEM als "relevant" oder "irrelevant".
+ANTWORTE NUR IN JSON:
+{"relevant": [...], "irrelevant": [...]}
+Erfinde KEINE neuen OEMs. Nutze nur die gegebenen.`;
+
+  try {
+    const res = await client.generateChatCompletion({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: prompt }]
+    });
+    const txt = res || "";
+    const match = txt.match(/\{[\s\S]*\}/);
+    if (!match) return oems;
+    const parsed = JSON.parse(match[0]);
+    const rel = Array.isArray(parsed?.relevant) ? parsed.relevant : [];
+    const filtered = rel.filter((x: any) => typeof x === "string" && oems.includes(x));
+    return filtered.length > 0 ? filtered : oems;
+  } catch (err) {
+    console.error("aiFilterRelevantOems failed", (err as any)?.message || err);
+    return oems;
+  }
+}
+
 async function searchOemOnPartSouq(ctx: SearchContext): Promise<OemCandidate[]> {
   try {
     const q = ctx.vehicle.vin ? ctx.vehicle.vin : buildGenericSearchString(ctx);
     const url = `https://partsouq.com/en/search/all?q=${encodeURIComponent(q)}`;
     const html = await fetchTextWithFallback(url);
     if (html.includes("cf-mitigated") || html.includes("challenge-platform")) return [];
-    const oems = extractStrictOems(html);
-    return oems.map((o) => ({ source: "PartSouq", rawValue: o, normalized: o }));
+    const filteredHtml = await aiFilterHtmlForContext(html, ctx);
+    const oems = extractStrictOems(filteredHtml || html);
+    const relevant = await aiFilterRelevantOems(oems, ctx);
+    return relevant.map((o) => ({ source: "PartSouq", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -107,15 +195,22 @@ async function searchOemOnAmayama(ctx: SearchContext): Promise<OemCandidate[]> {
     const q = ctx.vehicle.vin ? ctx.vehicle.vin : buildGenericSearchString(ctx);
     const url = `https://www.amayama.com/en/search?q=${encodeURIComponent(q)}`;
     const html = await fetchTextWithFallback(url);
-    const inlineJson = html.match(/"part_number"\s*:\s*"([A-Z0-9\-\.]+)"/gi) || [];
+    const filteredHtml = await aiFilterHtmlForContext(html, ctx);
+    const inlineJson = (filteredHtml || html).match(/"part_number"\s*:\s*"([A-Z0-9\-\.]+)"/gi) || [];
     const extra: string[] = inlineJson
       .map((s) => s.replace(/.*"part_number"\s*:\s*"/i, "").replace(/".*/, "").trim())
       .map((s) => normalizeOem(s))
       .filter(Boolean) as string[];
 
-    const oems = [...extractStrictOems(html), ...extra.filter((o) => looksLikeOem(o))];
+    const oems = [
+      ...extractStrictOems(filteredHtml || html),
+      ...extra.filter((o) => looksLikeOem(o))
+    ];
+    const relevant = await aiFilterRelevantOems(oems, ctx);
     const unique = [...new Set(oems)];
-    return unique.map((o) => ({ source: "Amayama", rawValue: o, normalized: o }));
+    return unique
+      .filter((o) => relevant.includes(o))
+      .map((o) => ({ source: "Amayama", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -126,9 +221,10 @@ async function searchOemOnAutodocParts(ctx: SearchContext): Promise<OemCandidate
     const q = buildGenericSearchString(ctx);
     const url = `https://www.autodoc.parts/search?keyword=${encodeURIComponent(q)}`;
     const html = await fetchTextWithFallback(url);
+    const filteredHtml = await aiFilterHtmlForContext(html, ctx);
     if (html.includes("Just a moment") && html.includes("challenge-platform")) return [];
 
-    const jsonMatches = html.match(/"oeNumbers"\s*:\s*\[(.*?)\]/gi) || [];
+    const jsonMatches = (filteredHtml || html).match(/"oeNumbers"\s*:\s*\[(.*?)\]/gi) || [];
     const extracted: string[] = [];
     jsonMatches.forEach((m) => {
       const parts = m.match(/[A-Z0-9\-\._]{5,20}/gi);
@@ -136,12 +232,15 @@ async function searchOemOnAutodocParts(ctx: SearchContext): Promise<OemCandidate
     });
 
     const oems = [
-      ...extractStrictOems(html),
+      ...extractStrictOems(filteredHtml || html),
       ...extracted.map((v) => normalizeOem(v)).filter((v) => v && looksLikeOem(v)) as string[]
     ];
 
+    const relevant = await aiFilterRelevantOems(oems, ctx);
     const unique = [...new Set(oems)];
-    return unique.map((o) => ({ source: "Autodoc.parts", rawValue: o, normalized: o }));
+    return unique
+      .filter((o) => relevant.includes(o))
+      .map((o) => ({ source: "Autodoc.parts", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -152,7 +251,8 @@ async function searchOemOnSpareto(ctx: SearchContext): Promise<OemCandidate[]> {
     const q = buildGenericSearchString(ctx);
     const url = `https://www.spareto.com/search?q=${encodeURIComponent(q)}`;
     const html = await fetchTextWithFallback(url);
-    const ldJson = html.match(/application\/ld\+json">([\s\S]*?)<\/script>/i);
+    const filteredHtml = await aiFilterHtmlForContext(html, ctx);
+    const ldJson = (filteredHtml || html).match(/application\/ld\+json">([\s\S]*?)<\/script>/i);
     const extracted: string[] = [];
 
     if (ldJson && ldJson[1]) {
@@ -169,12 +269,15 @@ async function searchOemOnSpareto(ctx: SearchContext): Promise<OemCandidate[]> {
     }
 
     const oems = [
-      ...extractStrictOems(html),
+      ...extractStrictOems(filteredHtml || html),
       ...extracted.map((v) => normalizeOem(v)).filter((v) => v && looksLikeOem(v)) as string[]
     ];
 
+    const relevant = await aiFilterRelevantOems(oems, ctx);
     const unique = [...new Set(oems)];
-    return unique.map((o) => ({ source: "Spareto", rawValue: o, normalized: o }));
+    return unique
+      .filter((o) => relevant.includes(o))
+      .map((o) => ({ source: "Spareto", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -185,8 +288,10 @@ async function searchOemOn7zap(ctx: SearchContext): Promise<OemCandidate[]> {
     const q = ctx.vehicle.vin ? ctx.vehicle.vin : buildGenericSearchString(ctx);
     const url = `https://7zap.com/en/search/?keyword=${encodeURIComponent(q)}`;
     const html = await fetchTextWithFallback(url);
-    const oems = extractStrictOems(html);
-    return oems.map((o) => ({ source: "7zap", rawValue: o, normalized: o }));
+    const filteredHtml = await aiFilterHtmlForContext(html, ctx);
+    const oems = extractStrictOems(filteredHtml || html);
+    const relevant = await aiFilterRelevantOems(oems, ctx);
+    return relevant.map((o) => ({ source: "7zap", rawValue: o, normalized: o }));
   } catch {
     return [];
   }
@@ -205,9 +310,11 @@ async function searchOemOnGenericSites(ctx: SearchContext): Promise<OemCandidate
     const url = site.urlTemplate.replace("{q}", encodeURIComponent(limitedQ));
     try {
       const html = await fetchTextWithFallback(url);
-      const oems = extractStrictOems(html);
+      const filteredHtml = await aiFilterHtmlForContext(html, ctx);
+      const oems = extractStrictOems(filteredHtml || html);
       if (oems.length === 0) return [];
-      return oems.map((o) => ({ source: site.name, rawValue: o, normalized: o }));
+      const relevant = await aiFilterRelevantOems(oems, ctx);
+      return relevant.map((o) => ({ source: site.name, rawValue: o, normalized: o }));
     } catch {
       return [];
     }
