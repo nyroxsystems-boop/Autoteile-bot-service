@@ -41,25 +41,40 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 import { ProxyAgent } from "proxy-agent";
 
-const SCRAPE_TIMEOUT_MS = 8000;
-const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.SCRAPE_PROXY_URL;
-const proxyAgent = proxyUrl ? new ProxyAgent({ getProxyForUrl: () => proxyUrl }) : undefined;
+const SCRAPE_TIMEOUT_MS = 30000; // Increased for ScraperAPI
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string, premium = false): Promise<string> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+
   try {
-    const res = await fetch(url, {
+    let targetUrl = url;
+    if (SCRAPER_API_KEY) {
+      // Use ScraperAPI
+      const params = new URLSearchParams({
+        api_key: SCRAPER_API_KEY,
+        url: url,
+        // Premium for tough sites (eBay), render for JS heavy sites if needed
+        premium: premium ? "true" : "false",
+        // country_code: "de" // Optional: Force German IP
+      });
+      targetUrl = `http://api.scraperapi.com?${params.toString()}`;
+    }
+
+    const res = await fetch(targetUrl, {
       signal: controller.signal,
-      // @ts-ignore agent is supported in node-fetch runtime
-      agent: proxyAgent,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; OEMFinder/1.0; +https://autoteile-assistent.local)",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en,de;q=0.9"
+      headers: SCRAPER_API_KEY ? {} : {
+        "User-Agent": "Mozilla/5.0 (compatible; OEMFinder/1.0)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+
+    if (!res.ok) {
+      // Log warning but throw to trigger catch/empty return
+      console.warn(`[oemWebFinder] HTTP ${res.status} for ${url}`);
+      throw new Error(`HTTP ${res.status}`);
+    }
     return res.text();
   } finally {
     clearTimeout(id);
@@ -67,16 +82,11 @@ async function fetchText(url: string): Promise<string> {
 }
 
 /**
- * Best-effort Fetch mit Fallback über allorigins (einfacher Proxy), um simple Bot-Blocks zu umgehen.
+ * Best-effort Fetch with ScraperAPI (premium=true for tough targets)
  */
-async function fetchTextWithFallback(url: string): Promise<string> {
-  try {
-    return await fetchText(url);
-  } catch {
-    // fallback über allorigins
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    return fetchText(proxyUrl);
-  }
+async function fetchTextWithFallback(url: string, premium = false): Promise<string> {
+  // Direct pass-through to the enhanced fetchText which handles ScraperAPI
+  return fetchText(url, premium);
 }
 
 async function aiExtractOemsFromHtml(html: string, ctx: SearchContext): Promise<string[]> {
@@ -338,6 +348,32 @@ async function searchOemOnMotointegrator(ctx: SearchContext): Promise<OemCandida
   }
 }
 
+async function searchOemOnEbay(ctx: SearchContext): Promise<OemCandidate[]> {
+  try {
+    // eBay Keyword Search
+    // Strategy: Use Brand + Model + Part, or just Part number if suspected
+    const q = ctx.suspectedNumber
+      ? ctx.suspectedNumber
+      : [ctx.vehicle.brand, ctx.vehicle.model, ctx.userQuery].filter(Boolean).join(" ");
+
+    const url = `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(q)}&_sacat=0`;
+    // eBay needs premium proxy usually
+    const html = await fetchTextWithFallback(url, true);
+
+    // eBay often puts MPN in "s-item__details" or title
+    // Generic extraction works well for titles (e.g. "Bremsscheibe ATE 12345...")
+    const oems = extractOemsFromHtml(html);
+
+    // Optional: AI Refinement if enabled
+    const aiOems = await aiExtractOemsFromHtml(html, ctx);
+
+    return [...oems, ...aiOems].map((o: string) => ({ source: "eBay", rawValue: o, normalized: o }));
+  } catch (err) {
+    // Silent fail for scraper
+    return [];
+  }
+}
+
 // ----------------------------------
 // Fallback-Resolver (Platzhalter)
 // ----------------------------------
@@ -436,6 +472,13 @@ export async function findBestOemForVehicle(ctx: SearchContext, useFallback = tr
   let candidates: OemCandidate[] = [];
   for (const q of queryVariants) {
     candidates.push(...(await scrapeOnce(q)));
+  }
+
+  // eBay-Specific Search (High Value)
+  // We run this separately because it's a key requirement from the user
+  if (ctx.userQuery) {
+    const ebayCands = await searchOemOnEbay(ctx);
+    candidates.push(...ebayCands);
   }
 
   // Histogramm bauen

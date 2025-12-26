@@ -55,3 +55,14 @@ export type DashboardStats = {
   abortedOrders: number;
   completedOrders: number;
 };
+
+export type DashboardMessage = {
+  id: string;
+  orderId: string;
+  direction: "IN" | "OUT";
+  channel: string;
+  content: string;
+  createdAt: string;
+  from: string;
+  to: string;
+};

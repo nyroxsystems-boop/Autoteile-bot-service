@@ -2,11 +2,12 @@ import { Router, type Application, type Request, type Response } from "express";
 import * as wawi from "../services/inventreeAdapter";
 import {
   mapOfferRowToDashboardShopOffer,
-  mapOrderRowToDashboardOrder
+  mapOrderRowToDashboardOrder,
+  mapMessageRowToDashboardMessage
 } from "../mappers/dashboardMappers";
 import { logger } from "../utils/logger";
-
 import { authMiddleware } from "../middleware/authMiddleware";
+import * as analytics from "../services/analyticsService";
 
 export function createDashboardRouter(): Router {
   const router = Router();
@@ -41,6 +42,20 @@ export function createDashboardRouter(): Router {
     }
   });
 
+  router.get("/orders/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const orderId = req.params.id;
+      // Wawi-Adapter listMessagesByOrderId (needs to be added)
+      // using dynamic property access if not typed yet or add to interface
+      const msgs = await (wawi as any).listMessagesByOrderId(orderId);
+      const mapped = msgs.map((m: any) => mapMessageRowToDashboardMessage(m));
+      return res.status(200).json(mapped);
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+
   router.get("/stats", async (req: Request, res: Response) => {
     try {
       const orders = await wawi.listOrders();
@@ -59,6 +74,43 @@ export function createDashboardRouter(): Router {
   router.get('/merchant/settings/:merchantId', async (req: Request, res: Response) => {
     const settings = await wawi.getMerchantSettings(req.params.merchantId);
     return res.status(200).json(settings);
+  });
+
+  router.get("/suppliers", async (_req: Request, res: Response) => {
+    try {
+      const suppliers = await wawi.listSuppliers();
+      return res.status(200).json(suppliers);
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to fetch suppliers" });
+    }
+  });
+
+  router.get("/offers", async (_req: Request, res: Response) => {
+    try {
+      const offers = await wawi.listOffers();
+      return res.status(200).json(offers);
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to fetch offers" });
+    }
+  });
+
+  router.get("/analytics/forensics", async (_req: Request, res: Response) => {
+    try {
+      const stats = await analytics.getForensics();
+      return res.status(200).json(stats);
+    } catch (err: any) {
+      logger.error("Analytics Error", err);
+      return res.status(500).json({ error: "Failed to calc forensics" });
+    }
+  });
+
+  router.get("/analytics/conversion", async (_req: Request, res: Response) => {
+    try {
+      const stats = await analytics.getConversion();
+      return res.status(200).json(stats);
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to calc conversion" });
+    }
   });
 
   return router;

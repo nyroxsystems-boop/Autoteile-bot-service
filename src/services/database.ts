@@ -56,8 +56,15 @@ function createTables(): Promise<void> {
             id TEXT PRIMARY KEY,
             name TEXT,
             email TEXT,
+            email TEXT,
             role TEXT,
-            created_at TEXT
+            created_at TEXT,
+            password_hash TEXT,
+            is_active INTEGER DEFAULT 1,
+            last_login TEXT,
+            merchant_id TEXT,
+            username TEXT,
+            full_name TEXT
         )`,
         `CREATE TABLE IF NOT EXISTS merchant_settings (
             merchant_id TEXT PRIMARY KEY,

@@ -88,7 +88,41 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
   // In Realität würdest du hier eine externe Bestellung ausführen.
   const confirmation = `MOCK-ORDER-${orderId}-${offer.shopName}-${Date.now()}`;
 
+  // 1. Mark as ordered
   await updateOrderStatus(orderId, "ordered");
+
+  // 2. Automate Invoice Creation (Phase 7)
+  try {
+    // Dynamic import to avoid cycles or use dependency injection in real app
+    const wawi = await import('./realInvenTreeAdapter');
+    await wawi.createInvoice(orderId);
+    console.log("[OrderLogic] Automated Invoice created", { orderId });
+  } catch (err: any) {
+    console.error("[OrderLogic] Failed to auto-create invoice", { orderId, error: err.message });
+    // Don't fail the order flow, just log
+  }
+
+  // 3. Stock Sync (Phase 10)
+  try {
+    const oem = (offer as any).oemNumber || (offer as any).oem_number;
+    if (oem) {
+      // Dynamic import to avoid cycles
+      const wawi = await import('./realInvenTreeAdapter');
+      // Default tenant "public" or derived logic? For now "public" is safe default for single-tenant feel.
+      const tenantId = "public";
+      const part = await wawi.findPartByOem(tenantId, oem);
+
+      if (part && part.pk) {
+        await wawi.deductStock(tenantId, part.pk, 1);
+        console.log(`[OrderLogic] Stock deducted for Part ${part.pk} (OEM: ${oem})`);
+      } else {
+        console.log(`[OrderLogic] No matching WWS part found for OEM ${oem} - Stock not deducted.`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[OrderLogic] Failed to sync stock", { orderId, error: err.message });
+  }
+
   console.log("[OrderLogic] autoOrder completed", {
     orderId,
     newStatus: "ordered",

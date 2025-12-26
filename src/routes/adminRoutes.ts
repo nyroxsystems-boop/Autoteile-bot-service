@@ -131,6 +131,51 @@ router.get("/kpis", async (req: Request, res: Response) => {
     }
 });
 
+// --- Onboarding Wizard (Phase 11) ---
+
+import * as onboarding from "../services/onboardingService";
+
+router.post("/onboarding/initialize", async (req: Request, res: Response) => {
+    try {
+        const { name, email } = req.body;
+        if (!name || !email) return res.status(400).json({ error: "Name and Email required" });
+        const result = await onboarding.initializeOnboarding(name, email);
+        return res.json(result);
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+router.post("/onboarding/twilio", async (req: Request, res: Response) => {
+    try {
+        const { sessionId, phoneNumber, sid, token } = req.body;
+        const result = await onboarding.configureTwilio(sessionId, phoneNumber, sid, token);
+        return res.json(result);
+    } catch (err: any) {
+        return res.status(400).json({ error: err.message });
+    }
+});
+
+router.post("/onboarding/import", async (req: Request, res: Response) => {
+    try {
+        const { sessionId, csvData } = req.body;
+        const result = await onboarding.importInventory(sessionId, csvData);
+        return res.json(result);
+    } catch (err: any) {
+        return res.status(400).json({ error: err.message });
+    }
+});
+
+router.post("/onboarding/shop", async (req: Request, res: Response) => {
+    try {
+        const { sessionId, shopType, apiKey, shopUrl } = req.body;
+        const result = await onboarding.connectShop(sessionId, shopType, apiKey, shopUrl);
+        return res.json(result);
+    } catch (err: any) {
+        return res.status(400).json({ error: err.message });
+    }
+});
+
 export function createAdminRouter() {
     return router;
 }

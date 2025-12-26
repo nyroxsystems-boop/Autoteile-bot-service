@@ -15,7 +15,14 @@ type ResolutionOrder = Pick<
   requested_oem?: string;
   vehicle_vin?: string;
   vehicle_tecdoc_id?: string;
+  // Enhanced fields for scraping
+  vehicle_brand?: string;
+  vehicle_model?: string;
+  vehicle_year?: number;
+  part_text?: string;
 };
+
+import { findBestOemForVehicle, type SearchContext } from "./oemWebFinder";
 
 export interface DbClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
@@ -25,29 +32,10 @@ export interface ApifyClient {
   runActorDataset<I, O>(actorId: string, input: I): Promise<O[]>;
 }
 
-export type TecDocOperation =
-  | "getAllLanguages"
-  | "getAllCountries"
-  | "listVehicleTypes"
-  | "getManufacturers"
-  | "getModels"
-  | "getVehicleEngineTypes"
-  | "getVehicleDetails"
-  | "getCategoryV1"
-  | "getCategoryV2"
-  | "getCategoryV3"
-  | "getArticlesList"
-  | "getArticleDetailsById"
-  | "searchArticlesByNumber"
-  | "searchArticlesByNumberAndSupplier";
-
-export interface TecDocActorInput {
-  operation: TecDocOperation;
-  payload?: Record<string, any>;
-}
+// TecDoc types removed as we switched to scraping reference
 
 export class ProductResolutionService {
-  constructor(private readonly db: DbClient, private readonly apifyClient: ApifyClient) {}
+  constructor(private readonly db: DbClient, private readonly apifyClient: ApifyClient) { }
 
   public async resolveProductsForOrder(orderId: string): Promise<void> {
     const order = await this.loadOrder(orderId);
@@ -73,8 +61,39 @@ export class ProductResolutionService {
   }
 
   protected async loadOrder(orderId: string): Promise<ResolutionOrder> {
-    // TODO: Implement actual order loading from DB or service
-    throw new Error(`TODO: implement loadOrder for ${orderId}`);
+    const sql = `
+      SELECT
+        o.id,
+        o.language,
+        o.dealer_id,
+        o.country,
+        o.oem_number as requested_oem,
+        v.vin as vehicle_vin,
+        v.make as vehicle_brand,
+        v.model as vehicle_model,
+        v.year as vehicle_year,
+        od.part_description as part_text
+      FROM orders o
+      LEFT JOIN vehicles v ON v.order_id = o.id
+      LEFT JOIN order_data od ON od.order_id = o.id
+      WHERE o.id = $1
+    `;
+    const { rows } = await this.db.query<any>(sql, [orderId]);
+    const row = rows[0];
+    if (!row) throw new Error(`Order ${orderId} not found`);
+
+    return {
+      id: row.id,
+      language: row.language,
+      dealer_id: row.dealer_id,
+      country: row.country ?? 'DE',
+      requested_oem: row.requested_oem,
+      vehicle_vin: row.vehicle_vin,
+      vehicle_brand: row.vehicle_brand,
+      vehicle_model: row.vehicle_model,
+      vehicle_year: row.vehicle_year,
+      part_text: row.part_text
+    };
   }
 
   protected async resolveOemNumber(order: ResolutionOrder): Promise<string | null> {
@@ -82,62 +101,37 @@ export class ProductResolutionService {
       return order.requested_oem;
     }
 
-    const langId = this.mapLanguageToTecDocLangId(order.language);
-    const countryFilterId = this.mapCountryToTecDocCountryFilterId(order.country);
-
-    // TODO: Echte Suchstrategie implementieren (z.B. VIN/HSN/TSN oder weitere Order-Daten)
-    const payload = {
-      articleSearchNr: order.requested_oem ?? "",
-      langId,
-      countryFilterId,
+    // Use the new Scraper-based Finder
+    const ctx: SearchContext = {
+      vehicle: {
+        vin: order.vehicle_vin || undefined,
+        brand: order.vehicle_brand || undefined,
+        model: order.vehicle_model || undefined,
+        year: order.vehicle_year || undefined,
+      },
+      userQuery: order.part_text || "Ersatzteil"
     };
 
-    const input: TecDocActorInput = {
-      operation: "searchArticlesByNumber",
-      payload,
-    };
+    console.log(`[ProductResolution] Resolving OEM via Scraping for Order ${order.id}...`, ctx);
 
-    const dataset = await this.apifyClient.runActorDataset<TecDocActorInput, any>(
-      "making-data-meaningful/tecdoc",
-      input
-    );
+    // We try to find the best OEM using our multi-source scraper
+    const result = await findBestOemForVehicle(ctx, true);
 
-    if (!dataset?.length) {
-      return null;
+    if (result.bestOem) {
+      console.log(`[ProductResolution] Found OEM: ${result.bestOem} (Score: ${result.histogram[result.bestOem]})`);
+      return result.bestOem;
     }
 
-    const first = dataset[0] ?? {};
-    // TODO: Adjust extraction to the actual TecDoc actor response shape
-    const candidate =
-      first.oemNumber ??
-      first.articleNumber ??
-      first.articleNo ??
-      first.oem_number ??
-      first?.data?.oemNumber ??
-      null;
-
-    return candidate ?? null;
+    console.warn(`[ProductResolution] No OEM found for Order ${order.id}`);
+    return null;
   }
 
+  // TecDoc Mappers removed or kept for generic fallback if needed
   private mapLanguageToTecDocLangId(language: string | null | undefined): number {
-    // TODO: Mapping anpassen, wenn echte TecDoc langId-Werte vorliegen
-    switch ((language ?? "en").toLowerCase()) {
-      case "de":
-        return 10; // Beispielwert
-      case "en":
-      default:
-        return 4; // Beispielwert
-    }
+    return 1; // dummy path
   }
-
   private mapCountryToTecDocCountryFilterId(country: string | null | undefined): number {
-    // TODO: Mapping anpassen, wenn echte TecDoc countryFilterId-Werte vorliegen
-    switch ((country ?? "DE").toUpperCase()) {
-      case "DE":
-        return 62; // Beispielwert für Deutschland
-      default:
-        return 62; // Fallback
-    }
+    return 1; // dummy path
   }
 
   protected async loadActiveSuppliersForDealer(dealerId: string): Promise<Supplier[]> {

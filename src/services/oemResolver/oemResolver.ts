@@ -11,7 +11,7 @@ import { filterByPartMatch, resolveAftermarketToOEM } from "./sources/partMatchH
 import { clampConfidence } from "./sources/baseSource";
 import { backsearchOEM } from "./backsearch";
 import { motointegratorSource } from "./sources/motointegratorSource";
-import { eBayDuplicateSource } from "./sources/eBayDuplicateSource";
+// import { eBayDuplicateSource } from "./sources/eBayDuplicateSource";
 import { autodocSource } from "./sources/autodocSource";
 import { autodocWebSource } from "./sources/autodocWebSource";
 import { sepZapWebSource } from "./sources/sepZapWebSource";
@@ -34,7 +34,7 @@ const SOURCES = [
   webScrapeSource,
   llmHeuristicSource,
   motointegratorSource,
-  eBayDuplicateSource,
+  // eBayDuplicateSource removed (Logic moved to webScrapeSource/oemWebFinder)
   autodocSource,
   autodocWebSource,
   sepZapWebSource,

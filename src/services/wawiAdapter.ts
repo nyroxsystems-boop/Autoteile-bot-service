@@ -140,6 +140,10 @@ export async function updateOrderData(orderId: string, data: any): Promise<void>
   orders.set(orderId, row);
 }
 
+export async function listMessagesByOrderId(orderId: string): Promise<any[]> {
+  return messages.get(orderId) || [];
+}
+
 export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
   const row = orders.get(orderId) || {};
   row.status = status;

@@ -12,6 +12,16 @@ export interface MerchantSettings {
     dealerName?: string;
     deliveryTimeBufferDays?: number;
     supportedLanguages?: string[];
+
+    // Onboarding / Twilio Fields
+    twilio_phone_number?: string;
+    twilio_sid?: string;
+    twilio_auth_token?: string;
+
+    // Shop Integration
+    shop_type?: 'shopify' | 'woocommerce';
+    shop_url?: string;
+    shop_api_key?: string;
 }
 
 function genId(prefix = "order"): string {

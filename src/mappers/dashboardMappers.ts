@@ -2,7 +2,8 @@ import type {
   DashboardOrder,
   DashboardOrderPart,
   DashboardShopOffer,
-  DashboardVehicle
+  DashboardVehicle,
+  DashboardMessage
 } from "../types/dashboard";
 
 export function mapOrderRowToDashboardOrder(row: any, vehicleRow?: any | null): DashboardOrder {
@@ -73,4 +74,17 @@ export function mapOfferRowToDashboardShopOffer(row: any): DashboardShopOffer {
 
   console.log("[DashboardMapper] mapped offer", { id: mapped.id, orderId: mapped.orderId });
   return mapped;
+}
+
+export function mapMessageRowToDashboardMessage(row: any): DashboardMessage {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    direction: row.direction, // 'IN' | 'OUT'
+    channel: row.channel, // 'whatsapp' | 'web'
+    content: row.content,
+    createdAt: row.createdAt ?? row.created_at,
+    from: row.fromIdentifier ?? 'unknown',
+    to: row.toIdentifier ?? 'unknown'
+  };
 }
