@@ -56,7 +56,6 @@ function createTables(): Promise<void> {
             id TEXT PRIMARY KEY,
             name TEXT,
             email TEXT,
-            email TEXT,
             role TEXT,
             created_at TEXT,
             password_hash TEXT,
