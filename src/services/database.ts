@@ -68,6 +68,14 @@ function createTables(): Promise<void> {
         `CREATE TABLE IF NOT EXISTS merchant_settings (
             merchant_id TEXT PRIMARY KEY,
             settings TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            token TEXT,
+            expires_at TEXT,
+            created_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )`
     ];
 
