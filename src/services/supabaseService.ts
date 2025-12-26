@@ -1,6 +1,8 @@
 // Lightweight compatibility wrapper: we no longer use Supabase.
 // Re-export the WAWI adapter functions so existing imports continue to work.
-export * from "./inventreeAdapter";
+// Re-export the WAWI adapter functions so existing imports continue to work.
+// NOW USING: Real InvenTree Adapter (Hybrid SQLite + API Sync)
+export * from "./realInvenTreeAdapter";
 export { ConversationStatus } from "./wawiAdapter";
 
 // Provide a couple of no-op compatibility shims for functions that older code
