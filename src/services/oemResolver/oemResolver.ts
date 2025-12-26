@@ -37,13 +37,8 @@ const SOURCES = [
   sepZapWebSource,
   // NEW HIGH-QUALITY SOURCES
   kfzteile24Source,
-  oscaroSource,
   pkwteileSource,
-  openaiVisionSource,
-  // TecDoc sources (lower priority due to API limitations)
-  tecdocLightSource,
-  tecdocVinRestSource,
-  tecdocNumberSource
+  openaiVisionSource
 ];
 
 const CONFIDENCE_THRESHOLD_VETTED = 0.96; // User requirement: 96%

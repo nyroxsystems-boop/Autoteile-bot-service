@@ -84,7 +84,7 @@ function createTables(): Promise<void> {
                     }
                     completed++;
                     if (completed === queries.length) {
-                        resolve();
+                        resolve(undefined);
                     }
                 });
             });
