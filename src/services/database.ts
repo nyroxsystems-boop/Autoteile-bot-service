@@ -118,38 +118,39 @@ function seedInitialUser(): Promise<void> {
             }
         });
     });
+}
 
-    export function getDb(): Database {
-        if (!db) {
-            throw new Error('Database not initialized. Call initDb() first.');
-        }
-        return db;
+export function getDb(): Database {
+    if (!db) {
+        throw new Error('Database not initialized. Call initDb() first.');
     }
+    return db;
+}
 
-    // Helper for Promisified running
-    export function run(sql: string, params: any[] = []): Promise<void> {
-        return new Promise((resolve, reject) => {
-            getDb().run(sql, params, function (err) {
-                if (err) reject(err);
-                else resolve();
-            });
+// Helper for Promisified running
+export function run(sql: string, params: any[] = []): Promise<void> {
+    return new Promise((resolve, reject) => {
+        getDb().run(sql, params, function (err) {
+            if (err) reject(err);
+            else resolve();
         });
-    }
+    });
+}
 
-    export function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
-        return new Promise((resolve, reject) => {
-            getDb().get(sql, params, (err, row) => {
-                if (err) reject(err);
-                else resolve(row as T);
-            });
+export function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
+    return new Promise((resolve, reject) => {
+        getDb().get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row as T);
         });
-    }
+    });
+}
 
-    export function all<T>(sql: string, params: any[] = []): Promise<T[]> {
-        return new Promise((resolve, reject) => {
-            getDb().all(sql, params, (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows as T[]);
-            });
+export function all<T>(sql: string, params: any[] = []): Promise<T[]> {
+    return new Promise((resolve, reject) => {
+        getDb().all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows as T[]);
         });
-    }
+    });
+}
