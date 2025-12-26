@@ -93,27 +93,38 @@ function createTables(): Promise<void> {
 
 function seedInitialUser(): Promise<void> {
     return new Promise((resolve, reject) => {
-        db.get('SELECT count(*) as count FROM users', (err, row: any) => {
+        const hash = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f'; // password123
+        const email = 'admin@example.com';
+
+        // 1. Check if admin exists
+        db.get('SELECT id FROM users WHERE email = ?', [email], (err, row: any) => {
             if (err) {
-                logger.error('Error checking users count', err);
+                logger.error('Error checking admin user', err);
                 return resolve();
             }
 
-            if (row.count === 0) {
+            if (row) {
+                // 2. User exists: Force Update Password
+                logger.info('🔄 Admin user exists, updating password...');
+                db.run('UPDATE users SET password_hash = ?, is_active = 1 WHERE id = ?', [hash, row.id], (err) => {
+                    if (err) logger.error('Error resetting admin password', err);
+                    else logger.info('✅ Admin password reset to: password123');
+                    resolve();
+                });
+            } else {
+                // 3. User does not exist: Insert
+                logger.info('🌱 Creating new admin user...');
                 const id = 'user-' + Date.now();
                 const now = new Date().toISOString();
-                const hash = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f';
 
                 const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username, full_name, merchant_id) 
                              VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`;
 
-                db.run(sql, [id, 'Admin User', 'admin@example.com', 'admin', now, hash, 'admin', 'Admin User', 'demo-merchant'], (err) => {
-                    if (err) logger.error('Error seeding admin user', err);
-                    else logger.info('✅ Seeded default admin user: admin@example.com / password123');
+                db.run(sql, [id, 'Admin User', email, 'admin', now, hash, 'admin', 'Admin User', 'demo-merchant'], (err) => {
+                    if (err) logger.error('Error creating admin user', err);
+                    else logger.info('✅ Created admin user: admin@example.com / password123');
                     resolve();
                 });
-            } else {
-                resolve();
             }
         });
     });
