@@ -86,9 +86,9 @@ export async function scrapeOffersForOrder(
       allOffers.push(inventoryOffer);
 
       // If found in stock, save immediately and return (no need to scrape external shops)
-      const inserted = await insertShopOffers(orderId, oemNumber, allOffers);
-      console.log("[SCRAPE] done (from inventory)", { orderId, offersSaved: inserted.length });
-      return inserted;
+      await insertShopOffers(orderId, oemNumber, allOffers);
+      console.log("[SCRAPE] done (from inventory)", { orderId, offersSaved: allOffers.length });
+      return allOffers;
     } else {
       console.log("[SCRAPE] Not in dealer inventory, checking external shops...");
     }
@@ -122,9 +122,9 @@ export async function scrapeOffersForOrder(
   }
 
   console.log("[SCRAPE] inserting offers into DB", { orderId, offersCount: allOffers.length });
-  const inserted = await insertShopOffers(orderId, oemNumber, allOffers);
-  console.log("[SCRAPE] done", { orderId, offersSaved: inserted.length });
-  return inserted;
+  await insertShopOffers(orderId, oemNumber, allOffers);
+  console.log("[SCRAPE] done", { orderId, offersCount: allOffers.length });
+  return allOffers;
 }
 
 /**

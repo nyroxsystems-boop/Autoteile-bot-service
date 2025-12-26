@@ -1,4 +1,13 @@
-import { TecDocVehicleLookup } from "./tecdocClient";
+// import { TecDocVehicleLookup } from "./tecdocClient";
+export interface TecDocVehicleLookup {
+  make?: string;
+  model?: string;
+  year?: number;
+  engine?: string;
+  vin?: string;
+  hsn?: string;
+  tsn?: string;
+}
 import { determineRequiredFields } from "./oemRequiredFieldsService";
 import { resolveOEM as resolveOEMUnified } from "./oemResolver/oemResolver";
 import { OEMCandidate, OEMResolverRequest, OEMResolverResult } from "./oemResolver/types";

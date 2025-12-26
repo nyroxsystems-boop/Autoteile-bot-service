@@ -1,4 +1,5 @@
-import { TecDocVehicleLookup } from "./tecdocClient";
+// import { TecDocVehicleLookup } from "./tecdocClient";
+import { TecDocVehicleLookup } from "./oemService";
 
 export function determineRequiredFields(vehicle: TecDocVehicleLookup): string[] {
   const required: string[] = [];
