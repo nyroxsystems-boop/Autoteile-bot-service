@@ -89,40 +89,67 @@ function createTables(): Promise<void> {
                 });
             });
         });
-    });
+    }).then(() => seedInitialUser());
 }
 
-export function getDb(): Database {
-    if (!db) {
-        throw new Error('Database not initialized. Call initDb() first.');
+function seedInitialUser(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT count(*) as count FROM users', (err, row: any) => {
+            if (err) {
+                logger.error('Error checking users count', err);
+                return resolve();
+            }
+
+            if (row.count === 0) {
+                const id = 'user-' + Date.now();
+                const now = new Date().toISOString();
+                const hash = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f';
+
+                const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username, full_name, merchant_id) 
+                             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`;
+
+                db.run(sql, [id, 'Admin User', 'admin@example.com', 'admin', now, hash, 'admin', 'Admin User', 'demo-merchant'], (err) => {
+                    if (err) logger.error('Error seeding admin user', err);
+                    else logger.info('✅ Seeded default admin user: admin@example.com / password123');
+                    resolve();
+                });
+            } else {
+                resolve();
+            }
+        });
+    });
+
+    export function getDb(): Database {
+        if (!db) {
+            throw new Error('Database not initialized. Call initDb() first.');
+        }
+        return db;
     }
-    return db;
-}
 
-// Helper for Promisified running
-export function run(sql: string, params: any[] = []): Promise<void> {
-    return new Promise((resolve, reject) => {
-        getDb().run(sql, params, function (err) {
-            if (err) reject(err);
-            else resolve();
+    // Helper for Promisified running
+    export function run(sql: string, params: any[] = []): Promise<void> {
+        return new Promise((resolve, reject) => {
+            getDb().run(sql, params, function (err) {
+                if (err) reject(err);
+                else resolve();
+            });
         });
-    });
-}
+    }
 
-export function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
-    return new Promise((resolve, reject) => {
-        getDb().get(sql, params, (err, row) => {
-            if (err) reject(err);
-            else resolve(row as T);
+    export function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
+        return new Promise((resolve, reject) => {
+            getDb().get(sql, params, (err, row) => {
+                if (err) reject(err);
+                else resolve(row as T);
+            });
         });
-    });
-}
+    }
 
-export function all<T>(sql: string, params: any[] = []): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-        getDb().all(sql, params, (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows as T[]);
+    export function all<T>(sql: string, params: any[] = []): Promise<T[]> {
+        return new Promise((resolve, reject) => {
+            getDb().all(sql, params, (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows as T[]);
+            });
         });
-    });
-}
+    }
