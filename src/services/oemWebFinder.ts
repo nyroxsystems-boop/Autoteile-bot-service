@@ -239,7 +239,7 @@ async function searchOemOnAutodocParts(ctx: SearchContext): Promise<OemCandidate
     if (html.includes("Just a moment") && html.includes("challenge-platform")) return [];
     const jsonMatches = html.match(/\"oeNumbers\"\\s*:\\s*\\[(.*?)\\]/gi) || [];
     const extracted: string[] = [];
-    jsonMatches.forEach((m) => {
+    jsonMatches.forEach((m: string) => {
       const parts = m.match(/[A-Z0-9\\-\\.]{5,20}/gi);
       if (parts) parts.forEach((p) => extracted.push(p));
     });
@@ -262,12 +262,12 @@ async function searchOemOnSpareto(ctx: SearchContext): Promise<OemCandidate[]> {
     const extracted: string[] = [];
     if (ldJson && ldJson[1]) {
       const mpnMatches = ldJson[1].match(/\"mpn\"\\s*:\\s*\"([A-Z0-9\\-\\.]{5,20})\"/gi) || [];
-      mpnMatches.forEach((m) => {
+      mpnMatches.forEach((m: string) => {
         const v = m.replace(/.*\"mpn\"\\s*:\\s*\"/i, "").replace(/\".*/, "");
         extracted.push(v);
       });
       const skuMatches = ldJson[1].match(/\"sku\"\\s*:\\s*\"([A-Z0-9\\-\\.]{5,20})\"/gi) || [];
-      skuMatches.forEach((m) => {
+      skuMatches.forEach((m: string) => {
         const v = m.replace(/.*\"sku\"\\s*:\\s*\"/i, "").replace(/\".*/, "");
         extracted.push(v);
       });

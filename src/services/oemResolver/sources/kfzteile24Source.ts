@@ -45,7 +45,7 @@ export const kfzteile24Source: OEMSource = {
 
             jsonLdMatches.forEach(match => {
                 try {
-                    const json = JSON.parse(match.replace(/<script[^>]*>|<\/script>/gi, ""));
+                    const json = JSON.parse((match as string).replace(/<script[^>]*>|<\/script>/gi, ""));
                     if (json.mpn) additionalOems.push(json.mpn);
                     if (json.sku) additionalOems.push(json.sku);
                 } catch {
