@@ -7,12 +7,7 @@
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": [
-      "node",
-      "express",
-      "jest",
-      "cors"
-    ]
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*"
