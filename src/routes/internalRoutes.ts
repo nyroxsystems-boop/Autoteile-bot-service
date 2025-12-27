@@ -18,8 +18,14 @@ export function createInternalRouter(): Router {
     }
   });
 
-  router.post("/seed", async (req: Request, res: Response) => {
-    console.log("[InternalAPI] POST /internal/seed requested");
+  // Debug Route
+  router.get("/ping", (req, res) => {
+    res.json({ status: "alive", time: new Date().toISOString() });
+  });
+
+  // Seeding Route (Renamed to force update)
+  router.post("/seed-db", async (req: Request, res: Response) => {
+    console.log("[InternalAPI] POST /internal/seed-db requested");
     try {
       const { runSeeding } = await import("../services/seedingService");
       const result = await runSeeding(50);
