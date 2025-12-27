@@ -18,6 +18,18 @@ export function createInternalRouter(): Router {
     }
   });
 
+  router.post("/seed", async (req: Request, res: Response) => {
+    console.log("[InternalAPI] POST /internal/seed requested");
+    try {
+      const { runSeeding } = await import("../services/seedingService");
+      const result = await runSeeding(50);
+      return res.status(200).json({ success: true, result });
+    } catch (err: any) {
+      console.error("[InternalAPI] Seeding failed", err);
+      return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
   return router;
 }
 
