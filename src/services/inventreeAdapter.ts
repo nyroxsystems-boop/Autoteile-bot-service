@@ -475,3 +475,82 @@ export async function processStockAction(tenantId: string, partId: string | numb
         stock: newStock
     };
 }
+
+// --------------------------------------------------------------------------
+// CRM / Company Integration (Local SQLite)
+// --------------------------------------------------------------------------
+
+export interface InvenTreeCompany {
+    pk?: number;
+    name: string;
+    description?: string;
+    website?: string;
+    phone?: string;
+    email?: string;
+    is_customer: boolean;
+    is_supplier: boolean;
+    active: boolean;
+    currency?: string;
+    metadata?: any;
+}
+
+function parseCompanyRow(row: any) {
+    return {
+        pk: row.id,
+        name: row.name,
+        description: row.description,
+        website: row.website,
+        email: row.email,
+        phone: row.phone,
+        is_customer: !!row.is_customer,
+        is_supplier: !!row.is_supplier,
+        active: !!row.active,
+        metadata: row.metadata ? JSON.parse(row.metadata) : {}
+    };
+}
+
+export async function createCompany(company: InvenTreeCompany) {
+    await db.run(
+        `INSERT INTO companies (name, description, website, email, phone, is_customer, is_supplier, active, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [company.name, company.description || '', company.website || '', company.email || '', company.phone || '', company.is_customer ? 1 : 0, company.is_supplier ? 1 : 0, company.active ? 1 : 0, JSON.stringify(company.metadata || {})]
+    );
+    const row = await db.get<any>(`SELECT * FROM companies ORDER BY id DESC LIMIT 1`);
+    return parseCompanyRow(row);
+}
+
+export async function getCompanies(params: { is_customer?: boolean, is_supplier?: boolean, search?: string, active?: boolean } = {}) {
+    let sql = `SELECT * FROM companies WHERE 1=1`;
+    const qp: any[] = [];
+    if (params.is_customer !== undefined) { sql += ` AND is_customer = ?`; qp.push(params.is_customer ? 1 : 0); }
+    if (params.is_supplier !== undefined) { sql += ` AND is_supplier = ?`; qp.push(params.is_supplier ? 1 : 0); }
+    if (params.active !== undefined) { sql += ` AND active = ?`; qp.push(params.active ? 1 : 0); }
+    if (params.search) { sql += ` AND name LIKE ?`; qp.push(`%${params.search}%`); }
+
+    // Sort
+    sql += ` ORDER BY id DESC LIMIT 100`;
+
+    const rows = await db.all<any>(sql, qp);
+    return rows.map(parseCompanyRow);
+}
+
+export async function updateCompany(id: number, patch: Partial<InvenTreeCompany>) {
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (patch.name !== undefined) { updates.push("name = ?"); params.push(patch.name); }
+    if (patch.description !== undefined) { updates.push("description = ?"); params.push(patch.description); }
+    if (patch.website !== undefined) { updates.push("website = ?"); params.push(patch.website); }
+    if (patch.email !== undefined) { updates.push("email = ?"); params.push(patch.email); }
+    if (patch.phone !== undefined) { updates.push("phone = ?"); params.push(patch.phone); }
+    if (patch.is_customer !== undefined) { updates.push("is_customer = ?"); params.push(patch.is_customer ? 1 : 0); }
+    if (patch.metadata !== undefined) { updates.push("metadata = ?"); params.push(JSON.stringify(patch.metadata)); }
+
+    if (updates.length > 0) {
+        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ?`;
+        params.push(String(id));
+        await db.run(sql, params);
+    }
+    const row = await db.get<any>(`SELECT * FROM companies WHERE id = ?`, [id]);
+    if (!row) throw new Error("Company not found");
+    return parseCompanyRow(row);
+}

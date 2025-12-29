@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import * as adapter from '../services/realInvenTreeAdapter';
+import * as adapter from '../services/inventreeAdapter';
 import { logger } from '../utils/logger';
 
 export function createCrmRouter() {

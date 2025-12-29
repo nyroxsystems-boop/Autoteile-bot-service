@@ -87,6 +87,18 @@ function createTables(): Promise<void> {
             location TEXT,
             ipn TEXT,
             manufacturer TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            description TEXT,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            is_customer INTEGER DEFAULT 0,
+            is_supplier INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1,
+            metadata TEXT
         )`
     ];
 

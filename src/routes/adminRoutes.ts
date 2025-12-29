@@ -15,20 +15,35 @@ router.get("/users", async (req: Request, res: Response) => {
     }
 });
 
+import { createHash } from "crypto";
+
+function hashPassword(password: string): string {
+    return createHash('sha256').update(password).digest('hex');
+}
+
 router.post("/users", async (req: Request, res: Response) => {
-    const { name, email, role } = req.body;
+    const { name, email, role, password } = req.body;
     if (!name || !email) {
         return res.status(400).json({ error: "Name and Email are required." });
     }
     const id = randomUUID();
     const createdAt = new Date().toISOString();
+
+    let passwordHash = null;
+    if (password) {
+        passwordHash = hashPassword(password);
+    } else {
+        // Optional default password for manual users? Or leave null (no login)
+        // For safe fallback, maybe 'password123' hashed? Or just null.
+        // User asked "unlock people". So they need password.
+    }
+
     try {
-        const sql = `INSERT INTO users (id, name, email, role, created_at) VALUES (?, ?, ?, ?, ?)`;
-        await db.run(sql, [id, name, email, role || "sales_rep", createdAt]);
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?)`;
+        await db.run(sql, [id, name, email, role || "sales_rep", createdAt, passwordHash]);
 
         // IF Dealer -> Sync to InvenTree as 'Supplier' or 'Customer'?
-        // The user asked for "Händler" (Dealer). This usually means a B2B partner.
-        // Let's create them as a Company in InvenTree if role is 'dealer' or 'merchant'
+        // The user asked for "Händler" (Dealer).
         if (role === 'dealer' || role === 'merchant' || role === 'admin') {
             // Optional: Sync to InvenTree
         }
