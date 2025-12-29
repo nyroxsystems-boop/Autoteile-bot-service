@@ -7,17 +7,10 @@
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": [
-      "node",
-      "express",
-      "cors",
-      "node-fetch",
-      "sqlite3",
-      "cheerio",
-      "supertest",
-      "user-agents",
-      "jest"
-    ]
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "noEmit": false
   },
   "include": [
     "src/**/*"
