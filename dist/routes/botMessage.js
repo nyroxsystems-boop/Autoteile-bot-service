@@ -1,0 +1,62 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const botLogicService_1 = require("../services/botLogicService");
+const supabaseService_1 = require("../services/supabaseService");
+const env_1 = require("../config/env");
+const router = (0, express_1.Router)();
+/**
+ * POST /bot/message
+ *
+ * Der komplette End-to-End Bot Flow:
+ * - Nachricht verstehen
+ * - Rückfragen stellen falls Infos fehlen
+ * - OEM ermitteln
+ * - Angebote scrapen
+ * - Bestes Angebot bestimmen
+ * - Antwort generieren
+ */
+router.post("/", async (req, res) => {
+    if (env_1.env.botApiSecret) {
+        const provided = req.header("x-bot-secret");
+        if (provided !== env_1.env.botApiSecret) {
+            return res.status(401).json({ error: "unauthorized" });
+        }
+    }
+    const { from, text, orderId, mediaUrls } = req.body ?? {};
+    if (!from || !text) {
+        return res.status(400).json({ error: "from and text are required" });
+    }
+    try {
+        console.log("[Bot] Incoming /bot/message", {
+            from,
+            text,
+            orderId,
+            hasMedia: Array.isArray(mediaUrls) && mediaUrls.length > 0
+        });
+        const result = await (0, botLogicService_1.handleIncomingBotMessage)({
+            from,
+            text,
+            orderId: orderId ?? null,
+            mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : undefined
+        });
+        // Antwort als outgoing message speichern
+        try {
+            await (0, supabaseService_1.insertMessage)(from, result.reply, "OUT");
+        }
+        catch (dbErr) {
+            console.error("Failed to store outgoing bot message", { error: dbErr?.message, orderId: result.orderId });
+            // Do not fail the whole request if logging to DB fails
+        }
+        console.log("[Bot] Outgoing reply", { orderId: result.orderId, reply: result.reply });
+        res.json(result);
+    }
+    catch (err) {
+        console.error("BotFlow Error:", err);
+        res.status(500).json({
+            error: "BotFlow failed",
+            details: err?.message ?? String(err)
+        });
+    }
+});
+exports.default = router;
