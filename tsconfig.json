@@ -6,14 +6,7 @@
     "outDir": "dist",
     "strict": false,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": [
-      "node",
-      "express",
-      "jest",
-      "cors",
-      "sqlite3"
-    ]
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*"
