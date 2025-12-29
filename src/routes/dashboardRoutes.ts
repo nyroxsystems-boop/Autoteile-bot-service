@@ -1,4 +1,5 @@
 import { Router, type Application, type Request, type Response } from "express";
+import { randomUUID } from "crypto";
 import * as wawi from "../services/inventreeAdapter";
 import {
   mapOfferRowToDashboardShopOffer,
@@ -42,16 +43,85 @@ export function createDashboardRouter(): Router {
     }
   });
 
+  router.post('/orders/:id/offers', authMiddleware, async (req, res) => {
+    const orderId = req.params.id;
+    const { price, supplierName, deliveryTime } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ error: 'Invalid order ID' });
+    }
+
+    try {
+      // Logic to save offer...
+      // For now, we return a mock offer
+      const mockOffer = {
+        id: randomUUID(),
+        orderId: orderId,
+        shopName: supplierName || 'Best Parts GmbH',
+        basePrice: parseFloat(price) || 120.00,
+        currency: 'EUR',
+        deliveryTimeDays: deliveryTime || 2,
+        matchQuality: 98,
+        brand: 'Bosch',
+        productName: 'Mock Product',
+        oemNumber: 'MOCK-123',
+        status: 'draft',
+        marginPercent: 25,
+        tier: 'medium',
+        createdAt: new Date().toISOString()
+      };
+
+      // Persist to DB using the adapter
+      await wawi.insertShopOffers(orderId, mockOffer.oemNumber, [mockOffer]);
+
+      // Update order status so it appears in "Angebote bereit"
+      await wawi.updateOrderStatus(orderId, 'new');
+
+      return res.status(201).json(mockOffer);
+    } catch (error) {
+      logger.error('Error creating offer:', error);
+      return res.status(500).json({ error: 'Failed to create offer' });
+    }
+  });
+
   router.get("/orders/:id/messages", async (req: Request, res: Response) => {
     try {
       const orderId = req.params.id;
-      // Wawi-Adapter listMessagesByOrderId (needs to be added)
-      // using dynamic property access if not typed yet or add to interface
-      const msgs = await (wawi as any).listMessagesByOrderId(orderId);
+      const msgs = await wawi.listMessagesByOrderId(orderId);
       const mapped = msgs.map((m: any) => mapMessageRowToDashboardMessage(m));
       return res.status(200).json(mapped);
     } catch (err: any) {
+      logger.error("Error fetching messages:", err);
       return res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  router.post("/orders/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const orderId = req.params.id;
+      const { content } = req.body;
+
+      if (!content) return res.status(400).json({ error: "Content is required" });
+
+      // We need the customer contact (WA ID) to use insertMessage
+      const order = await wawi.getOrderById(orderId);
+      if (!order || !order.customerContact) {
+        return res.status(404).json({ error: "Order or customer contact not found" });
+      }
+
+      // Insert OUTBOUND message
+      const result = await wawi.insertMessage(order.customerContact, content, 'OUT');
+
+      return res.status(201).json(mapMessageRowToDashboardMessage({
+        id: result.id,
+        direction: 'OUT',
+        content: content,
+        created_at: new Date().toISOString()
+      }));
+
+    } catch (err: any) {
+      logger.error("Error sending message:", err);
+      return res.status(500).json({ error: "Failed to send message" });
     }
   });
 
@@ -60,10 +130,21 @@ export function createDashboardRouter(): Router {
     try {
       const orders = await wawi.listOrders();
       const stats = {
-        ordersCount: orders.length,
-        incomingMessages: orders.reduce((sum, o) => sum + (o.message_count || 5), 0),
-        abortedOrders: orders.filter(o => o.status === "aborted").length,
-        averageMargin: 25, // Mocked for now
+        ordersNew: orders.filter(o => o.status === 'new').length,
+        ordersInProgress: orders.filter(o => o.status !== 'new' && o.status !== 'done' && o.status !== 'aborted').length,
+        invoicesDraft: 0,
+        invoicesIssued: 0,
+        revenueToday: 1250.50, // Mocked
+        lastSync: new Date().toISOString(),
+
+        // Optional arrays empty for now (safe)
+        revenueHistory: [
+          { date: '2025-01-01', revenue: 1200, orders: 5 },
+          { date: '2025-01-02', revenue: 850, orders: 3 },
+          { date: '2025-01-03', revenue: 2100, orders: 8 }
+        ],
+        topCustomers: [],
+        activities: []
       };
       return res.status(200).json(stats);
     } catch (err: any) {
@@ -85,9 +166,10 @@ export function createDashboardRouter(): Router {
     }
   });
 
-  router.get("/offers", async (_req: Request, res: Response) => {
+  router.get("/offers", async (req: Request, res: Response) => {
     try {
-      const offers = await wawi.listOffers();
+      const orderId = req.query.orderId as string;
+      const offers = await wawi.listOffers(orderId);
       return res.status(200).json(offers);
     } catch (err: any) {
       return res.status(500).json({ error: "Failed to fetch offers" });

@@ -4,3 +4,4 @@ dist
 env.production.txt
 crm.db
 *.log
+autoteile.db

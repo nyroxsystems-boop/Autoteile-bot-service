@@ -3,10 +3,15 @@ import axios from 'axios';
 import * as dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 
+import https from 'https';
+
 dotenv.config();
 
 const BASE_URL = process.env.INVENTREE_BASE_URL;
 const API_TOKEN = process.env.INVENTREE_API_TOKEN;
+
+// Permissive Agent for Render/Dev environments
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // API Client for WWS
 const api = axios.create({
@@ -15,7 +20,8 @@ const api = axios.create({
         'Authorization': `Token ${API_TOKEN}`,
         'Content-Type': 'application/json'
     },
-    timeout: 5000 // Don't block bot too long
+    timeout: 5000,
+    httpsAgent
 });
 
 // Pass-through READS (Local SQLite is source of truth for speed)

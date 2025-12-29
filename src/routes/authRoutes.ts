@@ -39,6 +39,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
         // Verify password
         const passwordHash = hashPassword(password);
+
         if (user.password_hash !== passwordHash) {
             return res.status(401).json({ error: "Invalid email or password" });
         }
@@ -127,14 +128,25 @@ router.get("/me", async (req: Request, res: Response) => {
 
     try {
         // Find session
+        console.log(`[Auth/Me] Checking token: ${token.substring(0, 10)}... (Length: ${token.length})`);
+
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ? AND datetime(expires_at) > datetime("now")',
+            'SELECT * FROM sessions WHERE token = ?',
             [token]
         );
 
         if (!session) {
+            console.log(`[Auth/Me] Session not found in DB.`);
             return res.status(401).json({ error: "Invalid or expired session" });
         }
+
+        const now = new Date().toISOString();
+        if (session.expires_at < now) {
+            console.log(`[Auth/Me] Session expired. Exp: ${session.expires_at}, Now: ${now}`);
+            return res.status(401).json({ error: "Invalid or expired session" });
+        }
+
+        console.log(`[Auth/Me] Session valid for user ${session.user_id}`);
 
         // Get user
         const user = await db.get<any>(

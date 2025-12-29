@@ -163,6 +163,16 @@ export async function runSeeding(count = 50) {
         })]
     );
 
+    // Seed Parts
+    console.log('🔧 Seeding Parts...');
+    await db.run('DELETE FROM parts');
+    for (const part of PARTS) {
+        await db.run(
+            `INSERT INTO parts (name, description, oem_number, stock, category, ipn, manufacturer) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [part.name, `Premium ${part.name} for multiple vehicles`, part.oem, Math.floor(Math.random() * 50), part.category, `IPN-${Math.floor(Math.random() * 10000)}`, randomElement(['Bosch', 'ATE', 'Mann', 'Sachs'])]
+        );
+    }
+
     for (let i = 0; i < count; i++) {
         const customerName = randomElement(CUSTOMER_NAMES);
         const customerContact = generatePhoneNumber();

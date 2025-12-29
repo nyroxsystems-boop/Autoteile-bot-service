@@ -29,7 +29,7 @@ const app = express();
 app.use(cors({
   origin: '*', // Allow all origins for now to prevent blocked requests
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
 }));
 app.use(express.json());
 
