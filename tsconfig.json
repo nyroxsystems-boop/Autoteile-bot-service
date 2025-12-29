@@ -7,9 +7,16 @@
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
-    "typeRoots": [
-      "./node_modules/@types"
+    "types": [
+      "node",
+      "express",
+      "cors",
+      "node-fetch",
+      "sqlite3",
+      "cheerio",
+      "supertest",
+      "user-agents",
+      "jest"
     ]
   },
   "include": [
