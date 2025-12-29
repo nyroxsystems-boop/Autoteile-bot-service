@@ -6,7 +6,11 @@
     "outDir": "dist",
     "strict": false,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "typeRoots": [
+      "./node_modules/@types"
+    ]
   },
   "include": [
     "src/**/*"
