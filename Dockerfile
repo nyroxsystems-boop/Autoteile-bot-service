@@ -1,31 +1,33 @@
-# Multi-stage build to minimize final image size
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY pnpm-lock.yaml ./
 
-# Install pnpm and dependencies
-RUN npm install -g pnpm@9 && \
-    PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile --prod
+# Install dependencies (builder has internet access)
+RUN npm install --omit=dev --no-audit --no-fund
 
-# Copy source and prebuilt dist
+# Copy prebuilt dist
 COPY dist ./dist
 
-# Production stage
+# Production stage - minimal image
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy node_modules and dist from builder
+# Copy only necessary files from builder
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
 
-# Expose port
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
 EXPOSE 3000
 
-# Start the application
 CMD ["node", "dist/index.js"]

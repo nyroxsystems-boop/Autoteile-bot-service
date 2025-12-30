@@ -1,14 +1,7 @@
 services:
   - type: web
     name: bot-service
-    runtime: node
+    runtime: docker
     plan: free
-    buildCommand: npm install -g pnpm@9 && pnpm install --frozen-lockfile && npm run build
-    startCommand: npm start
-    envVars:
-      - key: PUPPETEER_SKIP_DOWNLOAD
-        value: true
-      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-        value: 1
-      - key: NODE_ENV
-        value: production
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
