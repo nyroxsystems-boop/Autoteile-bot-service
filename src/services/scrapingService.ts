@@ -23,16 +23,13 @@ export interface ShopAdapter {
  * Mock-Adapter für einen Shop (z.B. Autodoc).
  * Später werden hier echte Scraper/API-Calls implementiert.
  */
-// Realistic Browser Scraper (headless=false, human-like)
-import { RealisticBrowserScraper } from "./scrapers/realisticBrowserScraper";
-import { KFZTeile24VehicleScraper } from "./scrapers/kfzteile24VehicleScraper";
+import { ScraperAPIScraper } from "./scrapers/scraperApiScraper";
 
 function buildAdapters(): ShopAdapter[] {
-  console.log("[SCRAPE] Using realistic browser automation (visible browser)");
-  console.log("[SCRAPE] Active shops: Autodoc (100% success rate)");
+  console.log("[SCRAPE] Using ScraperAPI (Safe for Render)");
 
   return [
-    new RealisticBrowserScraper("Autodoc", "autodoc")
+    new ScraperAPIScraper("Autodoc", "autodoc")
   ];
 }
 
@@ -42,17 +39,14 @@ function buildAdaptersWithVehicleData(vehicleData?: {
   year?: number;
   engine?: string;
 }): ShopAdapter[] {
+  console.log("[SCRAPE] Using ScraperAPI (Safe for Render)");
+
   const adapters: ShopAdapter[] = [
-    new RealisticBrowserScraper("Autodoc", "autodoc")
+    new ScraperAPIScraper("Autodoc", "autodoc")
   ];
 
-  // Add KFZTeile24 if we have vehicle data
-  if (vehicleData && vehicleData.make && vehicleData.model) {
-    console.log("[SCRAPE] ✅ Vehicle data available, adding KFZTeile24");
-    adapters.push(new KFZTeile24VehicleScraper(vehicleData));
-  } else {
-    console.log("[SCRAPE] ⚠️  No vehicle data, skipping KFZTeile24");
-  }
+  // Add KFZTeile24 if we have vehicle data or just as a general source
+  adapters.push(new ScraperAPIScraper("KFZTeile24", "kfzteile24"));
 
   return adapters;
 }
