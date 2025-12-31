@@ -1,15 +1,25 @@
-import sqlite3 from 'sqlite3';
-import { Database } from 'sqlite3';
+import type { Database } from 'sqlite3';
 import path from 'path';
 import { logger } from '../utils/logger';
 
 const DB_PATH = path.join(process.cwd(), 'crm.db');
 
-let db: Database;
+let db: Database | undefined;
 
 export function initDb(): Promise<void> {
     return new Promise((resolve, reject) => {
-        db = new sqlite3.Database(DB_PATH, (err) => {
+        let sqlite3: any;
+        try {
+            // Lazy require so production without sqlite3 installed won't crash build
+            // If sqlite3 is not installed (optional dependency), we surface a clear error.
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            sqlite3 = require('sqlite3');
+        } catch (err) {
+            logger.error('sqlite3 is not installed. Install optional dependency sqlite3 or disable DB init.', err);
+            return reject(err);
+        }
+
+        db = new sqlite3.Database(DB_PATH, (err: Error) => {
             if (err) {
                 logger.error('Could not connect to database', err);
                 reject(err);
