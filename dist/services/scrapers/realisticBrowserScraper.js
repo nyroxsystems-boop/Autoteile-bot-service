@@ -57,9 +57,12 @@ class RealisticBrowserScraper {
         }
         if (!RealisticBrowserScraper.browser) {
             RealisticBrowserScraper.browser = await playwright_1.chromium.launch({
-                headless: false, // WICHTIG: Sichtbarer Browser um Bot-Detection zu umgehen
+                headless: true, // Changed for Render (no X11 display)
                 args: [
                     '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-web-security',
                     '--disable-features=IsolateOrigins,site-per-process'
                 ]
             });
