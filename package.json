@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
+    "bundle": "ncc build src/index.ts -o dist/bundle -m --external sqlite3",
     "start": "node dist/index.js",
     "test": "jest --passWithNoTests",
     "demo:full": "ts-node scripts/full-flow-run.ts",
@@ -57,6 +58,7 @@
     "@types/sqlite3": "^3.1.11",
     "@types/supertest": "^6.0.3",
     "@types/user-agents": "^1.0.4",
+    "@vercel/ncc": "^0.38.4",
     "jest": "^29.0.0",
     "supertest": "^7.1.4",
     "ts-jest": "^29.0.0",
