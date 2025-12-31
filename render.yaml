@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: bot-service
-    runtime: docker
-    plan: free
-    dockerfilePath: ./Dockerfile
-    dockerContext: .

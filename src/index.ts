@@ -14,7 +14,18 @@ import whatsappWebhookRouter from "./routes/whatsappWebhook";
 import { registerDashboardRoutes } from "./routes/dashboardRoutes";
 import { createInternalRouter } from "./routes/internalRoutes";
 import { initDb } from "./services/database";
-import "./queue/botWorker"; // Start Queue Worker
+
+// Queue Worker - nur starten wenn Redis verfügbar
+if (process.env.REDIS_URL) {
+  import("./queue/botWorker").then(() => {
+    console.log("Queue worker started");
+  }).catch(err => {
+    console.error("Failed to start queue worker:", err);
+  });
+} else {
+  console.log("Skipping queue worker - REDIS_URL not set");
+}
+
 import { createBotHealthRouter } from "./routes/botHealth";
 import { createSuppliersRouter } from "./routes/suppliers";
 import { createOffersRouter } from "./routes/offers";

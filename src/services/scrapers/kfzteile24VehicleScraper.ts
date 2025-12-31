@@ -31,7 +31,7 @@ export class KFZTeile24VehicleScraper implements ShopAdapter {
         logger.info(`[${this.name}] Scraping with vehicle data:`, this.vehicleData);
 
         try {
-            const browser = await chromium.launch({ headless: false });
+            const browser = await chromium.launch({ headless: true }); // Changed for Render
             const context = await browser.newContext({
                 userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
                 viewport: { width: 1920, height: 1080 },
