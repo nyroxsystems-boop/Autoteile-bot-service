@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/authMiddleware";
-import { logger } from "../utils/logger";
+import { logger } from "@utils/logger";
 
 export function createWwsConnectionsRouter(): Router {
     const router = Router();

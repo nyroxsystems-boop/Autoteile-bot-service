@@ -1,7 +1,7 @@
 // src/services/oemResolver/sources/sepZapWebSource.ts
 import fetch from 'node-fetch';
 import { OEMCandidate, OEMResolverRequest } from '../types';
-import { logger } from '../../../utils/logger';
+import { logger } from '@utils/logger';
 
 /**
  * Simple HTML scraper for 7‑Zap shop (https://www.7zap.com).

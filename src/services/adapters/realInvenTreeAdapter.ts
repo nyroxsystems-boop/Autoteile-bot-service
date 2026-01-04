@@ -1,7 +1,7 @@
-import * as localAdapter from './inventreeAdapter';
+import * as localAdapter from '../adapters/inventreeAdapter';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
-import { logger } from '../utils/logger';
+import { logger } from '@utils/logger';
 
 import https from 'https';
 
@@ -198,7 +198,10 @@ export interface InvenTreeCompany {
 }
 
 export async function createCompany(company: InvenTreeCompany) {
-    if (!BASE_URL || !API_TOKEN) throw new Error("InvenTree not configured");
+    if (!BASE_URL || !API_TOKEN) {
+        logger.info("InvenTree not configured - using local mock for createCompany");
+        return localAdapter.createCompany(company);
+    }
     try {
         const response = await api.post('/api/company/', company);
         return response.data;
@@ -209,7 +212,9 @@ export async function createCompany(company: InvenTreeCompany) {
 }
 
 export async function getCompanies(params: { is_customer?: boolean, is_supplier?: boolean, search?: string, active?: boolean } = {}) {
-    if (!BASE_URL || !API_TOKEN) return [];
+    if (!BASE_URL || !API_TOKEN) {
+        return localAdapter.getCompanies(params);
+    }
     try {
         const response = await api.get('/api/company/', { params });
         return response.data;
@@ -220,7 +225,9 @@ export async function getCompanies(params: { is_customer?: boolean, is_supplier?
 }
 
 export async function updateCompany(id: number, patch: Partial<InvenTreeCompany>) {
-    if (!BASE_URL || !API_TOKEN) throw new Error("InvenTree not configured");
+    if (!BASE_URL || !API_TOKEN) {
+        return localAdapter.updateCompany(id, patch);
+    }
     try {
         const response = await api.patch(`/api/company/${id}/`, patch);
         return response.data;

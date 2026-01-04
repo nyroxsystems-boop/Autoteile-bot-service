@@ -1,6 +1,6 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
-import { logger } from "../../../utils/logger";
-import { client } from "../../openAiService";
+import { logger } from "@utils/logger";
+import { client } from "../openAiService";
 
 /**
  * STRATEGY: "Reverse-Aftermarket-Lookup"

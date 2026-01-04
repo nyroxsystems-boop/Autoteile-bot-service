@@ -1,5 +1,5 @@
-import { logger } from '../utils/logger';
-import * as db from './database';
+import { logger } from '@utils/logger';
+import * as db from '@core/database';
 import { randomUUID } from 'crypto';
 
 // Re-export types if needed

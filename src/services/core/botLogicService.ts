@@ -15,24 +15,25 @@ import {
   updateOrderStatus,
   persistScrapeResult,
   updateOrderScrapeTask,
-  listActiveOrdersByContact
-} from "./supabaseService";
-import { determineRequiredFields } from "./oemRequiredFieldsService";
-import * as oemService from "./oemService";
-import { logger } from "../utils/logger";
-import { scrapeOffersForOrder } from "./scrapingService";
-import { GENERAL_QA_SYSTEM_PROMPT } from "../prompts/generalQaPrompt";
-import { TEXT_NLU_PROMPT } from "../prompts/textNluPrompt";
-import { COLLECT_PART_BRAIN_PROMPT } from "../prompts/collectPartBrainPrompt";
-import { fetchWithTimeoutAndRetry } from "../utils/httpClient";
-import { ORCHESTRATOR_PROMPT } from "../prompts/orchestratorPrompt";
-import { generateChatCompletion } from "./openAiService";
+  listActiveOrdersByContact,
+  insertShopOffers
+} from '@adapters/supabaseService';
+import { determineRequiredFields } from '../intelligence/oemRequiredFieldsService';
+import * as oemService from '@intelligence/oemService';
+import { logger } from '@utils/logger';
+import { scrapeOffersForOrder } from '../scraping/scrapingService';
+import { GENERAL_QA_SYSTEM_PROMPT } from '../../prompts/generalQaPrompt';
+import { TEXT_NLU_PROMPT } from '../../prompts/textNluPrompt';
+import { COLLECT_PART_BRAIN_PROMPT } from '../../prompts/collectPartBrainPrompt';
+import { fetchWithTimeoutAndRetry } from '../../utils/httpClient';
+import { ORCHESTRATOR_PROMPT } from '../../prompts/orchestratorPrompt';
+import { generateChatCompletion } from '../intelligence/openAiService';
 import * as fs from "fs/promises";
 
-// Lazy accessor so tests can mock `./supabaseService` after this module was loaded.
+// Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require("./supabaseService");
+  return require("../adapters/supabaseService");
 }
 
 /**

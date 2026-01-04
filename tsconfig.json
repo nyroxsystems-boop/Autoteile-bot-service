@@ -3,7 +3,40 @@
     "target": "ES2022",
     "module": "commonjs",
     "rootDir": "src",
-    "outDir": "dist",
+    "baseUrl": "./src",
+    "paths": {
+      "@services/*": [
+        "services/*"
+      ],
+      "@adapters/*": [
+        "services/adapters/*"
+      ],
+      "@core/*": [
+        "services/core/*"
+      ],
+      "@intelligence/*": [
+        "services/intelligence/*"
+      ],
+      "@scraping/*": [
+        "services/scraping/*"
+      ],
+      "@communication/*": [
+        "services/communication/*"
+      ],
+      "@utils/*": [
+        "utils/*"
+      ],
+      "@config/*": [
+        "config/*"
+      ],
+      "@prompts/*": [
+        "prompts/*"
+      ],
+      "@types/*": [
+        "types/*"
+      ]
+    },
+    "outDir": "./dist",
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,6 +51,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "src/test_legacy",
     "**/*.spec.ts",
     "**/*.test.ts"
   ]

@@ -3,8 +3,8 @@
  * Große deutsche Plattform mit OEM-Referenzen
  */
 import { OEMSource, OEMCandidate } from "./baseSource";
-import { extractOemsFromHtml, normalizeOem } from "../../oemScraper";
-import { logger } from "../../../utils/logger";
+import { extractOemsFromHtml, normalizeOem } from "../oemScraper";
+import { logger } from "@utils/logger";
 
 import { fetchWithTimeoutAndRetry } from "../../../utils/httpClient";
 

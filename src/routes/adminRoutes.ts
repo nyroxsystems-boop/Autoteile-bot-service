@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
-import * as db from "../services/database";
+import * as db from "../services/core/database";
 
 const router = Router();
 
@@ -58,7 +58,7 @@ router.post("/users", async (req: Request, res: Response) => {
 
 // --- Tenants / Händler (InvenTree Companies) ---
 
-import { getCompanies, createCompany, InvenTreeCompany } from "../services/realInvenTreeAdapter";
+import { getCompanies, createCompany, InvenTreeCompany } from "@adapters/realInvenTreeAdapter";
 
 router.get("/tenants", async (req: Request, res: Response) => {
     try {

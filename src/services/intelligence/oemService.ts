@@ -9,8 +9,8 @@ export interface TecDocVehicleLookup {
   tsn?: string;
 }
 import { determineRequiredFields } from "./oemRequiredFieldsService";
-import { resolveOEM as resolveOEMUnified } from "./oemResolver/oemResolver";
-import { OEMCandidate, OEMResolverRequest, OEMResolverResult } from "./oemResolver/types";
+import { resolveOEM as resolveOEMUnified } from "./oemResolver";
+import { OEMResolverRequest, OEMResolverResult } from "./types";
 import { findBestOemForVehicle, VehicleData, SearchContext } from "./oemWebFinder";
 
 export interface OemResolutionResult {

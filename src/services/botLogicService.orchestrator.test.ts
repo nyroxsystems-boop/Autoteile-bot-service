@@ -1,4 +1,4 @@
-import { handleIncomingBotMessage } from './botLogicService';
+import { handleIncomingBotMessage } from './core/botLogicService';
 
 // Mock the OpenAI wrapper and supabase service functions used by the handler
 jest.mock('./openAiService', () => ({
@@ -14,8 +14,8 @@ jest.mock('./supabaseService', () => ({
   getVehicleForOrder: jest.fn(() => Promise.resolve(null))
 }));
 
-import { generateChatCompletion } from './openAiService';
-import * as supa from './supabaseService';
+import { generateChatCompletion } from '../intelligence/openAiService';
+import * as supa from './adapters/supabaseService';
 
 describe('orchestrator-first handler', () => {
   beforeEach(() => {

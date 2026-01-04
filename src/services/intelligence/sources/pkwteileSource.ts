@@ -3,8 +3,8 @@
  * German auto parts platform with OEM references
  */
 import { OEMSource, OEMCandidate } from "./baseSource";
-import { extractOemsFromHtml, normalizeOem } from "../../oemScraper";
-import { logger } from "../../../utils/logger";
+import { extractOemsFromHtml, normalizeOem } from "../oemScraper";
+import { logger } from "@utils/logger";
 
 import { fetchWithTimeoutAndRetry } from "../../../utils/httpClient";
 

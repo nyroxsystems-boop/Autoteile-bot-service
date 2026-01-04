@@ -1,6 +1,6 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { OEMSource, clampConfidence, logSourceResult } from "./baseSource";
-import { findBestOemForVehicle } from "../../oemWebFinder";
+import { findBestOemForVehicle } from "../oemWebFinder";
 
 /**
  * Wraps the web-based OEM finder (PartSouq, 7zap, etc.) as a source for the resolver.

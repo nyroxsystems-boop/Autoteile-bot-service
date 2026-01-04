@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { getOrderById, listShopOffersByOrderId } from "../services/supabaseService";
-import { autoOrder, selectBestOffer } from "../services/orderLogicService";
+import { getOrderById, listShopOffersByOrderId } from "@adapters/supabaseService";
+import { autoOrder, selectBestOffer } from "@core/orderLogicService";
 
 const router = Router();
 

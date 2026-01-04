@@ -13,7 +13,7 @@
  */
 
 import { OEMCandidate } from './sources/baseSource';
-import { logger } from '../../utils/logger';
+import { logger } from '@utils/logger';
 
 // ============================================================================
 // LAYER 1: MULTI-SOURCE CONSENSUS

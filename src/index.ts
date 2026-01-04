@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 
 import { env } from "./config/env";
-import { testDbConnection } from "./services/supabaseService";
+import { testDbConnection } from "./services/adapters/supabaseService";
 import ordersRouter from "./routes/orders";
 import orderScrapingRouter from "./routes/orderScraping";
 import simulateWhatsappRouter from "./routes/simulateWhatsapp";
@@ -13,7 +13,7 @@ import orderAutoOrderRouter from "./routes/orderAutoOrder";
 import whatsappWebhookRouter from "./routes/whatsappWebhook";
 import { registerDashboardRoutes } from "./routes/dashboardRoutes";
 import { createInternalRouter } from "./routes/internalRoutes";
-import { initDb } from "./services/database";
+import { initDb } from "./services/core/database";
 
 // Queue Worker - nur starten wenn Redis verfügbar
 if (process.env.REDIS_URL) {

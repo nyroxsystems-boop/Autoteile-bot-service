@@ -3,7 +3,7 @@
  * Aggregates results from multiple sources and determines the most reliable OEM
  */
 import { OEMCandidate } from "./sources/baseSource";
-import { logger } from "../../utils/logger";
+import { logger } from "@utils/logger";
 
 export interface ConsensusResult {
     primaryOEM: string | null;

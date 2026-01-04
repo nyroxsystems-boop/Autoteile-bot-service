@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { handleIncomingBotMessage } from "../services/botLogicService";
-import { insertMessage } from "../services/supabaseService";
+import { insertMessage } from "@adapters/supabaseService";
 import { env } from "../config/env";
 
 const router = Router();

@@ -1,5 +1,5 @@
-import { listShopOffersByOrderId, updateOrderStatus } from "./supabaseService";
-import type { ShopOffer } from "../types/models";
+import { insertOrder, getOrderById, updateOrderStatus, findOrCreateOrder, updateOrder, updateOrderData, listShopOffersByOrderId } from '@adapters/supabaseService';
+import { Order, Message, Vehicle, ShopOffer } from '../../types/models';
 
 /**
  * Regel-Engine: Bestes Angebot auswählen.
@@ -86,7 +86,7 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
   console.log("[OrderLogic] autoOrder mock delay finished", { orderId });
 
   // In Realität würdest du hier eine externe Bestellung ausführen.
-  const confirmation = `MOCK-ORDER-${orderId}-${offer.shopName}-${Date.now()}`;
+  const confirmation = `MOCK - ORDER - ${orderId} -${offer.shopName} -${Date.now()} `;
 
   // 1. Mark as ordered
   await updateOrderStatus(orderId, "ordered");
@@ -94,7 +94,7 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
   // 2. Automate Invoice Creation (Phase 7)
   try {
     // Dynamic import to avoid cycles or use dependency injection in real app
-    const wawi = await import('./realInvenTreeAdapter');
+    const wawi = await import('../adapters/realInvenTreeAdapter');
     await wawi.createInvoice(orderId);
     console.log("[OrderLogic] Automated Invoice created", { orderId });
   } catch (err: any) {
@@ -107,14 +107,14 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
     const oem = (offer as any).oemNumber || (offer as any).oem_number;
     if (oem) {
       // Dynamic import to avoid cycles
-      const wawi = await import('./realInvenTreeAdapter');
+      const wawi = await import('../adapters/realInvenTreeAdapter');
       // Default tenant "public" or derived logic? For now "public" is safe default for single-tenant feel.
       const tenantId = "public";
       const part = await wawi.findPartByOem(tenantId, oem);
 
       if (part && part.pk) {
         await wawi.deductStock(tenantId, part.pk, 1);
-        console.log(`[OrderLogic] Stock deducted for Part ${part.pk} (OEM: ${oem})`);
+        console.log(`[OrderLogic] Stock deducted for Part ${part.pk}(OEM: ${oem})`);
       } else {
         console.log(`[OrderLogic] No matching WWS part found for OEM ${oem} - Stock not deducted.`);
       }

@@ -1,10 +1,10 @@
 import { Worker, Job } from "bullmq";
 import { connection } from "./connection";
 import { BOT_QUEUE_NAME, BotJobData } from "./botQueue";
-import { handleIncomingBotMessage } from "../services/botLogicService";
-import { insertMessage } from "../services/supabaseService";
+import { handleIncomingBotMessage } from "../services/core/botLogicService";
+import { insertMessage } from "../services/adapters/supabaseService";
 import twilio from "twilio";
-import { logger } from "../utils/logger";
+import { logger } from "@utils/logger";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;

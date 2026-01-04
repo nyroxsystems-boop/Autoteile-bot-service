@@ -4,7 +4,7 @@ import type {
   SupplierScraperInput,
   SupplierScraperProduct,
   ShopOfferInsert,
-} from "../types/models";
+} from "../../types/models";
 
 type ResolutionOrder = Pick<
   DomainOrder,

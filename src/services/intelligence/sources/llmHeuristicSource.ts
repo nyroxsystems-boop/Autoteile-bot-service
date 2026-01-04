@@ -1,6 +1,6 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { OEMSource, clampConfidence, logSourceResult } from "./baseSource";
-import { generateChatCompletion } from "../../openAiService";
+import { generateChatCompletion } from "../openAiService";
 
 /**
  * Uses LLM to guess potential OEM numbers based on vehicle data and part description.

@@ -1,14 +1,17 @@
-import { Router, type Application, type Request, type Response } from "express";
+import { Router, Request, Response, Application } from "express";
 import { randomUUID } from "crypto";
-import * as wawi from "../services/inventreeAdapter";
+import * as wawi from "@adapters/inventreeAdapter";
 import {
   mapOfferRowToDashboardShopOffer,
   mapOrderRowToDashboardOrder,
   mapMessageRowToDashboardMessage
 } from "../mappers/dashboardMappers";
-import { logger } from "../utils/logger";
+import { logger } from "@utils/logger";
 import { authMiddleware } from "../middleware/authMiddleware";
-import * as analytics from "../services/analyticsService";
+import { resolveOEM } from '../services/intelligence/oemService';
+import { getOrderById, updateOrderOEM } from '../services/adapters/supabaseService';
+import * as analytics from '@core/analyticsService';
+import * as inventree from '@adapters/inventreeAdapter';
 
 export function createDashboardRouter(): Router {
   const router = Router();

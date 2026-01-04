@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import * as db from "../services/database";
+import * as db from "../services/core/database";
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { authMiddleware } from "../middleware/authMiddleware";

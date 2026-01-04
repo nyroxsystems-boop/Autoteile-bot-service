@@ -4,8 +4,8 @@
  * Useful for sites with heavy anti-bot protection
  */
 import { OEMSource, OEMCandidate } from "./baseSource";
-import { normalizeOem } from "../../oemScraper";
-import { logger } from "../../../utils/logger";
+import { normalizeOem } from "../oemScraper";
+import { logger } from "@utils/logger";
 import OpenAI from "openai";
 
 const openai = new OpenAI({

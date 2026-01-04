@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { logger } from "../utils/logger";
-import { getDb } from "../services/database";
+import { logger } from "@utils/logger";
+import { getDb } from "../services/core/database";
 
 const SERVICE_TOKEN = process.env.VITE_WAWI_SERVICE_TOKEN || "service_dev_secret";
 const API_TOKEN = process.env.VITE_WAWI_API_TOKEN || "api_dev_secret";

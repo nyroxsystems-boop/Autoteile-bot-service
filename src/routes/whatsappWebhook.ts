@@ -3,7 +3,7 @@ import express from "express";
 import twilio from "twilio";
 import { env } from "../config/env";
 import { botQueue } from "../queue/botQueue";
-import { logger } from "../utils/logger";
+import { logger } from "@utils/logger";
 
 const router = express.Router();
 

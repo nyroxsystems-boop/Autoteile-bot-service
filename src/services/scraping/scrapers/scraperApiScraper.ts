@@ -1,5 +1,5 @@
 import { ScrapedOffer, ShopAdapter } from '../scrapingService';
-import { logger } from '../../utils/logger';
+import { logger } from '@utils/logger';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 

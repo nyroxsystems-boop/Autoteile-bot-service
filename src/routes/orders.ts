@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { insertOrder, listOrders, getOrderById } from "../services/supabaseService";
+import { insertOrder, listOrders, getOrderById } from "@adapters/supabaseService";
 
 const router = Router();
 

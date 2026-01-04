@@ -1,5 +1,5 @@
 import { OEMResolverRequest, OEMResolverResult, OEMCandidate } from "./types";
-import { logger } from "../../utils/logger";
+import { logger } from "@utils/logger";
 import { cacheSource } from "./sources/cacheSource";
 import { shopSearchSource } from "./sources/shopSearchSource";
 import { webScrapeSource } from "./sources/webScrapeSource";

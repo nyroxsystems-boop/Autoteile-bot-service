@@ -52,10 +52,10 @@ jest.mock('../utils/httpClient', () => ({
   fetchWithTimeoutAndRetry: jest.fn(async () => ({ ok: true, status: 200, statusText: 'OK', arrayBuffer: async () => Buffer.from('img').buffer }))
 }));
 
-import { handleIncomingBotMessage } from './botLogicService';
-import { generateChatCompletion } from './openAiService';
+import { handleIncomingBotMessage } from './core/botLogicService';
+import { generateChatCompletion } from '../intelligence/openAiService';
 import { resolveOEM } from './oemService';
-import { scrapeOffersForOrder } from './scrapingService';
+import { scrapeOffersForOrder } from './scraping/scrapingService';
 
 const supa = require('./supabaseService');
 

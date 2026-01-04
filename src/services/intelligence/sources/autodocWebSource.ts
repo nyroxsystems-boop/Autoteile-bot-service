@@ -1,7 +1,7 @@
 // src/services/oemResolver/sources/autodocWebSource.ts
 import fetch from 'node-fetch';
 import { OEMCandidate, OEMResolverRequest } from '../types';
-import { logger } from '../../../utils/logger';
+import { logger } from '@utils/logger';
 
 /**
  * Simple HTML scraper for Autodoc.de search results.

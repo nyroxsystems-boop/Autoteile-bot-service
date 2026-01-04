@@ -42,8 +42,8 @@ jest.mock('../utils/httpClient', () => ({
 jest.mock('./openAiService', () => ({
   generateChatCompletion: jest.fn(async () => JSON.stringify({ action: 'noop', reply: '', slots: {}, required_slots: [], confidence: 1 }))
 }));
-import { handleIncomingBotMessage } from './botLogicService';
-import * as botLogic from './botLogicService';
+import { handleIncomingBotMessage } from './core/botLogicService';
+import * as botLogic from './core/botLogicService';
 
 // Mock supabase service functions
 jest.mock('./supabaseService', () => ({
@@ -85,7 +85,7 @@ jest.spyOn(botLogic, 'extractVehicleDataFromImage' as any).mockImplementation(as
 // Mock downloadFromTwilio to return a small buffer
 jest.spyOn(botLogic, 'downloadFromTwilio' as any).mockImplementation(async () => Buffer.from('img'));
 
-import * as supa from './supabaseService';
+import * as supa from './adapters/supabaseService';
 
 describe('OCR upsert fallback', () => {
   beforeEach(() => jest.clearAllMocks());

@@ -1,5 +1,7 @@
-import { Router, type Request, type Response } from "express";
-import { refreshOffersForOrder } from "../services/productResolutionService";
+import { Router, Request, Response } from "express";
+import { refreshOffersForOrder } from '../services/intelligence/productResolutionService';
+import { getOrderById } from '../services/adapters/supabaseService';
+import { runSeeding } from '../services/core/seedingService';
 
 export function createInternalRouter(): Router {
   const router = Router();
@@ -27,7 +29,7 @@ export function createInternalRouter(): Router {
   router.post("/seed-db", async (req: Request, res: Response) => {
     console.log("[InternalAPI] POST /internal/seed-db requested");
     try {
-      const { runSeeding } = await import("../services/seedingService");
+      const { runSeeding } = await import("../services/core/seedingService");
       const result = await runSeeding(50);
       return res.status(200).json({ success: true, result });
     } catch (err: any) {

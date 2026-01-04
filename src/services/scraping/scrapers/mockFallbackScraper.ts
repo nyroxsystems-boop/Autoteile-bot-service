@@ -1,5 +1,5 @@
 import { ScrapedOffer, ShopAdapter } from '../scrapingService';
-import { logger } from '../../utils/logger';
+import { logger } from '@utils/logger';
 
 /**
  * Fallback Mock Scraper for testing and development

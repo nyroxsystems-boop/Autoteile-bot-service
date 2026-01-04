@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { logger } from "../../utils/logger";
+import { logger } from "@utils/logger";
 import { OEMResolverRequest } from "./types";
 
 type BacksearchResult = {

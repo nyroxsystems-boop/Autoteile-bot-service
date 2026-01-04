@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { resolveOEM } from "../services/oemService";
-import { getOrderById, updateOrderOEM } from "../services/supabaseService";
+import { resolveOEM } from '../services/intelligence/oemService';
+import { getOrderById, updateOrderOEM } from '../services/adapters/supabaseService';
 
 const router = Router();
 

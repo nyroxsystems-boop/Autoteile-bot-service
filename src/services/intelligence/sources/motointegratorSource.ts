@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import { OEMCandidate, OEMResolverRequest } from '../types';
-import { extractOemsFromHtml } from '../../oemScraper';
-import { logger } from '../../../utils/logger';
+import { extractOemsFromHtml } from '../oemScraper';
+import { logger } from '@utils/logger';
 
 /**
  * Simple Motointegrator source.

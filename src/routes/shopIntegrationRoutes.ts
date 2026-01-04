@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import * as wawi from "../services/realInvenTreeAdapter";
-import { logger } from "../utils/logger";
+import * as wawi from "@adapters/realInvenTreeAdapter";
+import { logger } from "@utils/logger";
 
 const router = Router();
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as adapter from '../services/inventreeAdapter';
-import { logger } from '../utils/logger';
+import * as adapter from '@adapters/inventreeAdapter';
+import { logger } from '@utils/logger';
 
 export function createCrmRouter() {
     const router = Router();

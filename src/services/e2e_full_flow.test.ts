@@ -48,11 +48,11 @@ jest.mock('./supabaseService', () => ({
   listShopOffersByOrderId: jest.fn(async (orderId: string) => mockInsertedOffers.filter((o) => o.orderId === orderId))
 }));
 
-import { handleIncomingBotMessage } from './botLogicService';
-import { generateChatCompletion } from './openAiService';
+import { handleIncomingBotMessage } from './core/botLogicService';
+import { generateChatCompletion } from '../intelligence/openAiService';
 import { resolveOEM } from './oemService';
-import { scrapeOffersForOrder } from './scrapingService';
-import { insertShopOffers, listShopOffersByOrderId } from './supabaseService';
+import { scrapeOffersForOrder } from './scraping/scrapingService';
+import { insertShopOffers, listShopOffersByOrderId } from './adapters/supabaseService';
 
 describe('E2E mocked: WhatsApp -> Orchestrator -> OEM -> Scrape -> Dashboard', () => {
   beforeEach(() => {

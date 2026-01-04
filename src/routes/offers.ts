@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/authMiddleware";
-import * as wawi from "../services/inventreeAdapter";
+import * as wawi from "@adapters/inventreeAdapter";
 import { mapOfferRowToDashboardShopOffer } from "../mappers/dashboardMappers";
-import { logger } from "../utils/logger";
+import { logger } from "@utils/logger";
 
 export function createOffersRouter(): Router {
     const router = Router();

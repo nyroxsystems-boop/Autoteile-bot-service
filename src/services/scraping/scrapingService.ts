@@ -1,5 +1,5 @@
-import { insertShopOffers } from "./supabaseService";
-import { ApifyClient } from "./apifyClient";
+import { insertShopOffers } from "../adapters/supabaseService";
+import { ApifyClient } from "../communication/apifyClient";
 
 export interface ScrapedOffer {
   shopName: string;
