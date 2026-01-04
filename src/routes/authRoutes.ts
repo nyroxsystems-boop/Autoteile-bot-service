@@ -176,4 +176,49 @@ router.get("/me", async (req: Request, res: Response) => {
     }
 });
 
+router.post("/change-password", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    if (!oldPassword || !newPassword) {
+        return res.status(400).json({ error: "Old and new password required" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        const session = await db.get<any>(
+            'SELECT * FROM sessions WHERE token = ?',
+            [token]
+        );
+
+        if (!session) return res.status(401).json({ error: "Invalid session" });
+
+        const user = await db.get<any>(
+            'SELECT * FROM users WHERE id = ?',
+            [session.user_id]
+        );
+
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Verify old password
+        const oldHash = hashPassword(oldPassword);
+        if (user.password_hash !== oldHash) {
+            return res.status(400).json({ error: "Incorrect old password" });
+        }
+
+        // Set new password
+        const newHash = hashPassword(newPassword);
+        await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, user.id]);
+
+        return res.json({ success: true, message: "Passwort erfolgreich geändert" });
+
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;
