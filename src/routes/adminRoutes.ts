@@ -54,11 +54,37 @@ router.post("/users", async (req: Request, res: Response) => {
     }
 });
 
+// --- Devices (Mock) ---
+const activeDevicesMock = new Map<string, any[]>();
+
+router.get("/tenants/:id/devices", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    // Return mock devices if none exist yet
+    if (!activeDevicesMock.has(id)) {
+        activeDevicesMock.set(id, [
+            { id: "dev_1", device_id: "iphone-13-pro", user: "Max Mustermann", last_seen: new Date().toISOString(), ip: "192.168.1.1" },
+            { id: "dev_2", device_id: "samsung-s21", user: "Erika Musterfrau", last_seen: new Date().toISOString(), ip: "192.168.1.2" }
+        ]);
+    }
+    return res.json(activeDevicesMock.get(id));
+});
+
+router.delete("/tenants/:id/devices/:deviceId", async (req: Request, res: Response) => {
+    const { id, deviceId } = req.params;
+    const devices = activeDevicesMock.get(id) || [];
+    const filtered = devices.filter(d => d.device_id !== deviceId);
+    activeDevicesMock.set(id, filtered);
+    return res.json({ success: true });
+});
+
 // --- KPIs ---
 
 // --- Tenants / Händler (InvenTree Companies) ---
 
 import { getCompanies, createCompany, InvenTreeCompany } from "@adapters/realInvenTreeAdapter";
+
+// In-memory store for Tenant Limits (Mock Persistence)
+const tenantLimits = new Map<string, { max_users: number, max_devices: number }>();
 
 router.get("/tenants", async (req: Request, res: Response) => {
     try {
@@ -66,18 +92,40 @@ router.get("/tenants", async (req: Request, res: Response) => {
         const companies = await getCompanies({ is_customer: true });
 
         // Map to Dashboard Tenant Format
-        const tenants = companies.map((c: any) => ({
-            id: c.pk,
-            name: c.name,
-            slug: c.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-            user_count: 0, // InvenTree doesn't track this yet
-            max_users: 10,
-            device_count: 0,
-            max_devices: 5,
-            is_active: c.active
-        }));
+        const tenants = companies.map((c: any) => {
+            const limits = tenantLimits.get(String(c.pk)) || { max_users: 10, max_devices: 5 };
+            return {
+                id: c.pk,
+                name: c.name,
+                slug: c.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                user_count: 0, // InvenTree doesn't track this yet
+                max_users: limits.max_users,
+                device_count: 0,
+                max_devices: limits.max_devices,
+                is_active: c.active,
+                // Mock or Real Mapping for Status
+                onboarding_status: c.description?.includes("Wizard") ? 'completed' : 'pending',
+                payment_status: c.is_customer ? 'paid' : 'trial' // Naive mock
+            };
+        });
 
         return res.json(tenants);
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { max_users, max_devices } = req.body;
+
+        tenantLimits.set(id, {
+            max_users: Number(max_users) || 10,
+            max_devices: Number(max_devices) || 5
+        });
+
+        return res.json({ success: true, id, max_users, max_devices });
     } catch (err: any) {
         return res.status(500).json({ error: err.message });
     }
@@ -110,35 +158,52 @@ router.get("/kpis", async (req: Request, res: Response) => {
         // Tenants count from InvenTree
         const tenants = await getCompanies({ is_customer: true });
 
-        // Basic stats from orders table
-        const totalOrdersRow = await db.get<any>("SELECT COUNT(*) as count FROM orders");
-        // ... rest of KPIs
-        const todayOrdersRow = await db.get<any>(
-            "SELECT COUNT(*) as count FROM orders WHERE created_at > ?",
-            [new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()]
-        );
-        const resolvedOemRow = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE oem_number IS NOT NULL");
+        // Fetch all orders to calculate stats manually (since DB adapter is a mock)
+        const allOrders = await db.all<any>("SELECT * FROM orders");
 
-        // Revenue mock (since we don't have implemented payments yet, assume avg cart 150€ for 'done' orders)
-        const completedOrdersRow = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE status = 'done'");
-        const revenue = (completedOrdersRow?.count || 0) * 150;
+        // 1. Total Orders
+        const totalOrders = allOrders.length;
+
+        // 2. Orders Today
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const ordersToday = allOrders.filter(o => new Date(o.created_at) > yesterday).length;
+
+        // 3. Revenue (Sum of 'total' for done orders)
+        // Ensure we handle potential missing 'total' fields or strings
+        const doneOrders = allOrders.filter(o => o.status === 'done' || o.status === 'completed');
+        const revenue = doneOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+        // 4. Conversion Rate (Completed vs Total)
+        const conversionRate = totalOrders > 0 ? Math.round((doneOrders.length / totalOrders) * 100) : 0;
+
+        // 5. OEM Resolution
+        // Assuming 'oem_number' field availability
+        const resolvedOemCount = allOrders.filter(o => !!o.oem_number).length;
+
+        // 6. Active Users (Team)
+        const allUsers = await db.all<any>("SELECT * FROM users");
+        const activeUsers = allUsers.length;
+
+        // 7. Messages (Mock or Real if table exists)
+        // If messages table exists in db.ts, use it. Otherwise 0.
+        // We'll try to fetch, if empty array it's 0.
+        const allMessages = await db.all<any>("SELECT * FROM messages");
 
         return res.json({
             sales: {
-                totalOrders: totalOrdersRow?.count || 0,
-                ordersToday: todayOrdersRow?.count || 0,
-                revenue: revenue,
-                conversionRate: completedOrdersRow?.count && totalOrdersRow?.count ? Math.round((completedOrdersRow.count / totalOrdersRow.count) * 100) : 0
+                totalOrders,
+                ordersToday,
+                revenue,
+                conversionRate
             },
             team: {
-                // Mock activity
-                activeUsers: 3,
-                callsMade: 42,
-                messagesSent: 128
+                activeUsers,
+                callsMade: 0, // Not tracked yet
+                messagesSent: allMessages.length
             },
             oem: {
-                resolvedCount: resolvedOemRow?.count || 0,
-                successRate: 85
+                resolvedCount: resolvedOemCount,
+                successRate: totalOrders > 0 ? Math.round((resolvedOemCount / totalOrders) * 100) : 0
             }
         });
     } catch (err: any) {
@@ -148,7 +213,7 @@ router.get("/kpis", async (req: Request, res: Response) => {
 
 // --- Onboarding Wizard (Phase 11) ---
 
-import * as onboarding from "../services/onboardingService";
+import * as onboarding from "../services/core/onboardingService";
 
 router.post("/onboarding/initialize", async (req: Request, res: Response) => {
     try {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { handleIncomingBotMessage } from "../services/botLogicService";
+import { handleIncomingBotMessage } from "../services/core/botLogicService";
 import { insertMessage } from "@adapters/supabaseService";
 import { env } from "../config/env";
 

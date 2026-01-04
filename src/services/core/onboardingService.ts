@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { logger } from "@utils/logger";
 import * as db from "./database";
-import * as wawi from "./realInvenTreeAdapter";
+import * as wawi from "../adapters/realInvenTreeAdapter";
 
 /**
  * Onboarding Service

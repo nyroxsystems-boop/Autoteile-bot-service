@@ -1,4 +1,4 @@
-import type { Order as LegacyOrder, Message, ShopOffer, Vehicle } from "../types/models";
+import type { Order as LegacyOrder, Message, ShopOffer, Vehicle } from "../../types/models";
 
 export type ConversationStatus =
   | "choose_language"
