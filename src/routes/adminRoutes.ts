@@ -105,7 +105,9 @@ router.get("/tenants", async (req: Request, res: Response) => {
                 is_active: c.active,
                 // Mock or Real Mapping for Status
                 onboarding_status: c.description?.includes("Wizard") ? 'completed' : 'pending',
-                payment_status: c.is_customer ? 'paid' : 'trial' // Naive mock
+                payment_status: c.is_customer ? 'paid' : 'trial', // Naive mock
+                whatsapp_number: c.phone || '', // Map phone to whatsapp_number if not distinct in mock
+                logo_url: c.website || '' // Reuse website field or mock a specific logo field if DB allowed
             };
         });
 
@@ -133,7 +135,7 @@ router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
 
 router.post("/tenants", async (req: Request, res: Response) => {
     try {
-        const { name, email, website, phone, password } = req.body; // Added password
+        const { name, email, website, phone, password, whatsapp_number, logo_url } = req.body;
 
         if (!name || !email) {
             return res.status(400).json({ error: "Name and Email are required." });
@@ -142,8 +144,8 @@ router.post("/tenants", async (req: Request, res: Response) => {
         const payload: InvenTreeCompany = {
             name,
             email,
-            website,
-            phone,
+            website: logo_url || website, // Hack: Storing logo_url in website for mock if needed, or we just trust the mock adapter handles extra fields
+            phone: whatsapp_number || phone, // Priority to whatsapp number
             is_customer: true,
             is_supplier: false,
             active: true,
