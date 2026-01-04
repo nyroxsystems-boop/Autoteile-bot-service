@@ -133,7 +133,11 @@ router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
 
 router.post("/tenants", async (req: Request, res: Response) => {
     try {
-        const { name, email, website, phone } = req.body;
+        const { name, email, website, phone, password } = req.body; // Added password
+
+        if (!name || !email) {
+            return res.status(400).json({ error: "Name and Email are required." });
+        }
 
         const payload: InvenTreeCompany = {
             name,
@@ -146,8 +150,39 @@ router.post("/tenants", async (req: Request, res: Response) => {
             description: "Auto-Created via Admin Dashboard"
         };
 
-        const created = await createCompany(payload);
-        return res.json(created);
+        // 1. Create Company in InvenTree
+        const createdCompany = await createCompany(payload);
+        const merchantId = String(createdCompany.pk);
+
+        // 2. Create Admin User for this Company
+        const userId = randomUUID();
+        const createdAt = new Date().toISOString();
+        const initialPassword = password || "Start123!";
+        const passwordHash = hashPassword(initialPassword);
+
+        // We assume 'merchant' role for the dealer admin
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+        await db.run(sql, [
+            userId,
+            name, // Use company name as user name for now, or split if we had a contact person
+            email,
+            "merchant",
+            createdAt,
+            passwordHash,
+            merchantId
+        ]);
+
+        // Return combined result
+        return res.json({
+            ...createdCompany,
+            user_created: {
+                id: userId,
+                email: email,
+                role: "merchant",
+                initial_password: initialPassword
+            }
+        });
     } catch (err: any) {
         return res.status(500).json({ error: err.message });
     }
