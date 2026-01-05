@@ -81,6 +81,7 @@ app.use((0, cors_1.default)({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
 }));
+app.options('*', (0, cors_1.default)()); // Enable pre-flight across-the-board
 app.use(express_1.default.json());
 // Einfacher Healthcheck – Service läuft?
 app.get("/health", (_req, res) => {

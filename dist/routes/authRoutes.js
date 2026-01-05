@@ -51,15 +51,20 @@ function generateToken() {
  * Login endpoint for dashboard
  */
 router.post("/login", async (req, res) => {
-    const { email, password, tenant } = req.body;
-    if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required" });
+    const { email, username, password, tenant } = req.body;
+    // Accept 'email' or 'username' field, or a combined 'login' field if the frontend sends that.
+    // Dashboard sends 'email' field currently even if it's a username in the UI placeholder.
+    const loginIdentifier = email || username;
+    if (!loginIdentifier || !password) {
+        return res.status(400).json({ error: "Email/Username and password are required" });
     }
     try {
-        // Find user by email
-        const user = await db.get('SELECT * FROM users WHERE email = ? AND is_active = 1', [email.toLowerCase().trim()]);
+        // Find user by email OR username
+        // We compare lowercase for email, and strict or lowercase for username?
+        // Let's safe-bet: check both.
+        const user = await db.get('SELECT * FROM users WHERE (email = ? OR username = ?) AND is_active = 1', [loginIdentifier.toLowerCase().trim(), loginIdentifier.trim()]);
         if (!user) {
-            return res.status(401).json({ error: "Invalid email or password" });
+            return res.status(401).json({ error: "Invalid email/username or password" });
         }
         // Verify password
         const passwordHash = hashPassword(password);
