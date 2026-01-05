@@ -43,7 +43,7 @@ router.post("/users", async (req: Request, res: Response) => {
     }
 
     try {
-        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?)`;
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)`;
         await db.run(sql, [id, name, email, role || "sales_rep", createdAt, passwordHash]);
 
         // IF Dealer -> Sync to InvenTree as 'Supplier' or 'Customer'?
@@ -167,7 +167,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
         const passwordHash = hashPassword(initialPassword);
 
         // We assume 'merchant' role for the dealer admin
-        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`;
 
         await db.run(sql, [
             userId,
