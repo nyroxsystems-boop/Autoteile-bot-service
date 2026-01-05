@@ -37,22 +37,26 @@ import userRouter from "./routes/userRoutes";
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [
-    'https://autoteile-dashboard.onrender.com',
-    'https://crm-system.onrender.com',
-    'https://admin-dashboard.onrender.com',
-    'https://admin-dashboard-ufau.onrender.com',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5174'
-  ],
+const corsOptions = {
+  origin: process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : [
+      'https://autoteile-dashboard.onrender.com',
+      'https://crm-system.onrender.com',
+      'https://admin-dashboard.onrender.com',
+      'https://admin-dashboard-ufau.onrender.com',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174'
+    ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID'],
   credentials: true,
   optionsSuccessStatus: 200
-}));
-app.options('*', cors()); // Enable pre-flight across-the-board
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Use same options for preflight
 app.use(express.json());
 
 // Einfacher Healthcheck – Service läuft?
