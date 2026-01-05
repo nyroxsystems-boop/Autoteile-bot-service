@@ -203,36 +203,35 @@ router.get("/kpis", async (req: Request, res: Response) => {
         // Tenants count from InvenTree
         const tenants = await getCompanies({ is_customer: true });
 
-        // Fetch all orders to calculate stats manually (since DB adapter is a mock)
-        const allOrders = await db.all<any>("SELECT * FROM orders");
+        // Optimized queries using COUNT instead of loading all data
+        const totalOrdersResult = await db.get<any>("SELECT COUNT(*) as count FROM orders");
+        const totalOrders = totalOrdersResult?.count || 0;
 
-        // 1. Total Orders
-        const totalOrders = allOrders.length;
+        // Orders Today
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const ordersTodayResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE created_at > ?", [yesterday]);
+        const ordersToday = ordersTodayResult?.count || 0;
 
-        // 2. Orders Today
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const ordersToday = allOrders.filter(o => new Date(o.created_at) > yesterday).length;
+        // Revenue (Sum of 'total' for done orders)
+        const revenueResult = await db.get<any>("SELECT SUM(CAST(total AS REAL)) as revenue FROM orders WHERE status IN ('done', 'completed')");
+        const revenue = revenueResult?.revenue || 0;
 
-        // 3. Revenue (Sum of 'total' for done orders)
-        // Ensure we handle potential missing 'total' fields or strings
-        const doneOrders = allOrders.filter(o => o.status === 'done' || o.status === 'completed');
-        const revenue = doneOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+        // Conversion Rate
+        const doneOrdersResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE status IN ('done', 'completed')");
+        const doneOrdersCount = doneOrdersResult?.count || 0;
+        const conversionRate = totalOrders > 0 ? Math.round((doneOrdersCount / totalOrders) * 100) : 0;
 
-        // 4. Conversion Rate (Completed vs Total)
-        const conversionRate = totalOrders > 0 ? Math.round((doneOrders.length / totalOrders) * 100) : 0;
+        // OEM Resolution
+        const resolvedOemResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE oem_number IS NOT NULL AND oem_number != ''");
+        const resolvedOemCount = resolvedOemResult?.count || 0;
 
-        // 5. OEM Resolution
-        // Assuming 'oem_number' field availability
-        const resolvedOemCount = allOrders.filter(o => !!o.oem_number).length;
+        // Active Users (Team)
+        const activeUsersResult = await db.get<any>("SELECT COUNT(*) as count FROM users");
+        const activeUsers = activeUsersResult?.count || 0;
 
-        // 6. Active Users (Team)
-        const allUsers = await db.all<any>("SELECT * FROM users");
-        const activeUsers = allUsers.length;
-
-        // 7. Messages (Mock or Real if table exists)
-        // If messages table exists in db.ts, use it. Otherwise 0.
-        // We'll try to fetch, if empty array it's 0.
-        const allMessages = await db.all<any>("SELECT * FROM messages");
+        // Messages
+        const messagesResult = await db.get<any>("SELECT COUNT(*) as count FROM messages");
+        const messagesSent = messagesResult?.count || 0;
 
         return res.json({
             sales: {
@@ -244,7 +243,7 @@ router.get("/kpis", async (req: Request, res: Response) => {
             team: {
                 activeUsers,
                 callsMade: 0, // Not tracked yet
-                messagesSent: allMessages.length
+                messagesSent
             },
             oem: {
                 resolvedCount: resolvedOemCount,
