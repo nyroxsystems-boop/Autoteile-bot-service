@@ -1,1 +1,58 @@
-import { Router, Request, Response } from \"express\";\nimport { authMiddleware } from \"../middleware/authMiddleware\";\nimport * as wawi from \"@adapters/inventreeAdapter\";\nimport { logger } from \"@utils/logger\";\n\nexport function createBillingRouter(): Router {\n    const router = Router();\n\n    // Apply auth to all billing routes\n    router.use(authMiddleware);\n\n    /**\n     * GET /api/billing/invoices\n     * Get all invoices\n     */\n    router.get(\"/invoices\", async (_req: Request, res: Response) => {\n        try {\n            // For now, return empty array\n            // In future, integrate with actual invoicing system\n            return res.status(200).json([]);\n        } catch (err: any) {\n            logger.error(\"Error fetching invoices\", { error: err.message });\n            return res.status(500).json({\n                error: \"Failed to fetch invoices\",\n                details: err.message\n            });\n        }\n    });\n\n    /**\n     * GET /api/billing/invoices/:id\n     * Get single invoice\n     */\n    router.get(\"/invoices/:id\", async (req: Request, res: Response) => {\n        try {\n            // For now, return 404\n            return res.status(404).json({ error: \"Invoice not found\" });\n        } catch (err: any) {\n            logger.error(\"Error fetching invoice\", { error: err.message, id: req.params.id });\n            return res.status(500).json({\n                error: \"Failed to fetch invoice\",\n                details: err.message\n            });\n        }\n    });\n\n    /**\n     * GET /api/billing/invoices/:id/pdf\n     * Download invoice PDF\n     */\n    router.get(\"/invoices/:id/pdf\", async (req: Request, res: Response) => {\n        try {\n            // For now, return 404\n            return res.status(404).json({ error: \"PDF not available\" });\n        } catch (err: any) {\n            logger.error(\"Error fetching invoice PDF\", { error: err.message, id: req.params.id });\n            return res.status(500).json({\n                error: \"Failed to fetch PDF\",\n                details: err.message\n            });\n        }\n    });\n\n    /**\n     * GET /api/billing/settings/billing/tenant/\n     * Get billing settings for tenant\n     */\n    router.get(\"/settings/billing/tenant/\", async (_req: Request, res: Response) => {\n        try {\n            // Return default billing settings\n            const defaultSettings = {\n                company_name: 'AutoTeile Müller GmbH',\n                address_line1: 'Musterstraße 123',\n                address_line2: '',\n                city: 'München',\n                postal_code: '80331',\n                country: 'Deutschland',\n                tax_id: 'DE123456789',\n                iban: 'DE89370400440532013000',\n                email: 'info@autoteile-mueller.de',\n                phone: '+49 89 123456',\n                invoice_template: 'modern',\n                invoice_color: '#4F8BFF',\n                invoice_font: 'Inter',\n                logo_position: 'left',\n                number_position: 'top-right',\n                address_layout: 'classic',\n                table_style: 'modern',\n                accent_color: '#4F8BFF'\n            };\n\n            return res.status(200).json(defaultSettings);\n        } catch (err: any) {\n            logger.error(\"Error fetching billing settings\", { error: err.message });\n            return res.status(500).json({\n                error: \"Failed to fetch billing settings\",\n                details: err.message\n            });\n        }\n    });\n\n    /**\n     * PUT /api/billing/settings/billing/tenant/\n     * Update billing settings for tenant\n     */\n    router.put(\"/settings/billing/tenant/\", async (req: Request, res: Response) => {\n        try {\n            // For now, just acknowledge the update\n            logger.info(\"Billing settings updated\", { settings: req.body });\n            return res.status(200).json({ success: true });\n        } catch (err: any) {\n            logger.error(\"Error updating billing settings\", { error: err.message });\n            return res.status(500).json({\n                error: \"Failed to update billing settings\",\n                details: err.message\n            });\n        }\n    });\n\n    return router;\n}\n\nexport default createBillingRouter;\n
+import { Router, Request, Response } from "express";
+import { authMiddleware } from "../middleware/authMiddleware";
+import { logger } from "@utils/logger";
+
+export function createBillingRouter(): Router {
+    const router = Router();
+    router.use(authMiddleware);
+
+    router.get("/invoices", async (_req: Request, res: Response) => {
+        try {
+            return res.status(200).json([]);
+        } catch (err: any) {
+            logger.error("Error fetching invoices", { error: err.message });
+            return res.status(500).json({ error: "Failed to fetch invoices" });
+        }
+    });
+
+    router.get("/invoices/:id", async (req: Request, res: Response) => {
+        return res.status(404).json({ error: "Invoice not found" });
+    });
+
+    router.get("/invoices/:id/pdf", async (req: Request, res: Response) => {
+        return res.status(404).json({ error: "PDF not available" });
+    });
+
+    router.get("/settings/billing/tenant/", async (_req: Request, res: Response) => {
+        const defaultSettings = {
+            company_name: 'AutoTeile Müller GmbH',
+            address_line1: 'Musterstraße 123',
+            address_line2: '',
+            city: 'München',
+            postal_code: '80331',
+            country: 'Deutschland',
+            tax_id: 'DE123456789',
+            iban: 'DE89370400440532013000',
+            email: 'info@autoteile-mueller.de',
+            phone: '+49 89 123456',
+            invoice_template: 'modern',
+            invoice_color: '#4F8BFF',
+            invoice_font: 'Inter',
+            logo_position: 'left',
+            number_position: 'top-right',
+            address_layout: 'classic',
+            table_style: 'modern',
+            accent_color: '#4F8BFF'
+        };
+        return res.status(200).json(defaultSettings);
+    });
+
+    router.put("/settings/billing/tenant/", async (req: Request, res: Response) => {
+        logger.info("Billing settings updated", { settings: req.body });
+        return res.status(200).json({ success: true });
+    });
+
+    return router;
+}
+
+export default createBillingRouter;
