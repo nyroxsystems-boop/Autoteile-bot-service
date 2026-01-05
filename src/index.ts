@@ -42,6 +42,7 @@ app.use(cors({
     'https://autoteile-dashboard.onrender.com',
     'https://crm-system.onrender.com',
     'https://admin-dashboard.onrender.com',
+    'https://admin-dashboard-ufau.onrender.com',
     'http://localhost:3000',
     'http://localhost:5173'
   ],
