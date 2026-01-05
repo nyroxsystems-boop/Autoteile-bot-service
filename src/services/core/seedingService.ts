@@ -151,7 +151,9 @@ export async function runSeeding(count = 50) {
 
     // Merchant Settings
     await db.run(
-        `INSERT OR REPLACE INTO merchant_settings (merchant_id, settings) VALUES (?, ?)`,
+        `INSERT INTO merchant_settings (merchant_id, settings)
+         VALUES (?, ?)
+         ON CONFLICT(merchant_id) DO UPDATE SET settings = excluded.settings`,
         [DEALER_ID, JSON.stringify({
             selectedShops: ['Autodoc', 'kfzteile24', 'pkwteile.de'],
             marginPercent: 25,

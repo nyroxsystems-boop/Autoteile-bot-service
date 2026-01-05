@@ -24,6 +24,18 @@ export interface MerchantSettings {
     shop_api_key?: string;
 }
 
+function parseJsonField<T>(value: any, fallback: T): T {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value) as T;
+        } catch {
+            return fallback;
+        }
+    }
+    return value as T;
+}
+
 function genId(prefix = "order"): string {
     return `${prefix}-${randomUUID().split('-')[0]}-${Date.now().toString(36)}`;
 }
@@ -139,19 +151,44 @@ export async function updateOrder(orderId: string | number, patch: any) {
 
     const updates: string[] = [];
     const params: any[] = [];
+    const dataPatch: Record<string, any> = {};
 
-    if (patch.status) {
-        updates.push("status = ?");
-        params.push(patch.status);
-    }
-    if (patch.language) {
-        updates.push("language = ?"); // Assuming column exists or we might store in order_data
-        // Wait, schema didn't have language explicitly but it's fine to rely on order_data usually.
-        // But wawiAdapter had it. Let's see my schema:
-        // id, customer_contact, status, created_at, updated_at, oem_number, order_data, vehicle_data, scrape_result
-        // Missing language column. I'll store it in order_data for now or add column if needed.
-        // Actually findOrCreateOrder dummy updated `order.language`.
-        // I will assume it's in order_data or I'll ignore specific column.
+    const columnMap: Record<string, string> = {
+        status: "status",
+        language: "language",
+        customer_contact: "customer_contact",
+        customer_name: "customer_name",
+        customer_phone: "customer_phone",
+        customer_id: "customer_id",
+        vehicle_id: "vehicle_id",
+        requested_part_name: "requested_part_name",
+        oem_number: "oem_number",
+        oem_status: "oem_status",
+        oem_error: "oem_error",
+        total: "total",
+        match_confidence: "match_confidence",
+        merchant_id: "merchant_id",
+        dealer_id: "dealer_id",
+        country: "country",
+        vehicle_description: "vehicle_description",
+        part_description: "part_description",
+        vehicle_data: "vehicle_data",
+        scrape_result: "scrape_result"
+    };
+
+    for (const [key, value] of Object.entries(patch || {})) {
+        if (value === undefined) continue;
+        const column = columnMap[key];
+        if (column) {
+            updates.push(`${column} = ?`);
+            if (key === "vehicle_data" || key === "scrape_result") {
+                params.push(typeof value === "string" ? value : JSON.stringify(value));
+            } else {
+                params.push(value);
+            }
+        } else {
+            dataPatch[key] = value;
+        }
     }
 
     updates.push("updated_at = ?");
@@ -167,6 +204,10 @@ export async function updateOrder(orderId: string | number, patch: any) {
         await db.run(sql, params);
     }
 
+    if (Object.keys(dataPatch).length > 0) {
+        await updateOrderData(orderId, dataPatch);
+    }
+
     return getOrderById(orderId);
 }
 
@@ -174,7 +215,7 @@ export async function updateOrderData(orderId: string | number, data: any): Prom
     const order = await getDbOrder(orderId);
     if (!order) return;
 
-    const existingData = JSON.parse(order.order_data || '{}');
+    const existingData = parseJsonField(order.order_data, {});
     const newData = { ...existingData, ...data };
 
     await db.run(`UPDATE orders SET order_data = ? WHERE id = ?`, [JSON.stringify(newData), String(orderId)]);
@@ -183,7 +224,7 @@ export async function updateOrderData(orderId: string | number, data: any): Prom
 export async function getVehicleForOrder(orderId: string | number): Promise<any> {
     const order = await getDbOrder(orderId);
     if (!order || !order.vehicle_data) return null;
-    return JSON.parse(order.vehicle_data);
+    return parseJsonField(order.vehicle_data, null);
 }
 
 export async function upsertVehicleForOrderFromPartial(orderId: string | number, partial: any): Promise<void> {
@@ -196,16 +237,40 @@ export async function updateOrderOEM(orderId: string | number, payload: any) {
     const current = await getDbOrder(orderId);
     if (!current) return;
 
-    if (payload.oem) {
-        await db.run(`UPDATE orders SET oem_number = ? WHERE id = ?`, [payload.oem, String(orderId)]);
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    const oemNumber = payload.oem ?? payload.oemNumber ?? payload.oem_number;
+    if (oemNumber !== undefined) {
+        updates.push("oem_number = ?");
+        params.push(oemNumber);
     }
+    if (payload.oemStatus !== undefined) {
+        updates.push("oem_status = ?");
+        params.push(payload.oemStatus);
+    }
+    if (payload.oemError !== undefined) {
+        updates.push("oem_error = ?");
+        params.push(payload.oemError);
+    }
+    if (payload.oemData !== undefined) {
+        updates.push("oem_data = ?");
+        params.push(typeof payload.oemData === "string" ? payload.oemData : JSON.stringify(payload.oemData));
+    }
+
+    if (updates.length > 0) {
+        const sql = `UPDATE orders SET ${updates.join(", ")} WHERE id = ?`;
+        params.push(String(orderId));
+        await db.run(sql, params);
+    }
+
     // Also store full payload in order_data.oemInfo if needed
     await updateOrderData(orderId, { oem_info: payload });
 }
 
 export async function listShopOffersByOrderId(orderId: string | number): Promise<any[]> {
     const rows = await db.all<any>(`SELECT * FROM shop_offers WHERE order_id = ?`, [String(orderId)]);
-    return rows.map(r => ({ ...JSON.parse(r.data), oem: r.oem, id: r.id }));
+    return rows.map(r => ({ ...parseJsonField(r.data, {}), oem: r.oem, id: r.id }));
 }
 
 export async function insertShopOffers(orderId: string, oem: string, offers: any[]) {
@@ -255,7 +320,8 @@ export async function listOrders(): Promise<any[]> {
 export async function getMerchantSettings(merchantId: string): Promise<MerchantSettings | null> {
     const row = await db.get<any>(`SELECT settings FROM merchant_settings WHERE merchant_id = ?`, [merchantId]);
     if (row) {
-        return { merchantId, ...JSON.parse(row.settings) };
+        const settings = parseJsonField(row.settings, {});
+        return { merchantId, ...settings };
     }
     // Return default match if not found, to keep app working
     return {
@@ -331,7 +397,7 @@ export async function listOffers(orderId?: string | number): Promise<any[]> {
         id: r.id,
         orderId: r.order_id,
         oem: r.oem,
-        ...JSON.parse(r.data),
+        ...parseJsonField(r.data, {}),
         insertedAt: r.inserted_at
     }));
 }
@@ -343,7 +409,7 @@ export async function getOfferById(id: string): Promise<any | null> {
         id: row.id,
         orderId: row.order_id,
         oem: row.oem,
-        ...JSON.parse(row.data),
+        ...parseJsonField(row.data, {}),
         insertedAt: row.inserted_at
     };
 }
@@ -354,7 +420,7 @@ async function getDbOrder(id: string | number) {
 }
 
 function parseOrderRow(row: any) {
-    const data = row.order_data ? JSON.parse(row.order_data) : {};
+    const data = parseJsonField(row.order_data, {});
     return {
         id: row.id,
         customerContact: row.customer_contact,
@@ -364,10 +430,18 @@ function parseOrderRow(row: any) {
         updated_at: row.updated_at,
         order_data: data,
         orderData: data, // Compatibility alias
-        vehicle: row.vehicle_data ? JSON.parse(row.vehicle_data) : null,
+        vehicle: parseJsonField(row.vehicle_data, null),
         oem_number: row.oem_number,
-        scrapeResult: row.scrape_result ? JSON.parse(row.scrape_result) : null,
-        language: data.language // Extract language from json if needed
+        oemNumber: row.oem_number ?? data.oemNumber ?? null,
+        oem_data: parseJsonField(row.oem_data, null),
+        scrapeResult: parseJsonField(row.scrape_result, null),
+        language: row.language ?? data.language ?? null,
+        vehicle_description: row.vehicle_description ?? data.vehicle_description ?? null,
+        part_description: row.part_description ?? data.part_description ?? null,
+        customer_name: row.customer_name ?? null,
+        customer_phone: row.customer_phone ?? null,
+        customer_id: row.customer_id ?? null,
+        vehicle_id: row.vehicle_id ?? null
     };
 }
 // --------------------------------------------------------------------------
@@ -505,7 +579,7 @@ function parseCompanyRow(row: any) {
         is_customer: !!row.is_customer,
         is_supplier: !!row.is_supplier,
         active: !!row.active,
-        metadata: row.metadata ? JSON.parse(row.metadata) : {}
+        metadata: parseJsonField(row.metadata, {})
     };
 }
 

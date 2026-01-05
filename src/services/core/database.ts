@@ -3,8 +3,7 @@
 
 import { Pool, PoolClient } from 'pg';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import { runMigrations } from './migrations';
 
 // Create connection pool
 const pool = new Pool({
@@ -27,12 +26,8 @@ export async function initDb(): Promise<void> {
     console.log("[DB] Initializing PostgreSQL database...");
 
     try {
-        // Read and execute schema
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        const schema = fs.readFileSync(schemaPath, 'utf-8');
-
-        await pool.query(schema);
-        console.log("[DB] Schema initialized successfully");
+        await runMigrations(pool);
+        console.log("[DB] Migrations completed successfully");
 
         // Seed Admin User (if not exists)
         const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
