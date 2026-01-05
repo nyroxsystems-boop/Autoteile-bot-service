@@ -48,6 +48,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
 }));
+app.options('*', cors()); // Enable pre-flight across-the-board
 app.use(express.json());
 
 // Einfacher Healthcheck – Service läuft?
