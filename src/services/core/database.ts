@@ -21,14 +21,29 @@ const generateId = () => crypto.randomUUID();
 export function initDb(): Promise<void> {
     console.log("[DB] Initializing In-Memory database...");
 
-    // Seed Admin User if not exists - SECURE: Only if empty and strictly for initial setup
-    const adminEmail = "admin@example.com";
+    // Seed Admin User
+    const adminEmail = process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com";
+    const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";
+
     const existing = store.users.find(u => u.email === adminEmail);
 
-    if (!existing && process.env.VITE_WAWI_SERVICE_TOKEN) { // Only seed if we have a secure environment context or explicit flag
-        // We do NOT seed a default password anymore. User must be created via Admin API or console.
-        // Or if we must, we log a warning. For now: NO DEFAULT BACKDOOR.
-        console.log(`[DB] No default admin user seeded. Create one via API or shell.`);
+    if (!existing) {
+        const passwordHash = crypto.createHash('sha256').update(adminPassword).digest('hex');
+
+        store.users.push({
+            id: generateId(),
+            email: adminEmail,
+            username: "admin",
+            full_name: "Admin User",
+            password_hash: passwordHash,
+            role: "admin",
+            is_active: 1,
+            merchant_id: "dealer-demo-001",
+            created_at: new Date().toISOString()
+        });
+        console.log(`[DB] Seeded admin user: ${adminEmail}`);
+    } else {
+        console.log("[DB] Admin user already exists within session scope.");
     }
 
     console.log("[DB] In-Memory database initialized (Safe for Render)");
