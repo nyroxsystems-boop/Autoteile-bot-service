@@ -214,6 +214,44 @@ function createDashboardRouter() {
             return res.status(500).json({ error: "Failed to calc conversion" });
         }
     });
+    // Conversations endpoint
+    router.get("/conversations", async (_req, res) => {
+        try {
+            // Return empty array for now - conversations are tracked via order messages
+            return res.status(200).json([]);
+        }
+        catch (err) {
+            return res.status(500).json({ error: "Failed to fetch conversations" });
+        }
+    });
+    // Customers endpoint
+    router.get("/customers", async (_req, res) => {
+        try {
+            // Get unique customers from orders
+            const orders = await wawi.listOrders();
+            const customersMap = new Map();
+            orders.forEach(order => {
+                if (order.customerContact && !customersMap.has(order.customerContact)) {
+                    customersMap.set(order.customerContact, {
+                        id: order.customerContact,
+                        phone: order.customerContact,
+                        name: order.customerContact,
+                        orders_count: 1,
+                        total_revenue: 0,
+                        created_at: order.createdAt
+                    });
+                }
+                else if (order.customerContact) {
+                    const existing = customersMap.get(order.customerContact);
+                    existing.orders_count++;
+                }
+            });
+            return res.status(200).json(Array.from(customersMap.values()));
+        }
+        catch (err) {
+            return res.status(500).json({ error: "Failed to fetch customers" });
+        }
+    });
     return router;
 }
 function registerDashboardRoutes(app) {

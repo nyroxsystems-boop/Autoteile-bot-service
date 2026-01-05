@@ -121,6 +121,11 @@ app.use("/internal", createInternalRouter());
 import { createAdminRouter } from "./routes/adminRoutes";
 app.use("/api/admin", createAdminRouter());
 
+// Billing API
+import { createBillingRouter } from "./routes/billingRoutes";
+app.use("/api/billing", createBillingRouter());
+
+
 // CRM Integration API (Leads -> InvenTree)
 import { createCrmRouter } from "./routes/crmRoutes";
 app.use("/api/crm", createCrmRouter());

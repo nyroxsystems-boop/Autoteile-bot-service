@@ -136,6 +136,9 @@ app.use("/internal", (0, internalRoutes_1.createInternalRouter)());
 // Admin / Sales API
 const adminRoutes_1 = require("./routes/adminRoutes");
 app.use("/api/admin", (0, adminRoutes_1.createAdminRouter)());
+// Billing API
+const billingRoutes_1 = require("./routes/billingRoutes");
+app.use("/api/billing", (0, billingRoutes_1.createBillingRouter)());
 // CRM Integration API (Leads -> InvenTree)
 const crmRoutes_1 = require("./routes/crmRoutes");
 app.use("/api/crm", (0, crmRoutes_1.createCrmRouter)());

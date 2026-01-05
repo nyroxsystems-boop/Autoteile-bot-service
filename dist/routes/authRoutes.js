@@ -155,19 +155,71 @@ router.get("/me", async (req, res) => {
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
+        // Extract first and last name from full_name
+        const nameParts = (user.full_name || '').split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
         return res.status(200).json({
             id: user.id,
             email: user.email,
             username: user.username,
+            first_name: firstName,
+            last_name: lastName,
             full_name: user.full_name,
             role: user.role,
-            merchant_id: user.merchant_id
+            merchant_id: user.merchant_id,
+            is_owner: user.role === 'owner'
         });
     }
     catch (error) {
         console.error("Error in GET /api/auth/me:", error);
         return res.status(500).json({
             error: "Failed to get user info",
+            details: error?.message ?? String(error)
+        });
+    }
+});
+/**
+ * GET /api/auth/me/tenants
+ * Get tenant memberships for current user
+ */
+router.get("/me/tenants", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    const token = authHeader.substring(6);
+    try {
+        // Find session
+        const session = await db.get('SELECT * FROM sessions WHERE token = ?', [token]);
+        if (!session) {
+            return res.status(401).json({ error: "Invalid or expired session" });
+        }
+        const now = new Date().toISOString();
+        if (session.expires_at < now) {
+            return res.status(401).json({ error: "Invalid or expired session" });
+        }
+        // Get user
+        const user = await db.get('SELECT * FROM users WHERE id = ? AND is_active = 1', [session.user_id]);
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+        // Return tenant memberships
+        // For now, return single tenant based on user's merchant_id
+        const tenants = [{
+                id: 1,
+                tenant: user.merchant_id || 1,
+                tenant_name: 'AutoTeile Müller GmbH',
+                tenant_slug: user.merchant_id || 'dealer-demo-001',
+                role: user.role,
+                is_active: true
+            }];
+        return res.status(200).json(tenants);
+    }
+    catch (error) {
+        console.error("Error in GET /api/auth/me/tenants:", error);
+        return res.status(500).json({
+            error: "Failed to get tenants",
             details: error?.message ?? String(error)
         });
     }
