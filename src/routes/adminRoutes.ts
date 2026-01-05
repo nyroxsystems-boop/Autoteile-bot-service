@@ -42,9 +42,11 @@ router.post("/users", async (req: Request, res: Response) => {
         // User asked "unlock people". So they need password.
     }
 
+    const username = email.split('@')[0]; // Default username from email
+
     try {
-        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)`;
-        await db.run(sql, [id, name, email, role || "sales_rep", createdAt, passwordHash]);
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`;
+        await db.run(sql, [id, name, email, role || "sales_rep", createdAt, passwordHash, username]);
 
         // IF Dealer -> Sync to InvenTree as 'Supplier' or 'Customer'?
         // The user asked for "Händler" (Dealer).
@@ -167,16 +169,18 @@ router.post("/tenants", async (req: Request, res: Response) => {
         const passwordHash = hashPassword(initialPassword);
 
         // We assume 'merchant' role for the dealer admin
-        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`;
+        const username = email.split('@')[0];
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id, is_active, username) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`;
 
         await db.run(sql, [
             userId,
-            name, // Use company name as user name for now, or split if we had a contact person
+            name,
             email,
             "merchant",
             createdAt,
             passwordHash,
-            merchantId
+            merchantId,
+            username
         ]);
 
         // Return combined result

@@ -22,7 +22,7 @@ export function initDb(): Promise<void> {
     console.log("[DB] Initializing In-Memory database...");
 
     // Seed Admin User
-    const adminEmail = process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com";
+    const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
     const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";
 
     const existing = store.users.find(u => u.email === adminEmail);
