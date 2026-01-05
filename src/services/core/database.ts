@@ -1,230 +1,157 @@
-// IN-MEMORY DATABASE STORE - SQLite removed for stability on Render
-// This allows the Bot to function without native modules while maintaining 
-// runtime state needed for ID generation and WAWI sync.
+// POSTGRESQL DATABASE - Production-ready with connection pooling
+// Replaces in-memory store for investor-ready deployment
 
+import { Pool, PoolClient } from 'pg';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
-const store: Record<string, any[]> = {
-    users: [],
-    sessions: [],
-    orders: [],
-    messages: [],
-    shop_offers: [],
-    merchant_settings: [],
-    parts: [],
-    companies: []
-};
+// Create connection pool
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL?.includes('render.com')
+        ? { rejectUnauthorized: false }
+        : undefined,
+    max: 20, // Maximum number of connections
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+});
 
 // Simple ID generator
 const generateId = () => crypto.randomUUID();
 
-export function initDb(): Promise<void> {
-    console.log("[DB] Initializing In-Memory database...");
+/**
+ * Initialize database - create tables and seed admin user
+ */
+export async function initDb(): Promise<void> {
+    console.log("[DB] Initializing PostgreSQL database...");
 
-    // Seed Admin User
-    const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
-    const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";
+    try {
+        // Read and execute schema
+        const schemaPath = path.join(__dirname, 'schema.sql');
+        const schema = fs.readFileSync(schemaPath, 'utf-8');
 
-    const existing = store.users.find(u => u.email === adminEmail);
+        await pool.query(schema);
+        console.log("[DB] Schema initialized successfully");
 
-    if (!existing) {
-        const passwordHash = crypto.createHash('sha256').update(adminPassword).digest('hex');
+        // Seed Admin User (if not exists)
+        const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";
 
-        store.users.push({
-            id: generateId(),
-            email: adminEmail,
-            username: "admin",
-            full_name: "Admin User",
-            password_hash: passwordHash,
-            role: "admin",
-            is_active: 1,
-            merchant_id: "dealer-demo-001",
-            created_at: new Date().toISOString()
-        });
-        console.log(`[DB] Seeded admin user: ${adminEmail}`);
-    } else {
-        console.log("[DB] Admin user already exists within session scope.");
+        const existingUser = await pool.query(
+            'SELECT id FROM users WHERE email = $1',
+            [adminEmail]
+        );
+
+        if (existingUser.rows.length === 0) {
+            const passwordHash = crypto.createHash('sha256').update(adminPassword).digest('hex');
+
+            await pool.query(
+                `INSERT INTO users (id, email, username, full_name, password_hash, role, is_active, merchant_id, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    generateId(),
+                    adminEmail,
+                    "admin",
+                    "Admin User",
+                    passwordHash,
+                    "admin",
+                    1,
+                    "dealer-demo-001",
+                    new Date().toISOString()
+                ]
+            );
+            console.log(`[DB] Seeded admin user: ${adminEmail}`);
+        } else {
+            console.log("[DB] Admin user already exists");
+        }
+
+        console.log("[DB] PostgreSQL database initialized successfully");
+    } catch (error) {
+        console.error("[DB] Failed to initialize database:", error);
+        throw error;
     }
-
-    console.log("[DB] In-Memory database initialized (Safe for Render)");
-    return Promise.resolve();
-}
-
-// Emulate sqlite3 db object interface
-export const dbInstance = {
-    run: (sql: string, params: any[] = []) => run(sql, params),
-    get: (sql: string, params: any[] = []) => get(sql, params),
-    all: (sql: string, params: any[] = []) => all(sql, params)
-};
-
-export function getDb(): any {
-    return dbInstance;
 }
 
 /**
- * Mocks sqlite3.run
- * Handles INSERT, UPDATE, DELETE
+ * Export pool instance for direct queries
+ */
+export function getDb(): Pool {
+    return pool;
+}
+
+/**
+ * Compatibility layer: run() - Execute INSERT, UPDATE, DELETE
  */
 export async function run(sql: string, params: any[] = []): Promise<void> {
-    const cleanSql = sql.trim();
-
-    // INSERT
-    if (cleanSql.toUpperCase().startsWith("INSERT INTO")) {
-        const match = cleanSql.match(/INSERT INTO (\w+)\s*\((.*?)\)\s*VALUES\s*\((.*?)\)/i);
-        if (match) {
-            const table = match[1];
-            const columns = match[2].split(',').map(c => c.trim());
-
-            if (store[table]) {
-                const row: any = {};
-                columns.forEach((col, idx) => {
-                    row[col] = params[idx];
-                });
-                store[table].push(row);
-            }
-        }
-        return;
+    try {
+        // Convert SQLite-style placeholders (?) to PostgreSQL ($1, $2, etc.)
+        const pgSql = convertPlaceholders(sql);
+        await pool.query(pgSql, params);
+    } catch (error) {
+        console.error("[DB] Error in run():", error);
+        throw error;
     }
-
-    // UPDATE
-    if (cleanSql.toUpperCase().startsWith("UPDATE")) {
-        // Generic UPDATE support: UPDATE table SET col1=?, col2=? WHERE col3=? AND ...
-        const match = cleanSql.match(/UPDATE (\w+) SET (.*?) WHERE (.*?)$/i);
-        if (match) {
-            const table = match[1];
-            const setClause = match[2];
-            const whereClause = match[3];
-
-            if (store[table]) {
-                const setParts = setClause.split(',').map(s => s.trim());
-                // We assume params order: SET params..., then WHERE params...
-                const numSetParams = setParts.length; // Approximate, assuming 1 param per set part (col = ?)
-
-                const whereConditions = parseWhere(whereClause);
-                const whereParams = params.slice(numSetParams);
-                const setParams = params.slice(0, numSetParams);
-
-                store[table].forEach(row => {
-                    if (matchesWhere(row, whereConditions, whereParams)) {
-                        setParts.forEach((part, idx) => {
-                            const [col] = part.split('=').map(c => c.trim());
-                            row[col] = setParams[idx];
-                        });
-                    }
-                });
-            }
-        }
-        return;
-    }
-
-    // DELETE
-    if (cleanSql.toUpperCase().startsWith("DELETE FROM")) {
-        const match = cleanSql.match(/DELETE FROM (\w+) WHERE (.*?)$/i);
-        if (match) {
-            const table = match[1];
-            const whereClause = match[2];
-
-            if (store[table]) {
-                const conditions = parseWhere(whereClause);
-                // Keep rows that DO NOT match
-                store[table] = store[table].filter(row => !matchesWhere(row, conditions, params));
-            }
-        }
-        return;
-    }
-
-    return Promise.resolve();
 }
 
 /**
- * Mocks sqlite3.get
- * Returns single row or undefined
+ * Compatibility layer: get() - Execute SELECT and return single row
  */
 export async function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
-    const rows = await all<T>(sql, params);
-    // Handle COUNT(*) specially if returned by all
-    if (rows && rows.length > 0) return rows[0];
-    return undefined;
+    try {
+        const pgSql = convertPlaceholders(sql);
+        const result = await pool.query(pgSql, params);
+        return result.rows[0] as T | undefined;
+    } catch (error) {
+        console.error("[DB] Error in get():", error);
+        throw error;
+    }
 }
 
 /**
- * Mocks sqlite3.all
+ * Compatibility layer: all() - Execute SELECT and return all rows
  */
 export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
-    const cleanSql = sql.trim();
+    try {
+        const pgSql = convertPlaceholders(sql);
+        const result = await pool.query(pgSql, params);
 
-    // Check for SELECT COUNT(*) FROM table
-    const countMatch = cleanSql.match(/SELECT COUNT\(\*\)\s+(?:AS\s+\w+\s+)?FROM\s+(\w+)(?:\s+WHERE\s+(.*))?/i);
-    if (countMatch) {
-        const table = countMatch[1];
-        const whereClause = countMatch[2];
-
-        let rows = store[table] || [];
-        if (whereClause) {
-            const conditions = parseWhere(whereClause);
-            rows = rows.filter(row => matchesWhere(row, conditions, params));
+        // Special handling for COUNT(*) queries - PostgreSQL returns 'count' not 'count(*)'
+        if (sql.toUpperCase().includes('COUNT(*)') && result.rows.length > 0) {
+            return result.rows.map(row => {
+                if ('count' in row && !('count(*)' in row)) {
+                    return { 'count(*)': parseInt(row.count) } as any;
+                }
+                return row;
+            }) as T[];
         }
-        return [{ 'count(*)': rows.length }] as any;
+
+        return result.rows as T[];
+    } catch (error) {
+        console.error("[DB] Error in all():", error);
+        throw error;
     }
-
-    const tableMatch = cleanSql.match(/FROM\s+(\w+)/i);
-    if (!tableMatch) return Promise.resolve([]);
-
-    const table = tableMatch[1];
-    let rows = store[table] || [];
-
-    if (cleanSql.toUpperCase().includes("WHERE")) {
-        const wherePart = cleanSql.split(/WHERE/i)[1].split(/ORDER|LIMIT/i)[0];
-        const conditions = parseWhere(wherePart);
-        rows = rows.filter(row => matchesWhere(row, conditions, params));
-    }
-
-    // ORDER BY
-    if (cleanSql.toUpperCase().includes("ORDER BY")) {
-        if (cleanSql.toUpperCase().includes("DESC")) {
-            rows = [...rows].reverse();
-        }
-    }
-
-    // LIMIT
-    if (cleanSql.toUpperCase().includes("LIMIT")) {
-        const limitMatch = cleanSql.match(/LIMIT\s+(\d+)/i);
-        if (limitMatch) {
-            const limit = parseInt(limitMatch[1]);
-            rows = rows.slice(0, limit);
-        }
-    }
-
-    return Promise.resolve(rows as T[]);
 }
 
-// --- Helpers ---
-
-function parseWhere(whereClause: string): string[] {
-    // Split by AND, rudimentary
-    return whereClause.split(/AND/i).map(c => c.trim());
+/**
+ * Convert SQLite-style placeholders (?) to PostgreSQL-style ($1, $2, etc.)
+ */
+function convertPlaceholders(sql: string): string {
+    let index = 1;
+    return sql.replace(/\?/g, () => `$${index++}`);
 }
 
-function matchesWhere(row: any, conditions: string[], params: any[]): boolean {
-    let paramIdx = 0;
-    return conditions.every(cond => {
-        // col = ?
-        if (cond.includes('=')) {
-            const [col] = cond.split('=').map(c => c.trim());
-            const val = params[paramIdx++];
-            // Loose equality for numbers/strings mismatch
-            // eslint-disable-next-line eqeqeq
-            return row[col] == val;
-        }
-        // col LIKE ?
-        if (cond.toUpperCase().includes('LIKE')) {
-            const [col] = cond.split(/LIKE/i).map(c => c.trim());
-            const val = params[paramIdx++];
-            if (typeof val === 'string' && typeof row[col] === 'string') {
-                const search = val.replace(/%/g, '').toLowerCase();
-                return row[col].toString().toLowerCase().includes(search);
-            }
-        }
-        return true;
-    });
+/**
+ * Cleanup: Close all database connections
+ */
+export async function closeDb(): Promise<void> {
+    await pool.end();
+    console.log("[DB] Connection pool closed");
 }
+
+// Export db instance for compatibility
+export const dbInstance = {
+    run,
+    get,
+    all
+};
