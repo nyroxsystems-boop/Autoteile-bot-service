@@ -44,10 +44,13 @@ app.use(cors({
     'https://admin-dashboard.onrender.com',
     'https://admin-dashboard-ufau.onrender.com',
     'http://localhost:3000',
-    'http://localhost:5173'
+    'http://localhost:5173',
+    'http://localhost:5174'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID'],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 app.options('*', cors()); // Enable pre-flight across-the-board
 app.use(express.json());
