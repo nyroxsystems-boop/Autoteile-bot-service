@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const db = __importStar(require("../services/database"));
+const db = __importStar(require("../services/core/database"));
 const crypto = __importStar(require("crypto"));
 const crypto_1 = require("crypto");
 const authMiddleware_1 = require("../middleware/authMiddleware");

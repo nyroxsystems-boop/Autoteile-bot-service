@@ -1,15 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authMiddleware = authMiddleware;
-const logger_1 = require("../utils/logger");
-const database_1 = require("../services/database");
-const SERVICE_TOKEN = process.env.VITE_WAWI_SERVICE_TOKEN || "service_dev_secret";
-const API_TOKEN = process.env.VITE_WAWI_API_TOKEN || "api_dev_secret";
+const logger_1 = require("@utils/logger");
+// Import 'get' directly as it is async, matching the unified Promise interface
+const database_1 = require("../services/core/database");
+// Secure Tokens via Env only - NO DEFAULTS
+const SERVICE_TOKEN = process.env.VITE_WAWI_SERVICE_TOKEN;
+const API_TOKEN = process.env.VITE_WAWI_API_TOKEN;
 /**
  * Middleware to protect dashboard and internal routes.
  * Supports Bearer (Service), Token (User/API), and DB Session tokens.
  */
-// Middleware to protect dashboard and internal routes.
 async function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
     const path = req.path;
@@ -18,35 +19,31 @@ async function authMiddleware(req, res, next) {
         return next();
     }
     if (!authHeader) {
-        logger_1.logger.warn(`[Auth] Missing Authorization header for ${path}`);
+        // Reduced log level for noise
+        logger_1.logger.debug(`[Auth] Missing Authorization header for ${path}`);
         return res.status(401).json({ error: "No authorization header provided" });
     }
     const [type, token] = authHeader.split(' ');
     if (!token) {
-        logger_1.logger.warn(`[Auth] Malformed header for ${path}: ${authHeader}`);
         return res.status(401).json({ error: "Malformed authorization header" });
     }
     // Support for dashboard client: 'Token <api_token>' OR Session Token
     if (type === "Token") {
-        // 1. Check Static API Token
-        if (token === API_TOKEN) {
-            logger_1.logger.debug(`[Auth] Valid API Token for ${path}`);
+        // 1. Check Static API Token (if configured)
+        if (API_TOKEN && token === API_TOKEN) {
             return next();
         }
         // 2. Check Database Session
         try {
-            const db = (0, database_1.getDb)();
-            const session = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM sessions WHERE token = ?', [token], (err, row) => err ? reject(err) : resolve(row));
-            });
+            // Updated to use await with the promise-based db.get
+            const session = await (0, database_1.get)('SELECT * FROM sessions WHERE token = ?', [token]);
             if (session) {
-                logger_1.logger.debug(`[Auth] Valid Session Token for ${path} (User: ${session.user_id})`);
                 // Attach user to request if needed
                 req.user = session;
                 return next();
             }
             else {
-                logger_1.logger.warn(`[Auth] Session invalid or expired for ${path}. Token ending in ...${token.slice(-4)}`);
+                logger_1.logger.warn(`[Auth] Session invalid or expired for ${path}`);
             }
         }
         catch (error) {
@@ -55,23 +52,17 @@ async function authMiddleware(req, res, next) {
     }
     // Support for internal/service: 'Bearer <service_token>'
     else if (type === "Bearer") {
-        if (token === SERVICE_TOKEN) {
-            logger_1.logger.debug(`[Auth] Valid Service Token for ${path}`);
+        if (SERVICE_TOKEN && token === SERVICE_TOKEN) {
             return next();
         }
         else {
-            logger_1.logger.warn(`[Auth] Invalid Service Token for ${path}. Expected: ${SERVICE_TOKEN.slice(0, 3)}... received ending in ...${token.slice(-4)}`);
+            logger_1.logger.warn(`[Auth] Invalid Service Token for ${path}`);
         }
     }
     else {
         logger_1.logger.warn(`[Auth] Unsupported auth type '${type}' for ${path}`);
     }
     return res.status(403).json({
-        error: "Invalid or unauthorized token",
-        details: "Check server logs for reason",
-        debug: {
-            authType: type,
-            path: path
-        }
+        error: "Invalid or unauthorized token"
     });
 }

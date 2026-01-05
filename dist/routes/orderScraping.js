@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const supabaseService_1 = require("../services/supabaseService");
-const scrapingService_1 = require("../services/scrapingService");
+const supabaseService_1 = require("@adapters/supabaseService");
+const scrapingService_1 = require("@scraping/scrapingService");
 const router = (0, express_1.Router)();
 /**
  * POST /api/orders/:id/scrape-offers

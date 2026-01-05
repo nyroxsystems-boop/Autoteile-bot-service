@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const oemService_1 = require("../services/oemService");
-const supabaseService_1 = require("../services/supabaseService");
+const oemService_1 = require("../services/intelligence/oemService");
+const supabaseService_1 = require("../services/adapters/supabaseService");
 const router = (0, express_1.Router)();
 /**
  * POST /api/oem/resolve

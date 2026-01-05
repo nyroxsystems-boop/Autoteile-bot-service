@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const db = __importStar(require("../services/database"));
+const db = __importStar(require("../services/core/database"));
 const crypto = __importStar(require("crypto"));
 const crypto_1 = require("crypto");
 const router = (0, express_1.Router)();
@@ -133,7 +133,7 @@ router.get("/me", async (req, res) => {
     const token = authHeader.substring(6);
     try {
         // Find session
-        console.log(`[Auth/Me] Checking token: ${token.substring(0, 10)}... (Length: ${token.length})`);
+        console.log(`[Auth/Me] Checking session token (Length: ${token.length})`);
         const session = await db.get('SELECT * FROM sessions WHERE token = ?', [token]);
         if (!session) {
             console.log(`[Auth/Me] Session not found in DB.`);
@@ -165,6 +165,37 @@ router.get("/me", async (req, res) => {
             error: "Failed to get user info",
             details: error?.message ?? String(error)
         });
+    }
+});
+router.post("/change-password", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const { oldPassword, newPassword } = req.body;
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    if (!oldPassword || !newPassword) {
+        return res.status(400).json({ error: "Old and new password required" });
+    }
+    const token = authHeader.substring(6);
+    try {
+        const session = await db.get('SELECT * FROM sessions WHERE token = ?', [token]);
+        if (!session)
+            return res.status(401).json({ error: "Invalid session" });
+        const user = await db.get('SELECT * FROM users WHERE id = ?', [session.user_id]);
+        if (!user)
+            return res.status(404).json({ error: "User not found" });
+        // Verify old password
+        const oldHash = hashPassword(oldPassword);
+        if (user.password_hash !== oldHash) {
+            return res.status(400).json({ error: "Incorrect old password" });
+        }
+        // Set new password
+        const newHash = hashPassword(newPassword);
+        await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, user.id]);
+        return res.json({ success: true, message: "Passwort erfolgreich geändert" });
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message });
     }
 });
 exports.default = router;

@@ -38,7 +38,13 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: '*', // Allow all origins for now to prevent blocked requests
+  origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [
+    'https://autoteile-dashboard.onrender.com',
+    'https://crm-system.onrender.com',
+    'https://admin-dashboard.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
 }));

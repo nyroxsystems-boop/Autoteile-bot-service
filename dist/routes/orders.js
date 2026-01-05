@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const supabaseService_1 = require("../services/supabaseService");
+const supabaseService_1 = require("@adapters/supabaseService");
 const router = (0, express_1.Router)();
 /**
  * GET /api/orders

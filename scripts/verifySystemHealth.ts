@@ -1,10 +1,19 @@
 import axios from "axios";
 import { env } from "../src/config/env";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 // Configuration
-const BASE_URL = "http://localhost:10000";
-const ADMIN_EMAIL = "admin@example.com";
-const ADMIN_PASSWORD = "password123";
+const BASE_URL = process.env.BASE_URL || "http://localhost:10000";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD; // Must be set in env
+const SERVICE_TOKEN = process.env.VITE_WAWI_SERVICE_TOKEN;
+
+if (!ADMIN_PASSWORD) {
+    console.error("❌ ADMIN_PASSWORD not set in environment");
+    process.exit(1);
+}
 
 async function runVerification() {
     console.log("🛡️  STARTING BULLETPROOF SYSTEM VERIFICATION 🛡️");
@@ -100,8 +109,11 @@ async function runVerification() {
     }
 
     // 6. Test Internal Ping (New Route)
+    // Internal routes are now protected!
     try {
-        const res = await axios.get(`${BASE_URL}/internal/ping`);
+        const res = await axios.get(`${BASE_URL}/internal/ping`, {
+            headers: { Authorization: `Bearer ${SERVICE_TOKEN}` }
+        });
         if (res.status === 200 && res.data.status === "alive") {
             console.log("✅ [Internal] Debug Ping: PASS");
         } else {

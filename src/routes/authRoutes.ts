@@ -128,7 +128,7 @@ router.get("/me", async (req: Request, res: Response) => {
 
     try {
         // Find session
-        console.log(`[Auth/Me] Checking token: ${token.substring(0, 10)}... (Length: ${token.length})`);
+        console.log(`[Auth/Me] Checking session token (Length: ${token.length})`);
 
         const session = await db.get<any>(
             'SELECT * FROM sessions WHERE token = ?',

@@ -11,7 +11,7 @@ const BASE_URL = process.env.INVENTREE_BASE_URL;
 const API_TOKEN = process.env.INVENTREE_API_TOKEN;
 
 // Permissive Agent for Render/Dev environments
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// const httpsAgent = new https.Agent({ rejectUnauthorized: false }); // REMOVED FOR SECURITY
 
 // API Client for WWS
 const api = axios.create({
@@ -21,8 +21,9 @@ const api = axios.create({
         'Content-Type': 'application/json'
     },
     timeout: 5000,
-    httpsAgent
+    // httpsAgent // Removed
 });
+
 
 // Pass-through READS (Local SQLite is source of truth for speed)
 export const testDbConnection = localAdapter.testDbConnection;

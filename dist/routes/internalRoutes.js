@@ -35,9 +35,12 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createInternalRouter = createInternalRouter;
 const express_1 = require("express");
-const productResolutionService_1 = require("../services/productResolutionService");
+const productResolutionService_1 = require("../services/intelligence/productResolutionService");
+const authMiddleware_1 = require("../middleware/authMiddleware");
 function createInternalRouter() {
     const router = (0, express_1.Router)();
+    // Protect internal routes (Service Token needed)
+    router.use(authMiddleware_1.authMiddleware);
     router.post("/orders/:id/refresh-offers", async (req, res) => {
         const orderId = req.params.id;
         console.log("[InternalAPI] POST /internal/orders/:id/refresh-offers", { orderId });
@@ -59,7 +62,7 @@ function createInternalRouter() {
     router.post("/seed-db", async (req, res) => {
         console.log("[InternalAPI] POST /internal/seed-db requested");
         try {
-            const { runSeeding } = await Promise.resolve().then(() => __importStar(require("../services/seedingService")));
+            const { runSeeding } = await Promise.resolve().then(() => __importStar(require("../services/core/seedingService")));
             const result = await runSeeding(50);
             return res.status(200).json({ success: true, result });
         }

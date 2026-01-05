@@ -1,8 +1,12 @@
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
 import * as db from "../services/core/database";
+import { authMiddleware } from "../middleware/authMiddleware";
 
 const router = Router();
+
+// Protect all admin routes
+router.use(authMiddleware);
 
 // --- Users / Vertrieb Team ---
 

@@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const env_1 = require("./config/env");
-const supabaseService_1 = require("./services/supabaseService");
+const supabaseService_1 = require("./services/adapters/supabaseService");
 const orders_1 = __importDefault(require("./routes/orders"));
 const orderScraping_1 = __importDefault(require("./routes/orderScraping"));
 const simulateWhatsapp_1 = __importDefault(require("./routes/simulateWhatsapp"));
@@ -50,7 +50,7 @@ const orderAutoOrder_1 = __importDefault(require("./routes/orderAutoOrder"));
 const whatsappWebhook_1 = __importDefault(require("./routes/whatsappWebhook"));
 const dashboardRoutes_1 = require("./routes/dashboardRoutes");
 const internalRoutes_1 = require("./routes/internalRoutes");
-const database_1 = require("./services/database");
+const database_1 = require("./services/core/database");
 // Queue Worker - nur starten wenn Redis verfügbar
 if (process.env.REDIS_URL) {
     Promise.resolve().then(() => __importStar(require("./queue/botWorker"))).then(() => {
@@ -71,7 +71,13 @@ const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
 const app = (0, express_1.default)();
 // Middleware
 app.use((0, cors_1.default)({
-    origin: '*', // Allow all origins for now to prevent blocked requests
+    origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [
+        'https://autoteile-dashboard.onrender.com',
+        'https://crm-system.onrender.com',
+        'https://admin-dashboard.onrender.com',
+        'http://localhost:3000',
+        'http://localhost:5173'
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
 }));

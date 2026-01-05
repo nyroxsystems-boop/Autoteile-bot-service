@@ -34,8 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const wawi = __importStar(require("../services/realInvenTreeAdapter"));
-const logger_1 = require("../utils/logger");
+const wawi = __importStar(require("@adapters/realInvenTreeAdapter"));
+const logger_1 = require("@utils/logger");
 const router = (0, express_1.Router)();
 /**
  * POST /api/integrations/shop/webhook

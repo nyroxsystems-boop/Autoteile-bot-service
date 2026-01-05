@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const supabaseService_1 = require("../services/supabaseService");
-const orderLogicService_1 = require("../services/orderLogicService");
+const supabaseService_1 = require("@adapters/supabaseService");
+const orderLogicService_1 = require("@core/orderLogicService");
 const router = (0, express_1.Router)();
 router.post("/:id/auto-select", async (req, res) => {
     const { id } = req.params;

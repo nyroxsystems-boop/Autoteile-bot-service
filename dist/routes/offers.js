@@ -36,9 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createOffersRouter = createOffersRouter;
 const express_1 = require("express");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const wawi = __importStar(require("../services/inventreeAdapter"));
+const wawi = __importStar(require("@adapters/inventreeAdapter"));
 const dashboardMappers_1 = require("../mappers/dashboardMappers");
-const logger_1 = require("../utils/logger");
+const logger_1 = require("@utils/logger");
 function createOffersRouter() {
     const router = (0, express_1.Router)();
     // Apply auth to all offer routes

@@ -2,9 +2,13 @@ import { Router, Request, Response } from "express";
 import { refreshOffersForOrder } from '../services/intelligence/productResolutionService';
 import { getOrderById } from '../services/adapters/supabaseService';
 import { runSeeding } from '../services/core/seedingService';
+import { authMiddleware } from '../middleware/authMiddleware';
 
 export function createInternalRouter(): Router {
   const router = Router();
+
+  // Protect internal routes (Service Token needed)
+  router.use(authMiddleware);
 
   router.post("/orders/:id/refresh-offers", async (req: Request, res: Response) => {
     const orderId = req.params.id;

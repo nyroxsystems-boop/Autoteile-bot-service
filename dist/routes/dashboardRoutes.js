@@ -37,11 +37,11 @@ exports.createDashboardRouter = createDashboardRouter;
 exports.registerDashboardRoutes = registerDashboardRoutes;
 const express_1 = require("express");
 const crypto_1 = require("crypto");
-const wawi = __importStar(require("../services/inventreeAdapter"));
+const wawi = __importStar(require("@adapters/inventreeAdapter"));
 const dashboardMappers_1 = require("../mappers/dashboardMappers");
-const logger_1 = require("../utils/logger");
+const logger_1 = require("@utils/logger");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const analytics = __importStar(require("../services/analyticsService"));
+const analytics = __importStar(require("@core/analyticsService"));
 function createDashboardRouter() {
     const router = (0, express_1.Router)();
     // Apply auth to all dashboard routes

@@ -36,8 +36,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createSuppliersRouter = createSuppliersRouter;
 const express_1 = require("express");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const wawi = __importStar(require("../services/inventreeAdapter"));
-const logger_1 = require("../utils/logger");
+const wawi = __importStar(require("@adapters/inventreeAdapter"));
+const logger_1 = require("@utils/logger");
 function createSuppliersRouter() {
     const router = (0, express_1.Router)();
     // Apply auth to all supplier routes

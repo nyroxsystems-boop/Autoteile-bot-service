@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createWwsConnectionsRouter = createWwsConnectionsRouter;
 const express_1 = require("express");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const logger_1 = require("../utils/logger");
+const logger_1 = require("@utils/logger");
 function createWwsConnectionsRouter() {
     const router = (0, express_1.Router)();
     // Apply auth to all WWS connection routes

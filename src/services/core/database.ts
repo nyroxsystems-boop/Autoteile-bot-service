@@ -7,7 +7,6 @@ import * as crypto from 'crypto';
 const store: Record<string, any[]> = {
     users: [],
     sessions: [],
-    // Other tables that might be used
     orders: [],
     messages: [],
     shop_offers: [],
@@ -22,32 +21,29 @@ const generateId = () => crypto.randomUUID();
 export function initDb(): Promise<void> {
     console.log("[DB] Initializing In-Memory database...");
 
-    // Seed Admin User if not exists
+    // Seed Admin User if not exists - SECURE: Only if empty and strictly for initial setup
     const adminEmail = "admin@example.com";
     const existing = store.users.find(u => u.email === adminEmail);
 
-    if (!existing) {
-        const passwordHash = crypto.createHash('sha256').update("password123").digest('hex');
-        store.users.push({
-            id: generateId(),
-            email: adminEmail,
-            password_hash: passwordHash,
-            username: "admin",
-            full_name: "System Admin",
-            role: "admin",
-            merchant_id: "dealer-demo-001",
-            is_active: 1,
-            created_at: new Date().toISOString()
-        });
-        console.log(`[DB] Seeded default user: ${adminEmail} / password123`);
+    if (!existing && process.env.VITE_WAWI_SERVICE_TOKEN) { // Only seed if we have a secure environment context or explicit flag
+        // We do NOT seed a default password anymore. User must be created via Admin API or console.
+        // Or if we must, we log a warning. For now: NO DEFAULT BACKDOOR.
+        console.log(`[DB] No default admin user seeded. Create one via API or shell.`);
     }
 
     console.log("[DB] In-Memory database initialized (Safe for Render)");
     return Promise.resolve();
 }
 
+// Emulate sqlite3 db object interface
+export const dbInstance = {
+    run: (sql: string, params: any[] = []) => run(sql, params),
+    get: (sql: string, params: any[] = []) => get(sql, params),
+    all: (sql: string, params: any[] = []) => all(sql, params)
+};
+
 export function getDb(): any {
-    return null;
+    return dbInstance;
 }
 
 /**
@@ -59,7 +55,6 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
 
     // INSERT
     if (cleanSql.toUpperCase().startsWith("INSERT INTO")) {
-        // Example: INSERT INTO sessions (id, user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)
         const match = cleanSql.match(/INSERT INTO (\w+)\s*\((.*?)\)\s*VALUES\s*\((.*?)\)/i);
         if (match) {
             const table = match[1];
@@ -71,7 +66,6 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
                     row[col] = params[idx];
                 });
                 store[table].push(row);
-                // console.log(`[DB] Inserted into ${table}`, row);
             }
         }
         return;
@@ -79,32 +73,30 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
 
     // UPDATE
     if (cleanSql.toUpperCase().startsWith("UPDATE")) {
-        // Example: UPDATE users SET last_login = ? WHERE id = ?
+        // Generic UPDATE support: UPDATE table SET col1=?, col2=? WHERE col3=? AND ...
         const match = cleanSql.match(/UPDATE (\w+) SET (.*?) WHERE (.*?)$/i);
         if (match) {
             const table = match[1];
             const setClause = match[2];
             const whereClause = match[3];
 
-            // Simplified WHERE: assumes "col = ?"
-            // This is brittle but sufficient for current exact-match queries
             if (store[table]) {
-                // Find rows to update - very basic support for "id = ?"
-                // We assume the last param is the ID if WHERE clause has one ?
-                // The current codebase uses: UPDATE users SET last_login = ? WHERE id = ? -> params: [date, id]
+                const setParts = setClause.split(',').map(s => s.trim());
+                // We assume params order: SET params..., then WHERE params...
+                const numSetParams = setParts.length; // Approximate, assuming 1 param per set part (col = ?)
 
-                // For this specific 'auth' use case (UPDATE users SET last_login = ? WHERE id = ?)
-                if (table === 'users' && whereClause.includes('id =')) {
-                    const userId = params[params.length - 1];
-                    const user = store.users.find(u => u.id === userId);
-                    if (user) {
-                        // Extract what to set? hard to parse generic SET
-                        // But we know we are setting last_login which is the first param
-                        if (setClause.includes('last_login')) {
-                            user.last_login = params[0];
-                        }
+                const whereConditions = parseWhere(whereClause);
+                const whereParams = params.slice(numSetParams);
+                const setParams = params.slice(0, numSetParams);
+
+                store[table].forEach(row => {
+                    if (matchesWhere(row, whereConditions, whereParams)) {
+                        setParts.forEach((part, idx) => {
+                            const [col] = part.split('=').map(c => c.trim());
+                            row[col] = setParams[idx];
+                        });
                     }
-                }
+                });
             }
         }
         return;
@@ -112,17 +104,15 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
 
     // DELETE
     if (cleanSql.toUpperCase().startsWith("DELETE FROM")) {
-        // Example: DELETE FROM sessions WHERE token = ?
         const match = cleanSql.match(/DELETE FROM (\w+) WHERE (.*?)$/i);
         if (match) {
             const table = match[1];
-            const whereClause = match[2]; // e.g. "token = ?"
+            const whereClause = match[2];
 
             if (store[table]) {
-                if (whereClause.includes('token =')) {
-                    const token = params[0];
-                    store[table] = store[table].filter(row => row.token !== token);
-                }
+                const conditions = parseWhere(whereClause);
+                // Keep rows that DO NOT match
+                store[table] = store[table].filter(row => !matchesWhere(row, conditions, params));
             }
         }
         return;
@@ -137,7 +127,9 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
  */
 export async function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
     const rows = await all<T>(sql, params);
-    return rows[0];
+    // Handle COUNT(*) specially if returned by all
+    if (rows && rows.length > 0) return rows[0];
+    return undefined;
 }
 
 /**
@@ -145,62 +137,35 @@ export async function get<T>(sql: string, params: any[] = []): Promise<T | undef
  */
 export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
     const cleanSql = sql.trim();
-    const tableMatch = cleanSql.match(/FROM\s+(\w+)/i);
 
+    // Check for SELECT COUNT(*) FROM table
+    const countMatch = cleanSql.match(/SELECT COUNT\(\*\)\s+(?:AS\s+\w+\s+)?FROM\s+(\w+)(?:\s+WHERE\s+(.*))?/i);
+    if (countMatch) {
+        const table = countMatch[1];
+        const whereClause = countMatch[2];
+
+        let rows = store[table] || [];
+        if (whereClause) {
+            const conditions = parseWhere(whereClause);
+            rows = rows.filter(row => matchesWhere(row, conditions, params));
+        }
+        return [{ 'count(*)': rows.length }] as any;
+    }
+
+    const tableMatch = cleanSql.match(/FROM\s+(\w+)/i);
     if (!tableMatch) return Promise.resolve([]);
 
     const table = tableMatch[1];
-    let rows = store[table] || []; // default to empty if table not in store
+    let rows = store[table] || [];
 
-    // Very basic WHERE support
-    // Supports:
-    // - WHERE id = ?
-    // - WHERE email = ?
-    // - WHERE customer_contact = ?
-    // - WHERE token = ?
-    // - WHERE is_customer = ?
-
-    // We strictly assume params are in order of '?' appearance
     if (cleanSql.toUpperCase().includes("WHERE")) {
         const wherePart = cleanSql.split(/WHERE/i)[1].split(/ORDER|LIMIT/i)[0];
-
-        // Split by AND to handle multiple conditions using a simple regex approach
-        // This is not a real parser, just a helper for the specific queries we know exist.
-        const conditions = wherePart.split(/AND/i).map(c => c.trim());
-
-        let paramIdx = 0;
-        rows = rows.filter(row => {
-            return conditions.every(cond => {
-                // Handle "col = ?"
-                if (cond.includes('=')) {
-                    const [col] = cond.split('=').map(c => c.trim());
-                    const val = params[paramIdx++];
-
-                    // Special handling for boolean stored as 1/0
-                    if (val === 1 || val === 0) {
-                        return !!row[col] === !!val;
-                    }
-                    return row[col] === val;
-                }
-                // Handle "LIKE ?"
-                if (cond.toUpperCase().includes('LIKE')) {
-                    const [col] = cond.split(/LIKE/i).map(c => c.trim());
-                    const val = params[paramIdx++];
-                    if (typeof val === 'string' && typeof row[col] === 'string') {
-                        // Remove %
-                        const search = val.replace(/%/g, '').toLowerCase();
-                        return row[col].toString().toLowerCase().includes(search);
-                    }
-                }
-                return true;
-            });
-        });
+        const conditions = parseWhere(wherePart);
+        rows = rows.filter(row => matchesWhere(row, conditions, params));
     }
 
-    // ORDER BY (Simple DESC/ASC support for created_at or id)
+    // ORDER BY
     if (cleanSql.toUpperCase().includes("ORDER BY")) {
-        // e.g. ORDER BY created_at DESC
-        // We just do a basic sort if it appears
         if (cleanSql.toUpperCase().includes("DESC")) {
             rows = [...rows].reverse();
         }
@@ -208,7 +173,6 @@ export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
 
     // LIMIT
     if (cleanSql.toUpperCase().includes("LIMIT")) {
-        // Assume limit 1 or 100
         const limitMatch = cleanSql.match(/LIMIT\s+(\d+)/i);
         if (limitMatch) {
             const limit = parseInt(limitMatch[1]);
@@ -217,4 +181,35 @@ export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
     }
 
     return Promise.resolve(rows as T[]);
+}
+
+// --- Helpers ---
+
+function parseWhere(whereClause: string): string[] {
+    // Split by AND, rudimentary
+    return whereClause.split(/AND/i).map(c => c.trim());
+}
+
+function matchesWhere(row: any, conditions: string[], params: any[]): boolean {
+    let paramIdx = 0;
+    return conditions.every(cond => {
+        // col = ?
+        if (cond.includes('=')) {
+            const [col] = cond.split('=').map(c => c.trim());
+            const val = params[paramIdx++];
+            // Loose equality for numbers/strings mismatch
+            // eslint-disable-next-line eqeqeq
+            return row[col] == val;
+        }
+        // col LIKE ?
+        if (cond.toUpperCase().includes('LIKE')) {
+            const [col] = cond.split(/LIKE/i).map(c => c.trim());
+            const val = params[paramIdx++];
+            if (typeof val === 'string' && typeof row[col] === 'string') {
+                const search = val.replace(/%/g, '').toLowerCase();
+                return row[col].toString().toLowerCase().includes(search);
+            }
+        }
+        return true;
+    });
 }
