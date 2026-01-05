@@ -44,8 +44,7 @@ exports.all = all;
 exports.closeDb = closeDb;
 const pg_1 = require("pg");
 const crypto = __importStar(require("crypto"));
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const migrations_1 = require("./migrations");
 // Create connection pool
 const pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL,
@@ -64,11 +63,8 @@ const generateId = () => crypto.randomUUID();
 async function initDb() {
     console.log("[DB] Initializing PostgreSQL database...");
     try {
-        // Read and execute schema
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        const schema = fs.readFileSync(schemaPath, 'utf-8');
-        await pool.query(schema);
-        console.log("[DB] Schema initialized successfully");
+        await (0, migrations_1.runMigrations)(pool);
+        console.log("[DB] Migrations completed successfully");
         // Seed Admin User (if not exists)
         const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
         const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";

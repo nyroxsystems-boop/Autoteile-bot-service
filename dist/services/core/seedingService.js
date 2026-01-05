@@ -158,7 +158,9 @@ async function runSeeding(count = 50) {
     await db.run('DELETE FROM messages');
     await db.run('DELETE FROM orders');
     // Merchant Settings
-    await db.run(`INSERT OR REPLACE INTO merchant_settings (merchant_id, settings) VALUES (?, ?)`, [DEALER_ID, JSON.stringify({
+    await db.run(`INSERT INTO merchant_settings (merchant_id, settings)
+         VALUES (?, ?)
+         ON CONFLICT(merchant_id) DO UPDATE SET settings = excluded.settings`, [DEALER_ID, JSON.stringify({
             selectedShops: ['Autodoc', 'kfzteile24', 'pkwteile.de'],
             marginPercent: 25,
             allowDirectDelivery: true,

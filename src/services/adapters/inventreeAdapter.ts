@@ -321,7 +321,7 @@ export async function getMerchantSettings(merchantId: string): Promise<MerchantS
     const row = await db.get<any>(`SELECT settings FROM merchant_settings WHERE merchant_id = ?`, [merchantId]);
     if (row) {
         const settings = parseJsonField(row.settings, {});
-        return { merchantId, ...settings };
+        return { merchantId, selectedShops: [], marginPercent: 0, allowDirectDelivery: false, ...settings } as MerchantSettings;
     }
     // Return default match if not found, to keep app working
     return {
@@ -420,7 +420,7 @@ async function getDbOrder(id: string | number) {
 }
 
 function parseOrderRow(row: any) {
-    const data = parseJsonField(row.order_data, {});
+    const data: Record<string, any> = parseJsonField(row.order_data, {});
     return {
         id: row.id,
         customerContact: row.customer_contact,
