@@ -10,7 +10,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Insert default suppliers (these are the original scrapers, now as suppliers)
 INSERT INTO companies (id, name, email, phone, website, is_customer, is_supplier, active, description, notes, tenant_id, created_at) VALUES
-('00000000-0000-0000-0001-000000000001', 'Autodoc', 'info@autodoc.de', '', 'https://www.autodoc.de', 0, 1, 1, 'Auto parts scraper supplier', 'Priority: 1, Type: scraper', 'global', CURRENT_TIMESTAMP),
-('00000000-0000-0000-0001-000000000002', 'kfzteile24', 'info@kfzteile24.de', '', 'https://www.kfzteile24.de', 0, 1, 1, 'Auto parts scraper supplier', 'Priority: 2, Type: scraper', 'global', CURRENT_TIMESTAMP),
-('00000000-0000-0000-0001-000000000003', 'pkwteile.de', 'info@pkwteile.de', '', 'https://www.pkwteile.de', 0, 1, 1, 'Auto parts scraper supplier', 'Priority: 3, Type: scraper', 'global', CURRENT_TIMESTAMP)
+('00000000-0000-0000-0001-000000000001', 'Autodoc', 'info@autodoc.de', '', 'https://www.autodoc.de', FALSE, TRUE, TRUE, 'Auto parts scraper supplier', 'Priority: 1, Type: scraper', 'global', CURRENT_TIMESTAMP),
+('00000000-0000-0000-0001-000000000002', 'kfzteile24', 'info@kfzteile24.de', '', 'https://www.kfzteile24.de', FALSE, TRUE, TRUE, 'Auto parts scraper supplier', 'Priority: 2, Type: scraper', 'global', CURRENT_TIMESTAMP),
+('00000000-0000-0000-0001-000000000003', 'pkwteile.de', 'info@pkwteile.de', '', 'https://www.pkwteile.de', FALSE, TRUE, TRUE, 'Auto parts scraper supplier', 'Priority: 3, Type: scraper', 'global', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
