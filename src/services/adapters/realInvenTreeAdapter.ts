@@ -731,3 +731,256 @@ export async function receiveGoods(tenantId: string, data: {
         throw error;
     }
 }
+
+// --------------------------------------------------------------------------
+// Purchase Orders Management
+// --------------------------------------------------------------------------
+
+export async function getPurchaseOrders(tenantId: string, filters: any = {}) {
+    try {
+        const params: any = {
+            ordering: '-creation_date',
+            limit: filters.limit || 100
+        };
+
+        if (filters.supplier) params.supplier = filters.supplier;
+        if (filters.status) params.status = filters.status;
+
+        const response = await api.get('/api/order/po/', {
+            params,
+            headers: getTenantHeaders(tenantId)
+        });
+
+        const orders = (response.data.results || response.data).map((po: any) => ({
+            id: po.pk,
+            order_number: po.reference,
+            supplier_id: po.supplier,
+            supplier_name: po.supplier_detail?.name || 'Unknown',
+            status: mapPOStatus(po.status),
+            order_date: po.creation_date,
+            expected_delivery: po.target_date,
+            total_amount: po.total_price || 0,
+            currency: po.currency || 'EUR',
+            notes: po.notes || '',
+            items: po.lines || []
+        }));
+
+        return orders;
+    } catch (error: any) {
+        logger.error(`Failed to get purchase orders for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}
+
+function mapPOStatus(inventreeStatus: number): 'draft' | 'sent' | 'confirmed' | 'received' | 'cancelled' {
+    // InvenTree PO status codes:
+    // 10 = Pending, 20 = Placed, 30 = Complete, 40 = Cancelled, 50 = Lost, 60 = Returned
+    if (inventreeStatus === 10) return 'draft';
+    if (inventreeStatus === 20) return 'sent';
+    if (inventreeStatus === 25) return 'confirmed';
+    if (inventreeStatus === 30) return 'received';
+    if (inventreeStatus === 40) return 'cancelled';
+    return 'draft';
+}
+
+export async function getPurchaseOrderById(tenantId: string, id: string | number) {
+    try {
+        const response = await api.get(`/api/order/po/${id}/`, {
+            headers: getTenantHeaders(tenantId)
+        });
+
+        const po = response.data;
+
+        // Fetch line items separately if needed
+        const linesResponse = await api.get('/api/order/po-line/', {
+            params: { order: id },
+            headers: getTenantHeaders(tenantId)
+        });
+
+        const items = (linesResponse.data.results || linesResponse.data).map((line: any) => ({
+            id: line.pk,
+            part_id: line.part,
+            part_name: line.part_detail?.name || 'Unknown',
+            part_ipn: line.part_detail?.IPN || '',
+            quantity: line.quantity,
+            unit_price: line.purchase_price || 0,
+            total_price: (line.quantity || 0) * (line.purchase_price || 0),
+            received: line.received || 0
+        }));
+
+        return {
+            id: po.pk,
+            order_number: po.reference,
+            supplier_id: po.supplier,
+            supplier_name: po.supplier_detail?.name || 'Unknown',
+            status: mapPOStatus(po.status),
+            order_date: po.creation_date,
+            expected_delivery: po.target_date,
+            total_amount: po.total_price || 0,
+            currency: po.currency || 'EUR',
+            notes: po.notes || '',
+            items: items
+        };
+    } catch (error: any) {
+        if (error.response?.status === 404) {
+            return null;
+        }
+        logger.error(`Failed to get purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function createPurchaseOrder(tenantId: string, data: {
+    supplier_id: number;
+    reference?: string;
+    description?: string;
+    target_date?: string;
+    notes?: string;
+    items: Array<{
+        part_id: number;
+        quantity: number;
+        unit_price?: number;
+    }>;
+}) {
+    try {
+        // Create the PO header
+        const poData = {
+            supplier: data.supplier_id,
+            reference: data.reference || `PO-${Date.now()}`,
+            description: data.description || '',
+            target_date: data.target_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            notes: data.notes || ''
+        };
+
+        const poResponse = await api.post('/api/order/po/', poData, {
+            headers: getTenantHeaders(tenantId)
+        });
+
+        const poId = poResponse.data.pk;
+
+        // Create line items
+        for (const item of data.items) {
+            await api.post('/api/order/po-line/', {
+                order: poId,
+                part: item.part_id,
+                quantity: item.quantity,
+                purchase_price: item.unit_price || 0
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+        }
+
+        // Fetch the complete PO with items
+        return await getPurchaseOrderById(tenantId, poId);
+    } catch (error: any) {
+        logger.error(`Failed to create purchase order for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function updatePurchaseOrder(tenantId: string, id: string | number, patch: any) {
+    try {
+        const updateData: any = {};
+
+        if (patch.reference !== undefined) updateData.reference = patch.reference;
+        if (patch.description !== undefined) updateData.description = patch.description;
+        if (patch.target_date !== undefined) updateData.target_date = patch.target_date;
+        if (patch.notes !== undefined) updateData.notes = patch.notes;
+
+        // Map our status to InvenTree status
+        if (patch.status !== undefined) {
+            if (patch.status === 'draft') updateData.status = 10;
+            if (patch.status === 'sent') updateData.status = 20;
+            if (patch.status === 'confirmed') updateData.status = 25;
+            if (patch.status === 'received') updateData.status = 30;
+            if (patch.status === 'cancelled') updateData.status = 40;
+        }
+
+        const response = await api.patch(`/api/order/po/${id}/`, updateData, {
+            headers: getTenantHeaders(tenantId)
+        });
+
+        return await getPurchaseOrderById(tenantId, id);
+    } catch (error: any) {
+        logger.error(`Failed to update purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function cancelPurchaseOrder(tenantId: string, id: string | number) {
+    try {
+        await api.patch(`/api/order/po/${id}/`, {
+            status: 40 // Cancelled
+        }, {
+            headers: getTenantHeaders(tenantId)
+        });
+    } catch (error: any) {
+        logger.error(`Failed to cancel purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function receivePurchaseOrder(tenantId: string, poId: string | number, data: {
+    items: Array<{
+        line_item_id: number;
+        quantity: number;
+        location: number;
+    }>;
+    notes?: string;
+}) {
+    try {
+        const receiveData = {
+            items: data.items.map(item => ({
+                line_item: item.line_item_id,
+                quantity: item.quantity,
+                location: item.location
+            })),
+            notes: data.notes || ''
+        };
+
+        const response = await api.post('/api/order/po-receive/', receiveData, {
+            headers: getTenantHeaders(tenantId)
+        });
+
+        return response.data;
+    } catch (error: any) {
+        logger.error(`Failed to receive purchase order ${poId} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function getReorderSuggestions(tenantId: string) {
+    try {
+        // Get all parts with stock below minimum
+        const partsResponse = await api.get('/api/part/', {
+            params: {
+                low_stock: true,
+                active: true
+            },
+            headers: getTenantHeaders(tenantId)
+        });
+
+        const lowStockParts = (partsResponse.data.results || partsResponse.data).filter((part: any) => {
+            const stock = part.in_stock || 0;
+            const minimum = part.minimum_stock || 0;
+            return stock < minimum;
+        });
+
+        const suggestions = lowStockParts.map((part: any) => ({
+            part: {
+                id: part.pk,
+                name: part.name,
+                IPN: part.IPN || part.name,
+                description: part.description
+            },
+            current_stock: part.in_stock || 0,
+            minimum_stock: part.minimum_stock || 0,
+            suggested_order_quantity: Math.max((part.minimum_stock || 0) - (part.in_stock || 0), (part.minimum_stock || 0))
+        }));
+
+        return suggestions;
+    } catch (error: any) {
+        logger.error(`Failed to get reorder suggestions for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}

@@ -707,3 +707,56 @@ export async function receiveGoods(tenantId: string, data: any): Promise<any> {
         received_at: new Date().toISOString()
     };
 }
+
+// --------------------------------------------------------------------------
+// Purchase Orders (Mock/Stub)
+// --------------------------------------------------------------------------
+
+export async function getPurchaseOrders(tenantId: string, filters: any = {}): Promise<any[]> {
+    logger.info(`Mock: Getting purchase orders for tenant ${tenantId}`);
+    return [];
+}
+
+export async function getPurchaseOrderById(tenantId: string, id: string | number): Promise<any | null> {
+    logger.info(`Mock: Getting purchase order ${id} for tenant ${tenantId}`);
+    return null;
+}
+
+export async function createPurchaseOrder(tenantId: string, data: any): Promise<any> {
+    logger.info(`Mock: Creating purchase order for tenant ${tenantId}:`, data);
+    return {
+        id: Date.now(),
+        order_number: `PO-${Date.now()}`,
+        ...data,
+        status: 'draft',
+        created_at: new Date().toISOString()
+    };
+}
+
+export async function updatePurchaseOrder(tenantId: string, id: string | number, patch: any): Promise<any> {
+    logger.info(`Mock: Updating purchase order ${id} for tenant ${tenantId}:`, patch);
+    return {
+        id,
+        ...patch,
+        updated_at: new Date().toISOString()
+    };
+}
+
+export async function cancelPurchaseOrder(tenantId: string, id: string | number): Promise<void> {
+    logger.info(`Mock: Cancelling purchase order ${id} for tenant ${tenantId}`);
+}
+
+export async function receivePurchaseOrder(tenantId: string, poId: string | number, data: any): Promise<any> {
+    logger.info(`Mock: Receiving purchase order ${poId} for tenant ${tenantId}:`, data);
+    return {
+        success: true,
+        po_id: poId,
+        ...data,
+        received_at: new Date().toISOString()
+    };
+}
+
+export async function getReorderSuggestions(tenantId: string): Promise<any[]> {
+    logger.info(`Mock: Getting reorder suggestions for tenant ${tenantId}`);
+    return [];
+}
