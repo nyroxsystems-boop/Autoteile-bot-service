@@ -960,6 +960,18 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
     if (data.items && Array.isArray(data.items)) {
         for (const item of data.items) {
             const itemId = randomUUID();
+
+            // Fetch part_name from parts table if part_id is provided but part_name is missing
+            let partName = item.part_name;
+            if (!partName && item.part_id) {
+                const part = await db.get<any>('SELECT name FROM parts WHERE id = ?', [item.part_id]);
+                partName = part?.name || `Part ${item.part_id}`;
+            }
+            // If still no part_name, use a default based on part_id or fallback
+            if (!partName) {
+                partName = item.part_id ? `Part ${item.part_id}` : 'Unknown Part';
+            }
+
             await db.run(
                 `INSERT INTO purchase_order_items (
                     id, purchase_order_id, part_id, part_name, part_ipn,
@@ -969,7 +981,7 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
                     itemId,
                     id,
                     item.part_id || null,
-                    item.part_name,
+                    partName,
                     item.part_ipn || null,
                     item.quantity,
                     item.unit_price,
