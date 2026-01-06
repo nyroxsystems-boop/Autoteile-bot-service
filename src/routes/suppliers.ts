@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-// import { authMiddleware } from "../middleware/authMiddleware"; // TEMP DISABLED FOR TESTING
+import { authMiddleware } from "../middleware/authMiddleware";
 import * as wawi from "@adapters/inventreeAdapter";
 import { logger } from "@utils/logger";
 
@@ -7,7 +7,7 @@ export function createSuppliersRouter(): Router {
     const router = Router();
 
     // Apply auth to all supplier routes
-    // router.use(authMiddleware); // TEMP DISABLED FOR TESTING
+    router.use(authMiddleware);
 
     // Middleware: Extract Tenant ID
     const requireTenant = (req: any, res: any, next: any) => {

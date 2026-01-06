@@ -1,12 +1,12 @@
 import { Router } from 'express';
-// import { authMiddleware } from '../middleware/authMiddleware'; // TEMP DISABLED FOR TESTING
+import { authMiddleware } from '../middleware/authMiddleware';
 import * as adapter from '@adapters/inventreeAdapter';
 import { logger } from '@utils/logger';
 
 const router = Router();
 
 // Apply auth to all purchase order routes
-// router.use(authMiddleware); // TEMP DISABLED FOR TESTING
+router.use(authMiddleware);
 
 // Middleware: Extract Tenant ID
 const requireTenant = (req: any, res: any, next: any) => {
