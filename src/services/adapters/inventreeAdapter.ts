@@ -455,14 +455,15 @@ export async function updateSupplier(tenantId: string, id: string | number, patc
     if (patch.website !== undefined) { updates.push("website = ?"); params.push(patch.website); }
     if (patch.notes !== undefined) { updates.push("notes = ?"); params.push(patch.notes); }
     if (patch.payment_terms !== undefined) { updates.push("payment_terms = ?"); params.push(patch.payment_terms); }
-    if (patch.status !== undefined) {
-        updates.push("active = ?");
-        params.push(patch.status === 'active');
-    }
+    // Handle active status - prioritize patch.active, fallback to patch.status
     if (patch.active !== undefined) {
         updates.push("active = ?");
         params.push(patch.active);
+    } else if (patch.status !== undefined) {
+        updates.push("active = ?");
+        params.push(patch.status === 'active');
     }
+
 
     if (updates.length > 0) {
         const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = TRUE`;
