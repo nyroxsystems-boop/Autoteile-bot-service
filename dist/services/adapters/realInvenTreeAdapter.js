@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listSuppliers = exports.getSupplierById = exports.getOfferById = exports.listOffers = exports.upsertMerchantSettings = exports.getMerchantSettings = exports.listOrders = exports.findOrCreateOrder = exports.listActiveOrdersByContact = exports.listShopOffersByOrderId = exports.getVehicleForOrder = exports.testDbConnection = void 0;
+exports.getOfferById = exports.listOffers = exports.upsertMerchantSettings = exports.getMerchantSettings = exports.listOrders = exports.findOrCreateOrder = exports.listActiveOrdersByContact = exports.listShopOffersByOrderId = exports.getVehicleForOrder = exports.testDbConnection = void 0;
 exports.insertOrder = insertOrder;
 exports.updateOrder = updateOrder;
 exports.getOrderById = getOrderById;
@@ -62,6 +62,22 @@ exports.processStockAction = processStockAction;
 exports.createInvoice = createInvoice;
 exports.findPartByOem = findPartByOem;
 exports.deductStock = deductStock;
+exports.listSuppliers = listSuppliers;
+exports.getSupplierById = getSupplierById;
+exports.createSupplier = createSupplier;
+exports.updateSupplier = updateSupplier;
+exports.deleteSupplier = deleteSupplier;
+exports.getStockMovements = getStockMovements;
+exports.createStockMovement = createStockMovement;
+exports.getStockLocations = getStockLocations;
+exports.receiveGoods = receiveGoods;
+exports.getPurchaseOrders = getPurchaseOrders;
+exports.getPurchaseOrderById = getPurchaseOrderById;
+exports.createPurchaseOrder = createPurchaseOrder;
+exports.updatePurchaseOrder = updatePurchaseOrder;
+exports.cancelPurchaseOrder = cancelPurchaseOrder;
+exports.receivePurchaseOrder = receivePurchaseOrder;
+exports.getReorderSuggestions = getReorderSuggestions;
 const localAdapter = __importStar(require("../adapters/inventreeAdapter"));
 const axios_1 = __importDefault(require("axios"));
 const dotenv = __importStar(require("dotenv"));
@@ -75,7 +91,7 @@ const API_TOKEN = process.env.INVENTREE_API_TOKEN;
 const api = axios_1.default.create({
     baseURL: BASE_URL,
     headers: {
-        'Authorization': `Token ${API_TOKEN}`,
+        'Authorization': `Bearer ${API_TOKEN}`,
         'Content-Type': 'application/json'
     },
     timeout: 5000,
@@ -92,8 +108,7 @@ exports.getMerchantSettings = localAdapter.getMerchantSettings;
 exports.upsertMerchantSettings = localAdapter.upsertMerchantSettings;
 exports.listOffers = localAdapter.listOffers;
 exports.getOfferById = localAdapter.getOfferById;
-exports.getSupplierById = localAdapter.getSupplierById;
-exports.listSuppliers = localAdapter.listSuppliers;
+// Supplier methods are now handled by InvenTree API below
 // Helper to push state to InvenTree
 // Helper to push state to InvenTree
 async function syncToWWS(orderId) {
@@ -224,11 +239,18 @@ async function createCompany(company) {
         return localAdapter.createCompany(company);
     }
     try {
+        logger_1.logger.info(`Creating company in WAWI: ${JSON.stringify(company)}`);
         const response = await api.post('/api/company/', company);
+        logger_1.logger.info(`Company created successfully: ${JSON.stringify(response.data)}`);
         return response.data;
     }
     catch (error) {
+        // Log the FULL error response from WAWI for debugging
+        const wawiError = error.response?.data;
         logger_1.logger.error(`Failed to create company: ${error.message}`);
+        logger_1.logger.error(`WAWI Response Status: ${error.response?.status}`);
+        logger_1.logger.error(`WAWI Response Data: ${JSON.stringify(wawiError)}`);
+        logger_1.logger.error(`Request Payload was: ${JSON.stringify(company)}`);
         throw error;
     }
 }
@@ -371,14 +393,15 @@ async function getStockItemById(tenantId, stockId) {
     });
     return response.data;
 }
-async function createStockItem(tenantId, partId, quantity) {
-    const response = await api.post('/api/stock/', {
+async function createStockItem(tenantId, partId, quantity, location) {
+    const payload = {
         part: partId,
-        quantity: quantity,
-        // In InvenTree, location is often required. We might need a default location?
-        // For now try without, or we need to ensure a default location exists.
-        // If error "location required", we fix it.
-    }, {
+        quantity: quantity
+    };
+    if (location) {
+        payload.location = location;
+    }
+    const response = await api.post('/api/stock/', payload, {
         headers: getTenantHeaders(tenantId)
     });
     return response.data;
@@ -424,4 +447,516 @@ async function findPartByOem(tenantId, oem) {
 }
 async function deductStock(tenantId, partId, quantity) {
     return processStockAction(tenantId, partId, 'remove', quantity);
+}
+// --------------------------------------------------------------------------
+// Supplier Management (WAWI)
+// --------------------------------------------------------------------------
+async function listSuppliers(tenantId, params = {}) {
+    try {
+        const response = await api.get('/api/company/', {
+            params: {
+                ...params,
+                is_supplier: true
+            },
+            headers: getTenantHeaders(tenantId)
+        });
+        return response.data.results || response.data;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to list suppliers for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}
+async function getSupplierById(tenantId, id) {
+    try {
+        const response = await api.get(`/api/company/${id}/`, {
+            headers: getTenantHeaders(tenantId)
+        });
+        return response.data;
+    }
+    catch (error) {
+        if (error.response?.status === 404) {
+            return null;
+        }
+        logger_1.logger.error(`Failed to get supplier ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function createSupplier(tenantId, data) {
+    if (!tenantId)
+        throw new Error("Tenant ID required for supplier creation");
+    const supplierData = {
+        name: data.name,
+        description: data.description || '',
+        website: data.website || '',
+        email: data.email || '',
+        phone: data.phone || '',
+        address: data.address || '',
+        contact_person: data.contact_person || '',
+        is_supplier: true,
+        is_customer: false,
+        active: data.status === 'active' || data.active !== false,
+        metadata: data.metadata || {}
+    };
+    try {
+        const response = await api.post('/api/company/', supplierData, {
+            headers: getTenantHeaders(tenantId)
+        });
+        return response.data;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to create supplier for tenant ${tenantId}: ${error.message}`);
+        logger_1.logger.error(`WAWI Response: ${JSON.stringify(error.response?.data)}`);
+        throw error;
+    }
+}
+async function updateSupplier(tenantId, id, patch) {
+    const updateData = {};
+    if (patch.name !== undefined)
+        updateData.name = patch.name;
+    if (patch.description !== undefined)
+        updateData.description = patch.description;
+    if (patch.website !== undefined)
+        updateData.website = patch.website;
+    if (patch.email !== undefined)
+        updateData.email = patch.email;
+    if (patch.phone !== undefined)
+        updateData.phone = patch.phone;
+    if (patch.address !== undefined)
+        updateData.address = patch.address;
+    if (patch.contact_person !== undefined)
+        updateData.contact_person = patch.contact_person;
+    if (patch.status !== undefined)
+        updateData.active = patch.status === 'active';
+    if (patch.active !== undefined)
+        updateData.active = patch.active;
+    if (patch.metadata !== undefined)
+        updateData.metadata = patch.metadata;
+    try {
+        const response = await api.patch(`/api/company/${id}/`, updateData, {
+            headers: getTenantHeaders(tenantId)
+        });
+        return response.data;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to update supplier ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function deleteSupplier(tenantId, id) {
+    try {
+        await api.delete(`/api/company/${id}/`, {
+            headers: getTenantHeaders(tenantId)
+        });
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to delete supplier ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+// --------------------------------------------------------------------------
+// Stock Movement Tracking
+// --------------------------------------------------------------------------
+async function getStockMovements(tenantId, filters = {}) {
+    try {
+        const params = {
+            ordering: '-date',
+            limit: filters.limit || 100
+        };
+        if (filters.part_id)
+            params.part = filters.part_id;
+        if (filters.type) {
+            // Map our type to InvenTree tracking type
+            // IN/OUT/TRANSFER/CORRECTION
+            params.tracking_type = filters.type;
+        }
+        const response = await api.get('/api/stock/track/', {
+            params,
+            headers: getTenantHeaders(tenantId)
+        });
+        // Transform InvenTree tracking to our format
+        const movements = (response.data.results || response.data).map((track) => ({
+            id: track.pk,
+            part_id: track.item,
+            part_name: track.item_detail?.part_detail?.name || 'Unknown',
+            type: mapTrackingType(track.tracking_type),
+            quantity: track.quantity,
+            reference: track.notes || '',
+            notes: track.notes || '',
+            from_location: track.location_detail?.name,
+            to_location: track.destination_detail?.name,
+            created_at: track.date,
+            created_by: track.user_detail?.username || 'System',
+            created_by_name: track.user_detail?.username || 'System'
+        }));
+        return movements;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to get stock movements for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}
+function mapTrackingType(inventreeType) {
+    // InvenTree tracking types:
+    // 10 = stock count, 20 = stock add, 30 = stock remove, etc.
+    if (inventreeType >= 20 && inventreeType < 30)
+        return 'IN';
+    if (inventreeType >= 30 && inventreeType < 40)
+        return 'OUT';
+    if (inventreeType >= 40 && inventreeType < 50)
+        return 'TRANSFER';
+    return 'CORRECTION';
+}
+async function createStockMovement(tenantId, data) {
+    try {
+        // Get stock item for this part
+        let stockItem = await getStockItemForPart(tenantId, data.part_id);
+        if (!stockItem && data.type !== 'IN') {
+            throw new Error('No stock item found. Cannot remove or transfer stock that doesn\'t exist.');
+        }
+        if (!stockItem && data.type === 'IN') {
+            // Create initial stock item
+            stockItem = await createStockItem(tenantId, data.part_id, 0, data.to_location);
+        }
+        const stockId = stockItem.pk;
+        // Perform the appropriate action
+        if (data.type === 'IN') {
+            const response = await api.post('/api/stock/add/', {
+                items: [{
+                        pk: stockId,
+                        quantity: data.quantity,
+                        notes: data.notes || data.reference || 'Dashboard adjustment'
+                    }]
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+            return response.data;
+        }
+        if (data.type === 'OUT') {
+            const response = await api.post('/api/stock/remove/', {
+                items: [{
+                        pk: stockId,
+                        quantity: data.quantity,
+                        notes: data.notes || data.reference || 'Dashboard adjustment'
+                    }]
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+            return response.data;
+        }
+        if (data.type === 'TRANSFER') {
+            if (!data.to_location)
+                throw new Error('Destination location required for transfer');
+            const response = await api.post('/api/stock/transfer/', {
+                items: [{
+                        pk: stockId,
+                        quantity: data.quantity,
+                        location: data.to_location,
+                        notes: data.notes || data.reference || 'Dashboard transfer'
+                    }]
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+            return response.data;
+        }
+        if (data.type === 'CORRECTION') {
+            // Stock count/correction
+            const response = await api.post('/api/stock/count/', {
+                items: [{
+                        pk: stockId,
+                        quantity: data.quantity,
+                        notes: data.notes || data.reference || 'Stock correction'
+                    }]
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+            return response.data;
+        }
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to create stock movement for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function getStockLocations(tenantId) {
+    try {
+        const response = await api.get('/api/stock/location/', {
+            headers: getTenantHeaders(tenantId)
+        });
+        const locations = (response.data.results || response.data).map((loc) => ({
+            id: loc.pk,
+            name: loc.name,
+            description: loc.description || '',
+            pathstring: loc.pathstring || loc.name,
+            parent: loc.parent,
+            items: loc.items || 0
+        }));
+        return locations;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to get stock locations for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}
+// Goods Receipt
+async function receiveGoods(tenantId, data) {
+    try {
+        // If PO is specified, use the receive endpoint
+        if (data.purchase_order_id) {
+            const response = await api.post('/api/order/po-receive/', {
+                order: data.purchase_order_id,
+                items: [{
+                        part: data.part_id,
+                        quantity: data.quantity,
+                        location: data.location
+                    }],
+                notes: data.notes || ''
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+            return response.data;
+        }
+        else {
+            // Direct stock add
+            return await createStockMovement(tenantId, {
+                part_id: data.part_id,
+                quantity: data.quantity,
+                type: 'IN',
+                to_location: data.location,
+                notes: data.notes
+            });
+        }
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to receive goods for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+// --------------------------------------------------------------------------
+// Purchase Orders Management
+// --------------------------------------------------------------------------
+async function getPurchaseOrders(tenantId, filters = {}) {
+    try {
+        const params = {
+            ordering: '-creation_date',
+            limit: filters.limit || 100
+        };
+        if (filters.supplier)
+            params.supplier = filters.supplier;
+        if (filters.status)
+            params.status = filters.status;
+        const response = await api.get('/api/order/po/', {
+            params,
+            headers: getTenantHeaders(tenantId)
+        });
+        const orders = (response.data.results || response.data).map((po) => ({
+            id: po.pk,
+            order_number: po.reference,
+            supplier_id: po.supplier,
+            supplier_name: po.supplier_detail?.name || 'Unknown',
+            status: mapPOStatus(po.status),
+            order_date: po.creation_date,
+            expected_delivery: po.target_date,
+            total_amount: po.total_price || 0,
+            currency: po.currency || 'EUR',
+            notes: po.notes || '',
+            items: po.lines || []
+        }));
+        return orders;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to get purchase orders for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
+}
+function mapPOStatus(inventreeStatus) {
+    // InvenTree PO status codes:
+    // 10 = Pending, 20 = Placed, 30 = Complete, 40 = Cancelled, 50 = Lost, 60 = Returned
+    if (inventreeStatus === 10)
+        return 'draft';
+    if (inventreeStatus === 20)
+        return 'sent';
+    if (inventreeStatus === 25)
+        return 'confirmed';
+    if (inventreeStatus === 30)
+        return 'received';
+    if (inventreeStatus === 40)
+        return 'cancelled';
+    return 'draft';
+}
+async function getPurchaseOrderById(tenantId, id) {
+    try {
+        const response = await api.get(`/api/order/po/${id}/`, {
+            headers: getTenantHeaders(tenantId)
+        });
+        const po = response.data;
+        // Fetch line items separately if needed
+        const linesResponse = await api.get('/api/order/po-line/', {
+            params: { order: id },
+            headers: getTenantHeaders(tenantId)
+        });
+        const items = (linesResponse.data.results || linesResponse.data).map((line) => ({
+            id: line.pk,
+            part_id: line.part,
+            part_name: line.part_detail?.name || 'Unknown',
+            part_ipn: line.part_detail?.IPN || '',
+            quantity: line.quantity,
+            unit_price: line.purchase_price || 0,
+            total_price: (line.quantity || 0) * (line.purchase_price || 0),
+            received: line.received || 0
+        }));
+        return {
+            id: po.pk,
+            order_number: po.reference,
+            supplier_id: po.supplier,
+            supplier_name: po.supplier_detail?.name || 'Unknown',
+            status: mapPOStatus(po.status),
+            order_date: po.creation_date,
+            expected_delivery: po.target_date,
+            total_amount: po.total_price || 0,
+            currency: po.currency || 'EUR',
+            notes: po.notes || '',
+            items: items
+        };
+    }
+    catch (error) {
+        if (error.response?.status === 404) {
+            return null;
+        }
+        logger_1.logger.error(`Failed to get purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function createPurchaseOrder(tenantId, data) {
+    try {
+        // Create the PO header
+        const poData = {
+            supplier: data.supplier_id,
+            reference: data.reference || `PO-${Date.now()}`,
+            description: data.description || '',
+            target_date: data.target_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            notes: data.notes || ''
+        };
+        const poResponse = await api.post('/api/order/po/', poData, {
+            headers: getTenantHeaders(tenantId)
+        });
+        const poId = poResponse.data.pk;
+        // Create line items
+        for (const item of data.items) {
+            await api.post('/api/order/po-line/', {
+                order: poId,
+                part: item.part_id,
+                quantity: item.quantity,
+                purchase_price: item.unit_price || 0
+            }, {
+                headers: getTenantHeaders(tenantId)
+            });
+        }
+        // Fetch the complete PO with items
+        return await getPurchaseOrderById(tenantId, poId);
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to create purchase order for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function updatePurchaseOrder(tenantId, id, patch) {
+    try {
+        const updateData = {};
+        if (patch.reference !== undefined)
+            updateData.reference = patch.reference;
+        if (patch.description !== undefined)
+            updateData.description = patch.description;
+        if (patch.target_date !== undefined)
+            updateData.target_date = patch.target_date;
+        if (patch.notes !== undefined)
+            updateData.notes = patch.notes;
+        // Map our status to InvenTree status
+        if (patch.status !== undefined) {
+            if (patch.status === 'draft')
+                updateData.status = 10;
+            if (patch.status === 'sent')
+                updateData.status = 20;
+            if (patch.status === 'confirmed')
+                updateData.status = 25;
+            if (patch.status === 'received')
+                updateData.status = 30;
+            if (patch.status === 'cancelled')
+                updateData.status = 40;
+        }
+        const response = await api.patch(`/api/order/po/${id}/`, updateData, {
+            headers: getTenantHeaders(tenantId)
+        });
+        return await getPurchaseOrderById(tenantId, id);
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to update purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function cancelPurchaseOrder(tenantId, id) {
+    try {
+        await api.patch(`/api/order/po/${id}/`, {
+            status: 40 // Cancelled
+        }, {
+            headers: getTenantHeaders(tenantId)
+        });
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to cancel purchase order ${id} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function receivePurchaseOrder(tenantId, poId, data) {
+    try {
+        const receiveData = {
+            items: data.items.map(item => ({
+                line_item: item.line_item_id,
+                quantity: item.quantity,
+                location: item.location
+            })),
+            notes: data.notes || ''
+        };
+        const response = await api.post('/api/order/po-receive/', receiveData, {
+            headers: getTenantHeaders(tenantId)
+        });
+        return response.data;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to receive purchase order ${poId} for tenant ${tenantId}: ${error.message}`);
+        throw error;
+    }
+}
+async function getReorderSuggestions(tenantId) {
+    try {
+        // Get all parts with stock below minimum
+        const partsResponse = await api.get('/api/part/', {
+            params: {
+                low_stock: true,
+                active: true
+            },
+            headers: getTenantHeaders(tenantId)
+        });
+        const lowStockParts = (partsResponse.data.results || partsResponse.data).filter((part) => {
+            const stock = part.in_stock || 0;
+            const minimum = part.minimum_stock || 0;
+            return stock < minimum;
+        });
+        const suggestions = lowStockParts.map((part) => ({
+            part: {
+                id: part.pk,
+                name: part.name,
+                IPN: part.IPN || part.name,
+                description: part.description
+            },
+            current_stock: part.in_stock || 0,
+            minimum_stock: part.minimum_stock || 0,
+            suggested_order_quantity: Math.max((part.minimum_stock || 0) - (part.in_stock || 0), (part.minimum_stock || 0))
+        }));
+        return suggestions;
+    }
+    catch (error) {
+        logger_1.logger.error(`Failed to get reorder suggestions for tenant ${tenantId}: ${error.message}`);
+        return [];
+    }
 }

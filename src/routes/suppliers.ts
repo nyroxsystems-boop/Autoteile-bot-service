@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/authMiddleware";
-import * as wawi from "@adapters/inventreeAdapter";
-import { logger } from "@utils/logger";
+import * as wawi from "../services/adapters/inventreeAdapter";
+import { logger } from "../utils/logger";
 
 export function createSuppliersRouter(): Router {
     const router = Router();

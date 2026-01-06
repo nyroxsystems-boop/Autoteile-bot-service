@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
-import * as adapter from '@adapters/inventreeAdapter';
-import { logger } from '@utils/logger';
+import * as adapter from '../services/adapters/inventreeAdapter';
+import { logger } from '../utils/logger';
 
 const router = Router();
 

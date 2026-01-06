@@ -45,6 +45,7 @@ exports.closeDb = closeDb;
 const pg_1 = require("pg");
 const crypto = __importStar(require("crypto"));
 const migrations_1 = require("./migrations");
+const seedDemoData_1 = require("./seedDemoData");
 // Create connection pool
 const pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL,
@@ -87,6 +88,10 @@ async function initDb() {
         }
         else {
             console.log("[DB] Admin user already exists");
+        }
+        // Seed demo data (orders, products) if enabled
+        if (process.env.SEED_DEMO_DATA !== 'false') {
+            await (0, seedDemoData_1.seedDemoData)();
         }
         console.log("[DB] PostgreSQL database initialized successfully");
     }

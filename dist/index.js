@@ -64,24 +64,33 @@ else {
 }
 const botHealth_1 = require("./routes/botHealth");
 const suppliers_1 = require("./routes/suppliers");
+const stockMovements_1 = __importDefault(require("./routes/stockMovements"));
+const purchaseOrders_1 = __importDefault(require("./routes/purchaseOrders"));
 const offers_1 = require("./routes/offers");
 const wwsConnections_1 = require("./routes/wwsConnections");
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
 const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
 const app = (0, express_1.default)();
 // Middleware
-app.use((0, cors_1.default)({
-    origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [
-        'https://autoteile-dashboard.onrender.com',
-        'https://crm-system.onrender.com',
-        'https://admin-dashboard.onrender.com',
-        'http://localhost:3000',
-        'http://localhost:5173'
-    ],
+const corsOptions = {
+    origin: process.env.CORS_ALLOWED_ORIGINS
+        ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+        : [
+            'https://autoteile-dashboard.onrender.com',
+            'https://crm-system.onrender.com',
+            'https://admin-dashboard.onrender.com',
+            'https://admin-dashboard-ufau.onrender.com',
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://localhost:5174'
+        ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID']
-}));
-app.options('*', (0, cors_1.default)()); // Enable pre-flight across-the-board
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+app.use((0, cors_1.default)(corsOptions));
+app.options('*', (0, cors_1.default)(corsOptions)); // Use same options for preflight
 app.use(express_1.default.json());
 // Einfacher Healthcheck – Service läuft?
 app.get("/health", (_req, res) => {
@@ -127,6 +136,10 @@ app.use("/api/users", userRoutes_1.default);
 app.use("/api/bot", (0, botHealth_1.createBotHealthRouter)());
 // Suppliers API
 app.use("/api/suppliers", (0, suppliers_1.createSuppliersRouter)());
+// Stock Movements API (WAWI)
+app.use("/api/stock", stockMovements_1.default);
+// Purchase Orders API (WAWI)
+app.use("/api/purchase-orders", purchaseOrders_1.default);
 // Offers API  
 app.use("/api/offers", (0, offers_1.createOffersRouter)());
 // WWS Connections API

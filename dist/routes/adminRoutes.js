@@ -56,9 +56,9 @@ function hashPassword(password) {
     return (0, crypto_2.createHash)('sha256').update(password).digest('hex');
 }
 router.post("/users", async (req, res) => {
-    const { name, email, role, password } = req.body;
-    if (!name || !email) {
-        return res.status(400).json({ error: "Name and Email are required." });
+    const { name, email, role, password, tenant_id, username: providedUsername } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: "Email is required." });
     }
     const id = (0, crypto_1.randomUUID)();
     const createdAt = new Date().toISOString();
@@ -67,20 +67,16 @@ router.post("/users", async (req, res) => {
         passwordHash = hashPassword(password);
     }
     else {
-        // Optional default password for manual users? Or leave null (no login)
-        // For safe fallback, maybe 'password123' hashed? Or just null.
-        // User asked "unlock people". So they need password.
+        // Generate default password if not provided
+        const defaultPassword = 'Welcome123!';
+        passwordHash = hashPassword(defaultPassword);
     }
-    const username = email.split('@')[0]; // Default username from email
+    const username = providedUsername || email.split('@')[0]; // Use provided or derive from email
+    const userName = name || username; // Use name if provided, otherwise username
     try {
-        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`;
-        await db.run(sql, [id, name, email, role || "sales_rep", createdAt, passwordHash, username]);
-        // IF Dealer -> Sync to InvenTree as 'Supplier' or 'Customer'?
-        // The user asked for "Händler" (Dealer).
-        if (role === 'dealer' || role === 'merchant' || role === 'admin') {
-            // Optional: Sync to InvenTree
-        }
-        return res.json({ id, name, email, role: role || "sales_rep", created_at: createdAt });
+        const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username, merchant_id) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`;
+        await db.run(sql, [id, userName, email, role || "sales_rep", createdAt, passwordHash, username, tenant_id || null]);
+        return res.json({ id, name: userName, email, role: role || "sales_rep", created_at: createdAt, username });
     }
     catch (err) {
         return res.status(500).json({ error: err.message });
@@ -160,18 +156,55 @@ router.post("/tenants", async (req, res) => {
         if (!name || !email) {
             return res.status(400).json({ error: "Name and Email are required." });
         }
+        // Check if company already exists (duplicate detection)
+        try {
+            const existingCompanies = await (0, realInvenTreeAdapter_1.getCompanies)({ is_customer: true });
+            const duplicate = existingCompanies.find((c) => c.name === name || c.email === email);
+            if (duplicate) {
+                console.warn(`Duplicate company detected: ${duplicate.name} (${duplicate.email})`);
+                return res.status(409).json({
+                    error: "A company with this name or email already exists.",
+                    existing: { id: duplicate.pk, name: duplicate.name, email: duplicate.email }
+                });
+            }
+        }
+        catch (checkErr) {
+            console.error("Failed to check for duplicate companies:", checkErr.message);
+            // Continue with creation attempt even if duplicate check fails
+        }
         const payload = {
             name,
-            email,
-            website: logo_url || website, // Hack: Storing logo_url in website for mock if needed, or we just trust the mock adapter handles extra fields
-            phone: whatsapp_number || phone, // Priority to whatsapp number
+            email: email || null, // Send null instead of empty string to avoid unique constraint issues
+            website: logo_url || website || "", // Hack: Storing logo_url in website for mock if needed
+            phone: whatsapp_number || phone || "", // Priority to whatsapp number
             is_customer: true,
             is_supplier: false,
             active: true,
-            description: "Auto-Created via Admin Dashboard"
+            description: "Auto-Created via Admin Dashboard",
+            currency: "EUR" // Required field by InvenTree API
         };
         // 1. Create Company in InvenTree
-        const createdCompany = await (0, realInvenTreeAdapter_1.createCompany)(payload);
+        let createdCompany;
+        try {
+            createdCompany = await (0, realInvenTreeAdapter_1.createCompany)(payload);
+        }
+        catch (createErr) {
+            // Log the full error for debugging
+            console.error("Failed to create company in WAWI:", {
+                message: createErr.message,
+                response: createErr.response?.data,
+                status: createErr.response?.status,
+                payload: payload
+            });
+            // Return the actual error from WAWI if available
+            if (createErr.response?.data) {
+                return res.status(createErr.response.status || 500).json({
+                    error: "Failed to create company in WAWI",
+                    details: createErr.response.data
+                });
+            }
+            throw createErr; // Re-throw to be caught by outer catch
+        }
         const merchantId = String(createdCompany.pk);
         // 2. Create Admin User for this Company
         const userId = (0, crypto_1.randomUUID)();
@@ -191,6 +224,7 @@ router.post("/tenants", async (req, res) => {
             merchantId,
             username
         ]);
+        console.log(`Successfully created tenant: ${name} (ID: ${merchantId})`);
         // Return combined result
         return res.json({
             ...createdCompany,
@@ -203,6 +237,7 @@ router.post("/tenants", async (req, res) => {
         });
     }
     catch (err) {
+        console.error("Tenant creation failed:", err.message);
         return res.status(500).json({ error: err.message });
     }
 });
@@ -210,29 +245,38 @@ router.get("/kpis", async (req, res) => {
     try {
         // Tenants count from InvenTree
         const tenants = await (0, realInvenTreeAdapter_1.getCompanies)({ is_customer: true });
-        // Fetch all orders to calculate stats manually (since DB adapter is a mock)
-        const allOrders = await db.all("SELECT * FROM orders");
-        // 1. Total Orders
-        const totalOrders = allOrders.length;
-        // 2. Orders Today
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const ordersToday = allOrders.filter(o => new Date(o.created_at) > yesterday).length;
-        // 3. Revenue (Sum of 'total' for done orders)
-        // Ensure we handle potential missing 'total' fields or strings
-        const doneOrders = allOrders.filter(o => o.status === 'done' || o.status === 'completed');
-        const revenue = doneOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-        // 4. Conversion Rate (Completed vs Total)
-        const conversionRate = totalOrders > 0 ? Math.round((doneOrders.length / totalOrders) * 100) : 0;
-        // 5. OEM Resolution
-        // Assuming 'oem_number' field availability
-        const resolvedOemCount = allOrders.filter(o => !!o.oem_number).length;
-        // 6. Active Users (Team)
-        const allUsers = await db.all("SELECT * FROM users");
-        const activeUsers = allUsers.length;
-        // 7. Messages (Mock or Real if table exists)
-        // If messages table exists in db.ts, use it. Otherwise 0.
-        // We'll try to fetch, if empty array it's 0.
-        const allMessages = await db.all("SELECT * FROM messages");
+        // Optimized queries using COUNT instead of loading all data
+        const totalOrdersResult = await db.get("SELECT COUNT(*) as count FROM orders");
+        const totalOrders = totalOrdersResult?.count || 0;
+        // Orders Today
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const ordersTodayResult = await db.get("SELECT COUNT(*) as count FROM orders WHERE created_at > ?", [yesterday]);
+        const ordersToday = ordersTodayResult?.count || 0;
+        // Revenue (Sum of 'total' for done orders)
+        const revenueResult = await db.get("SELECT SUM(CAST(total AS REAL)) as revenue FROM orders WHERE status IN ('done', 'completed')");
+        const revenue = revenueResult?.revenue || 0;
+        // Conversion Rate
+        const doneOrdersResult = await db.get("SELECT COUNT(*) as count FROM orders WHERE status IN ('done', 'completed')");
+        const doneOrdersCount = doneOrdersResult?.count || 0;
+        const conversionRate = totalOrders > 0 ? Math.round((doneOrdersCount / totalOrders) * 100) : 0;
+        // OEM Resolution
+        const resolvedOemResult = await db.get("SELECT COUNT(*) as count FROM orders WHERE oem_number IS NOT NULL AND oem_number != ''");
+        const resolvedOemCount = resolvedOemResult?.count || 0;
+        // Active Users (Team)
+        const activeUsersResult = await db.get("SELECT COUNT(*) as count FROM users");
+        const activeUsers = activeUsersResult?.count || 0;
+        // Messages
+        const messagesResult = await db.get("SELECT COUNT(*) as count FROM messages");
+        const messagesSent = messagesResult?.count || 0;
+        // Mock history data for charts (last 6 months)
+        const history = [
+            { name: 'Aug', orders: Math.max(0, totalOrders - 50), revenue: Math.max(0, revenue - 5000) },
+            { name: 'Sep', orders: Math.max(0, totalOrders - 40), revenue: Math.max(0, revenue - 4000) },
+            { name: 'Okt', orders: Math.max(0, totalOrders - 30), revenue: Math.max(0, revenue - 3000) },
+            { name: 'Nov', orders: Math.max(0, totalOrders - 20), revenue: Math.max(0, revenue - 2000) },
+            { name: 'Dez', orders: Math.max(0, totalOrders - 10), revenue: Math.max(0, revenue - 1000) },
+            { name: 'Jan', orders: totalOrders, revenue: revenue }
+        ];
         return res.json({
             sales: {
                 totalOrders,
@@ -243,12 +287,13 @@ router.get("/kpis", async (req, res) => {
             team: {
                 activeUsers,
                 callsMade: 0, // Not tracked yet
-                messagesSent: allMessages.length
+                messagesSent
             },
             oem: {
                 resolvedCount: resolvedOemCount,
                 successRate: totalOrders > 0 ? Math.round((resolvedOemCount / totalOrders) * 100) : 0
-            }
+            },
+            history
         });
     }
     catch (err) {

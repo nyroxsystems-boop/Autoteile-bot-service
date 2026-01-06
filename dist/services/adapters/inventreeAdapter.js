@@ -58,6 +58,9 @@ exports.upsertMerchantSettings = upsertMerchantSettings;
 exports.saveDeliveryAddress = saveDeliveryAddress;
 exports.listSuppliers = listSuppliers;
 exports.getSupplierById = getSupplierById;
+exports.createSupplier = createSupplier;
+exports.updateSupplier = updateSupplier;
+exports.deleteSupplier = deleteSupplier;
 exports.listOffers = listOffers;
 exports.getOfferById = getOfferById;
 exports.getParts = getParts;
@@ -68,6 +71,17 @@ exports.processStockAction = processStockAction;
 exports.createCompany = createCompany;
 exports.getCompanies = getCompanies;
 exports.updateCompany = updateCompany;
+exports.getStockMovements = getStockMovements;
+exports.createStockMovement = createStockMovement;
+exports.getStockLocations = getStockLocations;
+exports.receiveGoods = receiveGoods;
+exports.getPurchaseOrders = getPurchaseOrders;
+exports.getPurchaseOrderById = getPurchaseOrderById;
+exports.createPurchaseOrder = createPurchaseOrder;
+exports.updatePurchaseOrder = updatePurchaseOrder;
+exports.cancelPurchaseOrder = cancelPurchaseOrder;
+exports.receivePurchaseOrder = receivePurchaseOrder;
+exports.getReorderSuggestions = getReorderSuggestions;
 const logger_1 = require("@utils/logger");
 const db = __importStar(require("@core/database"));
 const crypto_1 = require("crypto");
@@ -338,38 +352,71 @@ async function upsertMerchantSettings(merchantId, settings) {
 async function saveDeliveryAddress(orderId, address) {
     await updateOrderData(orderId, { deliveryAddress: address });
 }
-async function listSuppliers() {
+async function listSuppliers(tenantId, params) {
     // For now, return mock suppliers - this should be replaced with actual WAWI integration
     return [
         {
             id: "1",
+            pk: 1,
             name: "Autodoc",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.autodoc.de",
-            priority: 1
+            priority: 1,
+            is_supplier: true
         },
         {
             id: "2",
+            pk: 2,
             name: "kfzteile24",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.kfzteile24.de",
-            priority: 2
+            priority: 2,
+            is_supplier: true
         },
         {
             id: "3",
+            pk: 3,
             name: "pkwteile.de",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.pkwteile.de",
-            priority: 3
+            priority: 3,
+            is_supplier: true
         }
     ];
 }
-async function getSupplierById(id) {
-    const suppliers = await listSuppliers();
-    return suppliers.find(s => s.id === id) || null;
+async function getSupplierById(tenantId, id) {
+    const suppliers = await listSuppliers(tenantId);
+    return suppliers.find(s => s.id === id || s.pk === parseInt(id)) || null;
+}
+async function createSupplier(tenantId, data) {
+    // Mock implementation
+    logger_1.logger.info(`Mock: Creating supplier for tenant ${tenantId}:`, data);
+    return {
+        pk: Date.now(),
+        id: String(Date.now()),
+        ...data,
+        is_supplier: true,
+        active: true
+    };
+}
+async function updateSupplier(tenantId, id, patch) {
+    // Mock implementation
+    logger_1.logger.info(`Mock: Updating supplier ${id} for tenant ${tenantId}:`, patch);
+    return {
+        pk: id,
+        id: String(id),
+        ...patch
+    };
+}
+async function deleteSupplier(tenantId, id) {
+    // Mock implementation
+    logger_1.logger.info(`Mock: Deleting supplier ${id} for tenant ${tenantId}`);
 }
 async function listOffers(orderId) {
     let rows;
@@ -448,14 +495,17 @@ async function getParts(tenantId, params = {}) {
     sql += ` ORDER BY name ASC LIMIT 100`;
     const rows = await db.all(sql, queryParams);
     return rows.map(r => ({
+        id: r.id, // Frontend uses .id
         pk: r.id,
         name: r.name,
         description: r.description,
         oe_number: r.oem_number,
+        IPN: r.oem_number || r.ipn, // Map OEM to IPN for frontend display
         stock: r.stock,
-        category: r.category, // Just string in local DB
+        total_in_stock: r.stock, // Frontend uses .total_in_stock
+        minimum_stock: 5, // Default minimum for demo
+        category: r.category,
         location: r.location,
-        IPN: r.ipn,
         manufacturer: r.manufacturer,
         active: true,
         metadata: {}
@@ -615,4 +665,84 @@ async function updateCompany(id, patch) {
     if (!row)
         throw new Error("Company not found");
     return parseCompanyRow(row);
+}
+// --------------------------------------------------------------------------
+// Stock Movements (Mock/Stub)
+// --------------------------------------------------------------------------
+async function getStockMovements(tenantId, filters = {}) {
+    // Mock implementation - returns empty for now
+    logger_1.logger.info(`Mock: Getting stock movements for tenant ${tenantId}`);
+    return [];
+}
+async function createStockMovement(tenantId, data) {
+    // Mock implementation
+    logger_1.logger.info(`Mock: Creating stock movement for tenant ${tenantId}:`, data);
+    return {
+        id: Date.now(),
+        ...data,
+        created_at: new Date().toISOString()
+    };
+}
+async function getStockLocations(tenantId) {
+    // Mock implementation - return some default locations
+    logger_1.logger.info(`Mock: Getting stock locations for tenant ${tenantId}`);
+    return [
+        { id: 1, name: 'Hauptlager', description: 'Main warehouse' },
+        { id: 2, name: 'Wareneingang', description: 'Goods receipt' },
+        { id: 3, name: 'Versand', description: 'Shipping' }
+    ];
+}
+async function receiveGoods(tenantId, data) {
+    // Mock implementation
+    logger_1.logger.info(`Mock: Receiving goods for tenant ${tenantId}:`, data);
+    return {
+        success: true,
+        ...data,
+        received_at: new Date().toISOString()
+    };
+}
+// --------------------------------------------------------------------------
+// Purchase Orders (Mock/Stub)
+// --------------------------------------------------------------------------
+async function getPurchaseOrders(tenantId, filters = {}) {
+    logger_1.logger.info(`Mock: Getting purchase orders for tenant ${tenantId}`);
+    return [];
+}
+async function getPurchaseOrderById(tenantId, id) {
+    logger_1.logger.info(`Mock: Getting purchase order ${id} for tenant ${tenantId}`);
+    return null;
+}
+async function createPurchaseOrder(tenantId, data) {
+    logger_1.logger.info(`Mock: Creating purchase order for tenant ${tenantId}:`, data);
+    return {
+        id: Date.now(),
+        order_number: `PO-${Date.now()}`,
+        ...data,
+        status: 'draft',
+        created_at: new Date().toISOString()
+    };
+}
+async function updatePurchaseOrder(tenantId, id, patch) {
+    logger_1.logger.info(`Mock: Updating purchase order ${id} for tenant ${tenantId}:`, patch);
+    return {
+        id,
+        ...patch,
+        updated_at: new Date().toISOString()
+    };
+}
+async function cancelPurchaseOrder(tenantId, id) {
+    logger_1.logger.info(`Mock: Cancelling purchase order ${id} for tenant ${tenantId}`);
+}
+async function receivePurchaseOrder(tenantId, poId, data) {
+    logger_1.logger.info(`Mock: Receiving purchase order ${poId} for tenant ${tenantId}:`, data);
+    return {
+        success: true,
+        po_id: poId,
+        ...data,
+        received_at: new Date().toISOString()
+    };
+}
+async function getReorderSuggestions(tenantId) {
+    logger_1.logger.info(`Mock: Getting reorder suggestions for tenant ${tenantId}`);
+    return [];
 }
