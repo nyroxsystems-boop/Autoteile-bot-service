@@ -4,6 +4,7 @@
 import { Pool, PoolClient } from 'pg';
 import * as crypto from 'crypto';
 import { runMigrations } from './migrations';
+import { seedDemoData } from './seedDemoData';
 
 // Create connection pool
 const pool = new Pool({
@@ -59,6 +60,11 @@ export async function initDb(): Promise<void> {
             console.log(`[DB] Seeded admin user: ${adminEmail}`);
         } else {
             console.log("[DB] Admin user already exists");
+        }
+
+        // Seed demo data (orders, products) if enabled
+        if (process.env.SEED_DEMO_DATA !== 'false') {
+            await seedDemoData();
         }
 
         console.log("[DB] PostgreSQL database initialized successfully");
