@@ -1,9 +1,10 @@
 -- WAWI (Warehouse Management) Tables Migration
 -- Creates tables for stock locations, purchase orders, and related entities
+-- NOTE: companies.id is TEXT in existing schema, not UUID!
 
 -- Stock Locations Table
 CREATE TABLE IF NOT EXISTS stock_locations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,
     code VARCHAR(50) UNIQUE NOT NULL,
     type VARCHAR(50) DEFAULT 'shelf', -- main, shelf, returns, quarantine
@@ -22,9 +23,9 @@ CREATE INDEX IF NOT EXISTS idx_stock_locations_type ON stock_locations(type);
 
 -- Purchase Orders Table
 CREATE TABLE IF NOT EXISTS purchase_orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     order_number VARCHAR(100) UNIQUE NOT NULL,
-    supplier_id UUID NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+    supplier_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     status VARCHAR(50) DEFAULT 'draft', -- draft, sent, confirmed, received, cancelled
     order_date TIMESTAMP NOT NULL,
     expected_delivery TIMESTAMP,
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     currency VARCHAR(10) DEFAULT 'EUR',
     notes TEXT,
     tenant_id VARCHAR(100) NOT NULL,
-    created_by UUID REFERENCES users(id),
+    created_by TEXT REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -45,9 +46,9 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_order_date ON purchase_orders(ord
 
 -- Purchase Order Items Table
 CREATE TABLE IF NOT EXISTS purchase_order_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    purchase_order_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-    part_id UUID REFERENCES parts(id),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    part_id TEXT REFERENCES parts(id),
     part_name VARCHAR(255) NOT NULL,
     part_ipn VARCHAR(100),
     quantity INTEGER NOT NULL,
@@ -63,16 +64,16 @@ CREATE INDEX IF NOT EXISTS idx_purchase_order_items_part ON purchase_order_items
 
 -- Stock Movements Table
 CREATE TABLE IF NOT EXISTS stock_movements (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    part_id UUID REFERENCES parts(id),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    part_id TEXT REFERENCES parts(id),
     type VARCHAR(50) NOT NULL, -- IN, OUT, TRANSFER, CORRECTION
     quantity INTEGER NOT NULL,
-    from_location_id UUID REFERENCES stock_locations(id),
-    to_location_id UUID REFERENCES stock_locations(id),
+    from_location_id TEXT REFERENCES stock_locations(id),
+    to_location_id TEXT REFERENCES stock_locations(id),
     reference VARCHAR(255), -- e.g., PO number, order number
     notes TEXT,
     tenant_id VARCHAR(100) NOT NULL,
-    created_by UUID REFERENCES users(id),
+    created_by TEXT REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,9 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_stock_movements_to_location ON stock_movements(to
 
 -- Part Stock by Location (materialized view or table for quick lookups)
 CREATE TABLE IF NOT EXISTS part_stock_locations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    part_id UUID NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
-    location_id UUID NOT NULL REFERENCES stock_locations(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    part_id TEXT NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
+    location_id TEXT NOT NULL REFERENCES stock_locations(id) ON DELETE CASCADE,
     quantity INTEGER DEFAULT 0,
     tenant_id VARCHAR(100) NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
