@@ -1,8 +1,12 @@
 import { Router } from 'express';
+import { authMiddleware } from '../middleware/authMiddleware';
 import * as adapter from '@adapters/inventreeAdapter';
 import { logger } from '@utils/logger';
 
 const router = Router();
+
+// Apply auth to all stock movement routes
+router.use(authMiddleware);
 
 // Middleware: Extract Tenant ID
 const requireTenant = (req: any, res: any, next: any) => {
