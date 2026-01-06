@@ -353,70 +353,135 @@ async function saveDeliveryAddress(orderId, address) {
     await updateOrderData(orderId, { deliveryAddress: address });
 }
 async function listSuppliers(tenantId, params) {
-    // For now, return mock suppliers - this should be replaced with actual WAWI integration
-    return [
-        {
-            id: "1",
-            pk: 1,
-            name: "Autodoc",
-            type: "scraper",
-            status: "active",
-            active: true,
-            url: "https://www.autodoc.de",
-            priority: 1,
-            is_supplier: true
-        },
-        {
-            id: "2",
-            pk: 2,
-            name: "kfzteile24",
-            type: "scraper",
-            status: "active",
-            active: true,
-            url: "https://www.kfzteile24.de",
-            priority: 2,
-            is_supplier: true
-        },
-        {
-            id: "3",
-            pk: 3,
-            name: "pkwteile.de",
-            type: "scraper",
-            status: "active",
-            active: true,
-            url: "https://www.pkwteile.de",
-            priority: 3,
-            is_supplier: true
-        }
-    ];
+    let sql = `SELECT * FROM companies WHERE is_supplier = 1`;
+    const queryParams = [];
+    if (tenantId) {
+        sql += ` AND (tenant_id = ? OR tenant_id IS NULL)`;
+        queryParams.push(tenantId);
+    }
+    if (params?.search) {
+        sql += ` AND name LIKE ?`;
+        queryParams.push(`%${params.search}%`);
+    }
+    if (params?.active !== undefined) {
+        sql += ` AND active = ?`;
+        queryParams.push(params.active ? 1 : 0);
+    }
+    sql += ` ORDER BY name ASC`;
+    const rows = await db.all(sql, queryParams);
+    return rows.map(r => ({
+        id: r.id,
+        pk: r.id,
+        name: r.name,
+        contact_person: r.contact_person,
+        email: r.email,
+        phone: r.phone,
+        address: r.address,
+        website: r.website,
+        notes: r.notes,
+        status: r.active ? 'active' : 'inactive',
+        active: !!r.active,
+        payment_terms: r.payment_terms,
+        is_supplier: true,
+        created_at: r.created_at
+    }));
 }
 async function getSupplierById(tenantId, id) {
-    const suppliers = await listSuppliers(tenantId);
-    return suppliers.find(s => s.id === id || s.pk === parseInt(id)) || null;
+    const row = await db.get(`SELECT * FROM companies WHERE id = ? AND is_supplier = 1`, [String(id)]);
+    if (!row)
+        return null;
+    return {
+        id: row.id,
+        pk: row.id,
+        name: row.name,
+        contact_person: row.contact_person,
+        email: row.email,
+        phone: row.phone,
+        address: row.address,
+        website: row.website,
+        notes: row.notes,
+        status: row.active ? 'active' : 'inactive',
+        active: !!row.active,
+        payment_terms: row.payment_terms,
+        is_supplier: true,
+        created_at: row.created_at
+    };
 }
 async function createSupplier(tenantId, data) {
-    // Mock implementation
-    logger_1.logger.info(`Mock: Creating supplier for tenant ${tenantId}:`, data);
-    return {
-        pk: Date.now(),
-        id: String(Date.now()),
-        ...data,
-        is_supplier: true,
-        active: true
-    };
+    const id = (0, crypto_1.randomUUID)();
+    const now = new Date().toISOString();
+    const isActive = data.status === 'active' || data.active !== false;
+    await db.run(`INSERT INTO companies (
+            id, name, contact_person, email, phone, address, website, notes,
+            is_supplier, active, payment_terms, tenant_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`, [
+        id,
+        data.name,
+        data.contact_person || null,
+        data.email || null,
+        data.phone || null,
+        data.address || null,
+        data.website || null,
+        data.notes || null,
+        isActive ? 1 : 0,
+        data.payment_terms || null,
+        tenantId,
+        now
+    ]);
+    return getSupplierById(tenantId, id);
 }
 async function updateSupplier(tenantId, id, patch) {
-    // Mock implementation
-    logger_1.logger.info(`Mock: Updating supplier ${id} for tenant ${tenantId}:`, patch);
-    return {
-        pk: id,
-        id: String(id),
-        ...patch
-    };
+    const updates = [];
+    const params = [];
+    if (patch.name !== undefined) {
+        updates.push("name = ?");
+        params.push(patch.name);
+    }
+    if (patch.contact_person !== undefined) {
+        updates.push("contact_person = ?");
+        params.push(patch.contact_person);
+    }
+    if (patch.email !== undefined) {
+        updates.push("email = ?");
+        params.push(patch.email);
+    }
+    if (patch.phone !== undefined) {
+        updates.push("phone = ?");
+        params.push(patch.phone);
+    }
+    if (patch.address !== undefined) {
+        updates.push("address = ?");
+        params.push(patch.address);
+    }
+    if (patch.website !== undefined) {
+        updates.push("website = ?");
+        params.push(patch.website);
+    }
+    if (patch.notes !== undefined) {
+        updates.push("notes = ?");
+        params.push(patch.notes);
+    }
+    if (patch.payment_terms !== undefined) {
+        updates.push("payment_terms = ?");
+        params.push(patch.payment_terms);
+    }
+    if (patch.status !== undefined) {
+        updates.push("active = ?");
+        params.push(patch.status === 'active' ? 1 : 0);
+    }
+    if (patch.active !== undefined) {
+        updates.push("active = ?");
+        params.push(patch.active ? 1 : 0);
+    }
+    if (updates.length > 0) {
+        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = 1`;
+        params.push(String(id));
+        await db.run(sql, params);
+    }
+    return getSupplierById(tenantId, String(id));
 }
 async function deleteSupplier(tenantId, id) {
-    // Mock implementation
-    logger_1.logger.info(`Mock: Deleting supplier ${id} for tenant ${tenantId}`);
+    await db.run(`DELETE FROM companies WHERE id = ? AND is_supplier = 1`, [String(id)]);
 }
 async function listOffers(orderId) {
     let rows;
@@ -670,27 +735,74 @@ async function updateCompany(id, patch) {
 // Stock Movements (Mock/Stub)
 // --------------------------------------------------------------------------
 async function getStockMovements(tenantId, filters = {}) {
-    // Mock implementation - returns empty for now
-    logger_1.logger.info(`Mock: Getting stock movements for tenant ${tenantId}`);
-    return [];
+    let sql = `SELECT sm.*, p.name as part_name FROM stock_movements sm LEFT JOIN parts p ON sm.part_id = p.id WHERE sm.tenant_id = ?`;
+    const params = [tenantId];
+    if (filters.part_id) {
+        sql += ` AND sm.part_id = ?`;
+        params.push(String(filters.part_id));
+    }
+    if (filters.type) {
+        sql += ` AND sm.type = ?`;
+        params.push(filters.type);
+    }
+    if (filters.limit) {
+        sql += ` ORDER BY sm.created_at DESC LIMIT ?`;
+        params.push(parseInt(filters.limit));
+    }
+    else {
+        sql += ` ORDER BY sm.created_at DESC LIMIT 50`;
+    }
+    const rows = await db.all(sql, params);
+    return rows.map(r => ({
+        id: r.id,
+        part_id: r.part_id,
+        part_name: r.part_name,
+        type: r.type,
+        quantity: r.quantity,
+        reference: r.reference,
+        notes: r.notes,
+        from_location: r.from_location_id,
+        to_location: r.to_location_id,
+        created_at: r.created_at,
+        created_by: r.created_by
+    }));
 }
 async function createStockMovement(tenantId, data) {
-    // Mock implementation
-    logger_1.logger.info(`Mock: Creating stock movement for tenant ${tenantId}:`, data);
+    const id = (0, crypto_1.randomUUID)();
+    const now = new Date().toISOString();
+    await db.run(`INSERT INTO stock_movements (
+            id, part_id, type, quantity, from_location_id, to_location_id,
+            reference, notes, tenant_id, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+        id,
+        data.part_id || null,
+        data.type,
+        data.quantity,
+        data.from_location || null,
+        data.to_location || null,
+        data.reference || null,
+        data.notes || null,
+        tenantId,
+        data.created_by || null,
+        now
+    ]);
     return {
-        id: Date.now(),
+        id,
         ...data,
-        created_at: new Date().toISOString()
+        created_at: now
     };
 }
 async function getStockLocations(tenantId) {
-    // Mock implementation - return some default locations
-    logger_1.logger.info(`Mock: Getting stock locations for tenant ${tenantId}`);
-    return [
-        { id: 1, name: 'Hauptlager', description: 'Main warehouse' },
-        { id: 2, name: 'Wareneingang', description: 'Goods receipt' },
-        { id: 3, name: 'Versand', description: 'Shipping' }
-    ];
+    const rows = await db.all(`SELECT * FROM stock_locations WHERE (tenant_id = ? OR tenant_id = 'global') AND active = 1 ORDER BY name ASC`, [tenantId]);
+    return rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        code: r.code,
+        type: r.type,
+        description: r.description,
+        capacity: r.capacity,
+        current_stock: r.current_stock
+    }));
 }
 async function receiveGoods(tenantId, data) {
     // Mock implementation
@@ -705,33 +817,152 @@ async function receiveGoods(tenantId, data) {
 // Purchase Orders (Mock/Stub)
 // --------------------------------------------------------------------------
 async function getPurchaseOrders(tenantId, filters = {}) {
-    logger_1.logger.info(`Mock: Getting purchase orders for tenant ${tenantId}`);
-    return [];
+    let sql = `SELECT po.*, c.name as supplier_name FROM purchase_orders po LEFT JOIN companies c ON po.supplier_id = c.id WHERE po.tenant_id = ?`;
+    const params = [tenantId];
+    if (filters.supplier) {
+        sql += ` AND po.supplier_id = ?`;
+        params.push(filters.supplier);
+    }
+    if (filters.status) {
+        sql += ` AND po.status = ?`;
+        params.push(filters.status);
+    }
+    sql += ` ORDER BY po.order_date DESC`;
+    if (filters.limit) {
+        sql += ` LIMIT ?`;
+        params.push(parseInt(filters.limit));
+    }
+    const rows = await db.all(sql, params);
+    const orders = [];
+    for (const row of rows) {
+        // Get items for this PO
+        const items = await db.all(`SELECT * FROM purchase_order_items WHERE purchase_order_id = ?`, [row.id]);
+        orders.push({
+            id: row.id,
+            order_number: row.order_number,
+            supplier_id: row.supplier_id,
+            supplier_name: row.supplier_name,
+            status: row.status,
+            order_date: row.order_date,
+            expected_delivery: row.expected_delivery,
+            total_amount: parseFloat(row.total_amount || 0),
+            currency: row.currency,
+            notes: row.notes,
+            items: items.map(i => ({
+                id: i.id,
+                part_id: i.part_id,
+                part_name: i.part_name,
+                part_ipn: i.part_ipn,
+                quantity: i.quantity,
+                unit_price: parseFloat(i.unit_price),
+                total_price: parseFloat(i.total_price)
+            })),
+            created_at: row.created_at
+        });
+    }
+    return orders;
 }
 async function getPurchaseOrderById(tenantId, id) {
-    logger_1.logger.info(`Mock: Getting purchase order ${id} for tenant ${tenantId}`);
-    return null;
+    const row = await db.get(`SELECT po.*, c.name as supplier_name FROM purchase_orders po LEFT JOIN companies c ON po.supplier_id = c.id WHERE po.id = ? AND po.tenant_id = ?`, [String(id), tenantId]);
+    if (!row)
+        return null;
+    const items = await db.all(`SELECT * FROM purchase_order_items WHERE purchase_order_id = ?`, [row.id]);
+    return {
+        id: row.id,
+        order_number: row.order_number,
+        supplier_id: row.supplier_id,
+        supplier_name: row.supplier_name,
+        status: row.status,
+        order_date: row.order_date,
+        expected_delivery: row.expected_delivery,
+        total_amount: parseFloat(row.total_amount || 0),
+        currency: row.currency,
+        notes: row.notes,
+        items: items.map(i => ({
+            id: i.id,
+            part_id: i.part_id,
+            part_name: i.part_name,
+            part_ipn: i.part_ipn,
+            quantity: i.quantity,
+            unit_price: parseFloat(i.unit_price),
+            total_price: parseFloat(i.total_price)
+        })),
+        created_at: row.created_at
+    };
 }
 async function createPurchaseOrder(tenantId, data) {
-    logger_1.logger.info(`Mock: Creating purchase order for tenant ${tenantId}:`, data);
-    return {
-        id: Date.now(),
-        order_number: `PO-${Date.now()}`,
-        ...data,
-        status: 'draft',
-        created_at: new Date().toISOString()
-    };
+    const id = (0, crypto_1.randomUUID)();
+    const now = new Date().toISOString();
+    const orderNumber = `PO-${Date.now()}`;
+    // Calculate total amount from items
+    let totalAmount = 0;
+    if (data.items && Array.isArray(data.items)) {
+        totalAmount = data.items.reduce((sum, item) => sum + (item.total_price || 0), 0);
+    }
+    await db.run(`INSERT INTO purchase_orders (
+            id, order_number, supplier_id, status, order_date, expected_delivery,
+            total_amount, currency, notes, tenant_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+        id,
+        orderNumber,
+        data.supplier_id,
+        data.status || 'draft',
+        data.order_date || now,
+        data.expected_delivery || null,
+        totalAmount,
+        data.currency || 'EUR',
+        data.notes || null,
+        tenantId,
+        now
+    ]);
+    // Insert items
+    if (data.items && Array.isArray(data.items)) {
+        for (const item of data.items) {
+            const itemId = (0, crypto_1.randomUUID)();
+            await db.run(`INSERT INTO purchase_order_items (
+                    id, purchase_order_id, part_id, part_name, part_ipn,
+                    quantity, unit_price, total_price, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                itemId,
+                id,
+                item.part_id || null,
+                item.part_name,
+                item.part_ipn || null,
+                item.quantity,
+                item.unit_price,
+                item.total_price || (item.quantity * item.unit_price),
+                now
+            ]);
+        }
+    }
+    return getPurchaseOrderById(tenantId, id);
 }
 async function updatePurchaseOrder(tenantId, id, patch) {
-    logger_1.logger.info(`Mock: Updating purchase order ${id} for tenant ${tenantId}:`, patch);
-    return {
-        id,
-        ...patch,
-        updated_at: new Date().toISOString()
-    };
+    const updates = [];
+    const params = [];
+    if (patch.status !== undefined) {
+        updates.push("status = ?");
+        params.push(patch.status);
+    }
+    if (patch.expected_delivery !== undefined) {
+        updates.push("expected_delivery = ?");
+        params.push(patch.expected_delivery);
+    }
+    if (patch.notes !== undefined) {
+        updates.push("notes = ?");
+        params.push(patch.notes);
+    }
+    updates.push("updated_at = ?");
+    params.push(new Date().toISOString());
+    if (updates.length > 1) { // more than just updated_at
+        const sql = `UPDATE purchase_orders SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?`;
+        params.push(String(id), tenantId);
+        await db.run(sql, params);
+    }
+    return getPurchaseOrderById(tenantId, String(id));
 }
 async function cancelPurchaseOrder(tenantId, id) {
-    logger_1.logger.info(`Mock: Cancelling purchase order ${id} for tenant ${tenantId}`);
+    await db.run(`UPDATE purchase_orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND tenant_id = ?`, [new Date().toISOString(), String(id), tenantId]);
 }
 async function receivePurchaseOrder(tenantId, poId, data) {
     logger_1.logger.info(`Mock: Receiving purchase order ${poId} for tenant ${tenantId}:`, data);
