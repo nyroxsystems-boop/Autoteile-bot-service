@@ -142,6 +142,25 @@ router.post("/tenants", async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Name and Email are required." });
         }
 
+        // Check if company already exists (duplicate detection)
+        try {
+            const existingCompanies = await getCompanies({ is_customer: true });
+            const duplicate = existingCompanies.find((c: any) =>
+                c.name === name || c.email === email
+            );
+
+            if (duplicate) {
+                console.warn(`Duplicate company detected: ${duplicate.name} (${duplicate.email})`);
+                return res.status(409).json({
+                    error: "A company with this name or email already exists.",
+                    existing: { id: duplicate.pk, name: duplicate.name, email: duplicate.email }
+                });
+            }
+        } catch (checkErr: any) {
+            console.error("Failed to check for duplicate companies:", checkErr.message);
+            // Continue with creation attempt even if duplicate check fails
+        }
+
         const payload: InvenTreeCompany = {
             name,
             email,
@@ -155,7 +174,29 @@ router.post("/tenants", async (req: Request, res: Response) => {
         };
 
         // 1. Create Company in InvenTree
-        const createdCompany = await createCompany(payload);
+        let createdCompany;
+        try {
+            createdCompany = await createCompany(payload);
+        } catch (createErr: any) {
+            // Log the full error for debugging
+            console.error("Failed to create company in WAWI:", {
+                message: createErr.message,
+                response: createErr.response?.data,
+                status: createErr.response?.status,
+                payload: payload
+            });
+
+            // Return the actual error from WAWI if available
+            if (createErr.response?.data) {
+                return res.status(createErr.response.status || 500).json({
+                    error: "Failed to create company in WAWI",
+                    details: createErr.response.data
+                });
+            }
+
+            throw createErr; // Re-throw to be caught by outer catch
+        }
+
         const merchantId = String(createdCompany.pk);
 
         // 2. Create Admin User for this Company
@@ -179,6 +220,8 @@ router.post("/tenants", async (req: Request, res: Response) => {
             username
         ]);
 
+        console.log(`Successfully created tenant: ${name} (ID: ${merchantId})`);
+
         // Return combined result
         return res.json({
             ...createdCompany,
@@ -190,6 +233,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
             }
         });
     } catch (err: any) {
+        console.error("Tenant creation failed:", err.message);
         return res.status(500).json({ error: err.message });
     }
 });
