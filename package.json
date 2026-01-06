@@ -29,6 +29,13 @@
   ],
   "author": "",
   "license": "MIT",
+  "_moduleAliases": {
+    "@utils": "dist/utils",
+    "@services": "dist/services",
+    "@middleware": "dist/middleware",
+    "@config": "dist/config",
+    "@routes": "dist/routes"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "@types/cheerio": "^0.22.35",
@@ -47,12 +54,13 @@
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
     "ioredis": "^5.0.0",
+    "module-alias": "^2.2.3",
     "node-fetch": "^2.7.0",
     "openai": "^6.15.0",
     "pg": "^8.16.3",
     "proxy-agent": "^6.5.0",
-    "typescript": "^5.6.0",
     "twilio": "^4.23.0",
+    "typescript": "^5.6.0",
     "user-agents": "^1.1.669"
   },
   "devDependencies": {
