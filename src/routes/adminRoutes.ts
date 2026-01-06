@@ -163,9 +163,9 @@ router.post("/tenants", async (req: Request, res: Response) => {
 
         const payload: InvenTreeCompany = {
             name,
-            email,
-            website: logo_url || website, // Hack: Storing logo_url in website for mock if needed, or we just trust the mock adapter handles extra fields
-            phone: whatsapp_number || phone, // Priority to whatsapp number
+            email: email || null, // Send null instead of empty string to avoid unique constraint issues
+            website: logo_url || website || "", // Hack: Storing logo_url in website for mock if needed
+            phone: whatsapp_number || phone || "", // Priority to whatsapp number
             is_customer: true,
             is_supplier: false,
             active: true,
