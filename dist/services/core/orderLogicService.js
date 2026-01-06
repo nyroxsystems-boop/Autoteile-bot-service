@@ -36,7 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.selectBestOffer = selectBestOffer;
 exports.autoSelectOffer = autoSelectOffer;
 exports.autoOrder = autoOrder;
-const supabaseService_1 = require("@adapters/supabaseService");
+const supabaseService_1 = require("../adapters/supabaseService");
 /**
  * Regel-Engine: Bestes Angebot auswählen.
  *

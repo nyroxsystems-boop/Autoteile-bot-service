@@ -104,7 +104,7 @@ router.delete("/tenants/:id/devices/:deviceId", async (req, res) => {
 });
 // --- KPIs ---
 // --- Tenants / Händler (InvenTree Companies) ---
-const realInvenTreeAdapter_1 = require("@adapters/realInvenTreeAdapter");
+const realInvenTreeAdapter_1 = require("../services/adapters/realInvenTreeAdapter");
 // In-memory store for Tenant Limits (Mock Persistence)
 const tenantLimits = new Map();
 router.get("/tenants", async (req, res) => {

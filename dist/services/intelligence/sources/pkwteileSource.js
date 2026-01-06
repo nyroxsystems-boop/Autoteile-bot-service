@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pkwteileSource = void 0;
 const oemScraper_1 = require("../oemScraper");
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 const httpClient_1 = require("../../../utils/httpClient");
 exports.pkwteileSource = {
     name: "Pkwteile",

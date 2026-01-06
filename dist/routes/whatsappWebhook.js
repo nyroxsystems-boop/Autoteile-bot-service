@@ -8,7 +8,7 @@ const express_1 = __importDefault(require("express"));
 const twilio_1 = __importDefault(require("twilio"));
 const env_1 = require("../config/env");
 const botQueue_1 = require("../queue/botQueue");
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../utils/logger");
 const router = express_1.default.Router();
 // Twilio posts application/x-www-form-urlencoded bodies
 router.use(express_1.default.urlencoded({ extended: false }));

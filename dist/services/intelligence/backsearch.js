@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.backsearchOEM = backsearchOEM;
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 const RAPID_KEY = process.env.TECDOC_API_KEY || process.env.RAPIDAPI_KEY || "";
 const RAPID_HOST = process.env.TECDOC_RAPID_API_HOST || process.env.RAPIDAPI_HOST || "tecdoc-catalog.p.rapidapi.com";
 const BACKSEARCH_TIMEOUT_MS = 6000; // slightly shorter per request to run in parallel

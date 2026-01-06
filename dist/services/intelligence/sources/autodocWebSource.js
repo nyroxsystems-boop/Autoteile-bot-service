@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.autodocWebSource = void 0;
 // src/services/oemResolver/sources/autodocWebSource.ts
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 /**
  * Simple HTML scraper for Autodoc.de search results.
  * The URL pattern works without authentication – it returns a public HTML page.

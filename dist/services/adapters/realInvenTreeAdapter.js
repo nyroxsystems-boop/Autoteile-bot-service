@@ -81,7 +81,7 @@ exports.getReorderSuggestions = getReorderSuggestions;
 const localAdapter = __importStar(require("../adapters/inventreeAdapter"));
 const axios_1 = __importDefault(require("axios"));
 const dotenv = __importStar(require("dotenv"));
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 dotenv.config();
 const BASE_URL = process.env.INVENTREE_BASE_URL;
 const API_TOKEN = process.env.INVENTREE_API_TOKEN;

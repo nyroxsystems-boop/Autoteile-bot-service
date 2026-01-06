@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.openaiVisionSource = void 0;
 const oemScraper_1 = require("../oemScraper");
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 const openai_1 = __importDefault(require("openai"));
 const openai = new openai_1.default({
     apiKey: process.env.OPENAI_API_KEY

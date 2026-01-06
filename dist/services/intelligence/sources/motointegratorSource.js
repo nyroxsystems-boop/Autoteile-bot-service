@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.motointegratorSource = void 0;
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const oemScraper_1 = require("../oemScraper");
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 /**
  * Simple Motointegrator source.
  * It performs a GET request to the public search endpoint and extracts OEM‑like strings.

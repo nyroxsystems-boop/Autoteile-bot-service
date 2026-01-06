@@ -34,8 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const adapter = __importStar(require("@adapters/inventreeAdapter"));
-const logger_1 = require("@utils/logger");
+const adapter = __importStar(require("../services/adapters/inventreeAdapter"));
+const logger_1 = require("../utils/logger");
 const router = (0, express_1.Router)();
 // Middleware: Extract Tenant ID
 const requireTenant = (req, res, next) => {

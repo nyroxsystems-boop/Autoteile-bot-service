@@ -18,7 +18,7 @@ exports.validateLayer2_BrandPattern = validateLayer2_BrandPattern;
 exports.validateLayer3_Backsearch = validateLayer3_Backsearch;
 exports.validateLayer5_AIVerification = validateLayer5_AIVerification;
 exports.performEnhancedValidation = performEnhancedValidation;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 const fetch = require('node-fetch');
 // ============================================================================
 // LAYER 1: MULTI-SOURCE CONSENSUS

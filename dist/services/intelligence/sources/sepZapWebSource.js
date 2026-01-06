@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sepZapWebSource = void 0;
 // src/services/oemResolver/sources/sepZapWebSource.ts
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 /**
  * Simple HTML scraper for 7‑Zap shop (https://www.7zap.com).
  * No API key required – the public search page returns HTML.

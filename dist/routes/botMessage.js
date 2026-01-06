@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const botLogicService_1 = require("../services/core/botLogicService");
-const supabaseService_1 = require("@adapters/supabaseService");
+const supabaseService_1 = require("../services/adapters/supabaseService");
 const env_1 = require("../config/env");
 const router = (0, express_1.Router)();
 /**

@@ -38,7 +38,7 @@ exports.configureTwilio = configureTwilio;
 exports.importInventory = importInventory;
 exports.connectShop = connectShop;
 const crypto_1 = require("crypto");
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 const wawi = __importStar(require("../adapters/realInvenTreeAdapter"));
 // In-Memory State for the Wizard (Demo purpose)
 const onboardingSessions = new Map();

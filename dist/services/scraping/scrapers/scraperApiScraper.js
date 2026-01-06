@@ -37,7 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ScraperAPIScraper = void 0;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const cheerio = __importStar(require("cheerio"));
 /**

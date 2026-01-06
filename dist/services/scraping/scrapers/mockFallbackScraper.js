@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MockFallbackScraper = void 0;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../../utils/logger");
 /**
  * Fallback Mock Scraper for testing and development
  * Returns realistic dummy data when real scraping fails

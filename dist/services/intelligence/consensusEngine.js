@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateConsensus = calculateConsensus;
 exports.validateBrandPattern = validateBrandPattern;
 exports.applyBrandPatternBoost = applyBrandPatternBoost;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 const DEFAULT_CONFIG = {
     minSources: 2,
     minAgreement: 0.6,

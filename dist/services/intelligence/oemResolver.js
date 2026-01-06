@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveOEM = resolveOEM;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../../utils/logger");
 const cacheSource_1 = require("./sources/cacheSource");
 const shopSearchSource_1 = require("./sources/shopSearchSource");
 const webScrapeSource_1 = require("./sources/webScrapeSource");

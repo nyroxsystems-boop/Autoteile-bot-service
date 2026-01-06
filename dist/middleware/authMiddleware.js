@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authMiddleware = authMiddleware;
-const logger_1 = require("@utils/logger");
+const logger_1 = require("../utils/logger");
 // Import 'get' directly as it is async, matching the unified Promise interface
 const database_1 = require("../services/core/database");
 // Secure Tokens via Env only - NO DEFAULTS

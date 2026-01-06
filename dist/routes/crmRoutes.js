@@ -35,8 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createCrmRouter = createCrmRouter;
 const express_1 = require("express");
-const adapter = __importStar(require("@adapters/inventreeAdapter"));
-const logger_1 = require("@utils/logger");
+const adapter = __importStar(require("../services/adapters/inventreeAdapter"));
+const logger_1 = require("../utils/logger");
 function createCrmRouter() {
     const router = (0, express_1.Router)();
     // GET /leads - List all "Leads" (Companies that are NOT customers yet)
