@@ -1,12 +1,14 @@
 /**
  * Seed Demo Data Script
- * Creates demo orders and auto parts products for testing
+ * Creates comprehensive demo data for all dashboard sections
  */
 
 import * as db from './database';
 import { randomUUID } from 'crypto';
 
-const MERCHANT_ID = 'dealer-demo-001';
+// Admin-Account Merchant ID - linked to admin@autoteile-assistent.com
+const MERCHANT_ID = 'admin-merchant-001';
+const ADMIN_EMAIL = 'admin@autoteile-assistent.com';
 
 // ============================================================================
 // Demo Orders - Various car part requests with different statuses
@@ -17,56 +19,80 @@ const DEMO_ORDERS = [
         customerName: 'Max Mustermann',
         requestedPartName: 'Bremsbeläge vorne',
         status: 'new',
-        vehicle: { make: 'VW', model: 'Golf 7', year: 2018, engine: '2.0 TDI' }
+        vehicle: { make: 'VW', model: 'Golf 7', year: 2018, engine: '2.0 TDI' },
+        total: 89.90
     },
     {
         customerContact: '+49172345678',
         customerName: 'Anna Schmidt',
         requestedPartName: 'Ölfilter',
         status: 'confirmed',
-        vehicle: { make: 'BMW', model: '320d F30', year: 2020, engine: '2.0d' }
+        vehicle: { make: 'BMW', model: '320d F30', year: 2020, engine: '2.0d' },
+        total: 34.50
     },
     {
         customerContact: '+49173456789',
         customerName: 'Peter Weber',
         requestedPartName: 'Luftfilter',
         status: 'offer_sent',
-        vehicle: { make: 'Audi', model: 'A4 B9', year: 2019, engine: '2.0 TFSI' }
+        vehicle: { make: 'Audi', model: 'A4 B9', year: 2019, engine: '2.0 TFSI' },
+        total: 42.00
     },
     {
         customerContact: '+49174567890',
         customerName: 'Lisa Müller',
         requestedPartName: 'Zündkerzen Set',
         status: 'shipped',
-        vehicle: { make: 'Mercedes', model: 'C220d W205', year: 2021, engine: '2.0d' }
+        vehicle: { make: 'Mercedes', model: 'C220d W205', year: 2021, engine: '2.0d' },
+        total: 68.00
     },
     {
         customerContact: '+49175678901',
         customerName: 'Thomas Klein',
         requestedPartName: 'Keilrippenriemen',
         status: 'new',
-        vehicle: { make: 'VW', model: 'Passat B8', year: 2019, engine: '2.0 TDI' }
+        vehicle: { make: 'VW', model: 'Passat B8', year: 2019, engine: '2.0 TDI' },
+        total: 45.90
     },
     {
         customerContact: '+49176789012',
         customerName: 'Sarah Braun',
         requestedPartName: 'Bremsscheiben hinten',
         status: 'confirmed',
-        vehicle: { make: 'Skoda', model: 'Octavia 3', year: 2020, engine: '1.5 TSI' }
+        vehicle: { make: 'Skoda', model: 'Octavia 3', year: 2020, engine: '1.5 TSI' },
+        total: 156.00
     },
     {
         customerContact: '+49177890123',
         customerName: 'Michael Hoffmann',
         requestedPartName: 'Stoßdämpfer vorne',
         status: 'new',
-        vehicle: { make: 'Seat', model: 'Leon 5F', year: 2018, engine: '1.4 TSI' }
+        vehicle: { make: 'Seat', model: 'Leon 5F', year: 2018, engine: '1.4 TSI' },
+        total: 189.00
     },
     {
         customerContact: '+49178901234',
         customerName: 'Julia Fischer',
         requestedPartName: 'Wasserpumpe',
         status: 'offer_sent',
-        vehicle: { make: 'Opel', model: 'Astra K', year: 2019, engine: '1.6 CDTi' }
+        vehicle: { make: 'Opel', model: 'Astra K', year: 2019, engine: '1.6 CDTi' },
+        total: 124.50
+    },
+    {
+        customerContact: '+49179012345',
+        customerName: 'Stefan Wagner',
+        requestedPartName: 'Turbolader',
+        status: 'done',
+        vehicle: { make: 'VW', model: 'Tiguan 2', year: 2020, engine: '2.0 TDI' },
+        total: 890.00
+    },
+    {
+        customerContact: '+49170123456',
+        customerName: 'Claudia Becker',
+        requestedPartName: 'Zahnriemensatz',
+        status: 'done',
+        vehicle: { make: 'Audi', model: 'A3 8V', year: 2017, engine: '1.6 TDI' },
+        total: 345.00
     }
 ];
 
@@ -108,6 +134,25 @@ const DEMO_PRODUCTS = [
 ];
 
 // ============================================================================
+// Demo Customers (Companies)
+// ============================================================================
+const DEMO_CUSTOMERS = [
+    { name: 'Autohaus Müller GmbH', email: 'kontakt@autohaus-mueller.de', phone: '+49891234567', is_customer: true },
+    { name: 'KFZ-Werkstatt Schmidt', email: 'info@kfz-schmidt.de', phone: '+49301234567', is_customer: true },
+    { name: 'Fahrzeugservice Weber', email: 'service@weber-kfz.de', phone: '+49211234567', is_customer: true },
+    { name: 'Premium Cars Berlin', email: 'parts@premium-cars.de', phone: '+49301111222', is_customer: true },
+    { name: 'Auto-Expert Frankfurt', email: 'bestellung@auto-expert.de', phone: '+49691234567', is_customer: true }
+];
+
+// Demo Suppliers
+const DEMO_SUPPLIERS = [
+    { name: 'PKW-Teile24 GmbH', email: 'einkauf@pkw-teile24.de', phone: '+49401234567', is_supplier: true, website: 'https://pkw-teile24.de' },
+    { name: 'Autodoc SE', email: 'partner@autodoc.de', phone: '+49301234568', is_supplier: true, website: 'https://autodoc.de' },
+    { name: 'KFZTeile24 GmbH', email: 'haendler@kfzteile24.de', phone: '+49301234569', is_supplier: true, website: 'https://kfzteile24.de' },
+    { name: 'Oscaro Deutschland', email: 'b2b@oscaro.de', phone: '+4989111222', is_supplier: true, website: 'https://oscaro.de' }
+];
+
+// ============================================================================
 // Shop Offers for orders
 // ============================================================================
 const SHOPS = ['PKW-Teile24', 'Autodoc', 'Kfzteile24', 'Oscaro'];
@@ -132,17 +177,40 @@ function generateOffers(orderId: string, partName: string) {
             margin_percent: 25,
             tier: i === 0 ? 'recommended' : 'standard',
             status: 'active',
-            oem_number: 'OEM-' + Math.random().toString(36).substring(7).toUpperCase()
+            oem_number: 'OEM-' + Math.random().toString(36).substring(7).toUpperCase(),
+            is_recommended: i === 0
         });
     }
     return offers;
+}
+
+// Demo Messages for orders
+function generateMessages(orderId: string, customerName: string) {
+    const now = new Date();
+    return [
+        {
+            direction: 'IN',
+            content: `Hallo, ich suche das Teil für mein Auto. Können Sie mir helfen?`,
+            created_at: new Date(now.getTime() - 3600000 * 3).toISOString()
+        },
+        {
+            direction: 'OUT',
+            content: `Guten Tag ${customerName}, natürlich! Ich habe mehrere Angebote für Sie gefunden.`,
+            created_at: new Date(now.getTime() - 3600000 * 2).toISOString()
+        },
+        {
+            direction: 'IN',
+            content: `Super, das günstigste Angebot nehme ich!`,
+            created_at: new Date(now.getTime() - 3600000).toISOString()
+        }
+    ];
 }
 
 // ============================================================================
 // Main Seed Function
 // ============================================================================
 export async function seedDemoData(): Promise<void> {
-    console.log('[SEED] Starting demo data seeding...');
+    console.log('[SEED] Starting comprehensive demo data seeding...');
 
     try {
         // Check if already seeded (look for existing demo orders)
@@ -156,40 +224,82 @@ export async function seedDemoData(): Promise<void> {
             return;
         }
 
-        // 1. Insert Demo Orders with Vehicles
+        // 0. Update admin user merchant_id if exists
+        await db.run(
+            `UPDATE users SET merchant_id = $1 WHERE email = $2`,
+            [MERCHANT_ID, ADMIN_EMAIL]
+        );
+        console.log(`[SEED] Updated admin user merchant_id to ${MERCHANT_ID}`);
+
+        // 1. Insert Demo Customers (Companies)
+        console.log('[SEED] Creating demo customers...');
+        for (const customer of DEMO_CUSTOMERS) {
+            await db.run(
+                `INSERT INTO companies (id, name, email, phone, is_customer, is_supplier, active, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [randomUUID(), customer.name, customer.email, customer.phone, true, false, true, new Date().toISOString()]
+            );
+        }
+        console.log(`[SEED] Created ${DEMO_CUSTOMERS.length} customers`);
+
+        // 2. Insert Demo Suppliers
+        console.log('[SEED] Creating demo suppliers...');
+        for (const supplier of DEMO_SUPPLIERS) {
+            await db.run(
+                `INSERT INTO companies (id, name, email, phone, website, is_customer, is_supplier, active, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [randomUUID(), supplier.name, supplier.email, supplier.phone, supplier.website, false, true, true, new Date().toISOString()]
+            );
+        }
+        console.log(`[SEED] Created ${DEMO_SUPPLIERS.length} suppliers`);
+
+        // 3. Insert Demo Orders with Vehicles, Messages, and Offers
         console.log('[SEED] Creating demo orders...');
-        for (const order of DEMO_ORDERS) {
+        for (let i = 0; i < DEMO_ORDERS.length; i++) {
+            const order = DEMO_ORDERS[i];
             const orderId = `order-${randomUUID().substring(0, 8)}`;
-            const now = new Date().toISOString();
+            const now = new Date();
+            // Vary creation dates for realistic dashboard display
+            const createdAt = new Date(now.getTime() - (i * 86400000 * 2)).toISOString(); // Each 2 days apart
 
             // Insert order
             await db.run(
-                `INSERT INTO orders (id, customer_contact, customer_name, requested_part_name, status, merchant_id, vehicle_data, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                [orderId, order.customerContact, order.customerName, order.requestedPartName, order.status, MERCHANT_ID, JSON.stringify(order.vehicle), now, now]
+                `INSERT INTO orders (id, customer_contact, customer_name, customer_phone, requested_part_name, status, merchant_id, vehicle_data, total, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [orderId, order.customerContact, order.customerName, order.customerContact, order.requestedPartName, order.status, MERCHANT_ID, JSON.stringify(order.vehicle), order.total, createdAt, createdAt]
             );
 
             // Insert vehicle
             await db.run(
                 `INSERT INTO vehicles (id, order_id, make, model, year, engine_code, created_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [randomUUID(), orderId, order.vehicle.make, order.vehicle.model, order.vehicle.year, order.vehicle.engine, now]
+                [randomUUID(), orderId, order.vehicle.make, order.vehicle.model, order.vehicle.year, order.vehicle.engine, createdAt]
             );
+
+            // Insert messages for this order
+            const messages = generateMessages(orderId, order.customerName);
+            for (const msg of messages) {
+                await db.run(
+                    `INSERT INTO messages (id, order_id, direction, content, phone, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [randomUUID(), orderId, msg.direction, msg.content, order.customerContact, msg.created_at]
+                );
+            }
 
             // Generate and insert shop offers
             const offers = generateOffers(orderId, order.requestedPartName);
             for (const offer of offers) {
                 await db.run(
-                    `INSERT INTO shop_offers (id, order_id, shop_name, brand, product_name, base_price, price, currency, delivery_time_days, margin_percent, tier, status, oem_number, inserted_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-                    [offer.id, offer.order_id, offer.shop_name, offer.brand, offer.product_name, offer.base_price, offer.price, offer.currency, offer.delivery_time_days, offer.margin_percent, offer.tier, offer.status, offer.oem_number, now]
+                    `INSERT INTO shop_offers (id, order_id, shop_name, brand, product_name, base_price, price, currency, delivery_time_days, margin_percent, tier, status, oem_number, is_recommended, inserted_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                    [offer.id, offer.order_id, offer.shop_name, offer.brand, offer.product_name, offer.base_price, offer.price, offer.currency, offer.delivery_time_days, offer.margin_percent, offer.tier, offer.status, offer.oem_number, offer.is_recommended, createdAt]
                 );
             }
 
-            console.log(`[SEED] Created order: ${orderId} - ${order.requestedPartName}`);
+            console.log(`[SEED] Created order: ${orderId} - ${order.requestedPartName} (${order.status})`);
         }
 
-        // 2. Insert Demo Products
+        // 4. Insert Demo Products
         console.log('[SEED] Creating demo products...');
         for (const product of DEMO_PRODUCTS) {
             await db.run(
@@ -197,12 +307,35 @@ export async function seedDemoData(): Promise<void> {
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
                 [randomUUID(), product.name, product.oem_number, product.manufacturer, product.category, product.stock, new Date().toISOString()]
             );
-            console.log(`[SEED] Created product: ${product.name}`);
         }
-
-        console.log('[SEED] ✅ Demo data seeding complete!');
-        console.log(`[SEED] Created ${DEMO_ORDERS.length} orders with offers`);
         console.log(`[SEED] Created ${DEMO_PRODUCTS.length} products`);
+
+        // 5. Insert Merchant Settings for admin
+        console.log('[SEED] Creating merchant settings...');
+        const merchantSettings = {
+            selectedShops: ['PKW-Teile24', 'Autodoc', 'Kfzteile24', 'Oscaro'],
+            marginPercent: 25,
+            allowDirectDelivery: true,
+            dealerName: 'Autoteile Admin',
+            dealerAddress: 'Musterstraße 1, 10115 Berlin',
+            supportedLanguages: ['de', 'en'],
+            deliveryTimeBufferDays: 1
+        };
+        await db.run(
+            `INSERT INTO merchant_settings (merchant_id, settings, created_at, updated_at)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (merchant_id) DO UPDATE SET settings = $2, updated_at = $4`,
+            [MERCHANT_ID, JSON.stringify(merchantSettings), new Date().toISOString(), new Date().toISOString()]
+        );
+        console.log('[SEED] Created merchant settings');
+
+        console.log('[SEED] ✅ Comprehensive demo data seeding complete!');
+        console.log(`[SEED] Summary:`);
+        console.log(`  - ${DEMO_ORDERS.length} orders with vehicles, messages & offers`);
+        console.log(`  - ${DEMO_PRODUCTS.length} products`);
+        console.log(`  - ${DEMO_CUSTOMERS.length} customers`);
+        console.log(`  - ${DEMO_SUPPLIERS.length} suppliers`);
+        console.log(`  - Merchant settings configured`);
 
     } catch (error) {
         console.error('[SEED] Error seeding demo data:', error);
