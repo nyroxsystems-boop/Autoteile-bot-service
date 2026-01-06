@@ -351,7 +351,7 @@ export async function saveDeliveryAddress(orderId: string | number, address: str
 }
 
 export async function listSuppliers(tenantId?: string, params?: any): Promise<any[]> {
-    let sql = `SELECT * FROM companies WHERE is_supplier = 1`;
+    let sql = `SELECT * FROM companies WHERE is_supplier = TRUE`;
     const queryParams: any[] = [];
 
     if (tenantId) {
@@ -366,7 +366,7 @@ export async function listSuppliers(tenantId?: string, params?: any): Promise<an
 
     if (params?.active !== undefined) {
         sql += ` AND active = ?`;
-        queryParams.push(params.active ? 1 : 0);
+        queryParams.push(params.active);
     }
 
     sql += ` ORDER BY name ASC`;
@@ -392,7 +392,7 @@ export async function listSuppliers(tenantId?: string, params?: any): Promise<an
 
 export async function getSupplierById(tenantId: string, id: string): Promise<any | null> {
     const row = await db.get<any>(
-        `SELECT * FROM companies WHERE id = ? AND is_supplier = 1`,
+        `SELECT * FROM companies WHERE id = ? AND is_supplier = TRUE`,
         [String(id)]
     );
     if (!row) return null;
@@ -423,7 +423,7 @@ export async function createSupplier(tenantId: string, data: any): Promise<any> 
         `INSERT INTO companies (
             id, name, contact_person, email, phone, address, website, notes,
             is_supplier, active, payment_terms, tenant_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?, ?, ?)`,
         [
             id,
             data.name,
@@ -433,7 +433,7 @@ export async function createSupplier(tenantId: string, data: any): Promise<any> 
             data.address || null,
             data.website || null,
             data.notes || null,
-            isActive ? 1 : 0,
+            isActive,
             data.payment_terms || null,
             tenantId,
             now
@@ -457,15 +457,15 @@ export async function updateSupplier(tenantId: string, id: string | number, patc
     if (patch.payment_terms !== undefined) { updates.push("payment_terms = ?"); params.push(patch.payment_terms); }
     if (patch.status !== undefined) {
         updates.push("active = ?");
-        params.push(patch.status === 'active' ? 1 : 0);
+        params.push(patch.status === 'active');
     }
     if (patch.active !== undefined) {
         updates.push("active = ?");
-        params.push(patch.active ? 1 : 0);
+        params.push(patch.active);
     }
 
     if (updates.length > 0) {
-        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = 1`;
+        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = TRUE`;
         params.push(String(id));
         await db.run(sql, params);
     }
@@ -475,7 +475,7 @@ export async function updateSupplier(tenantId: string, id: string | number, patc
 
 export async function deleteSupplier(tenantId: string, id: string | number): Promise<void> {
     await db.run(
-        `DELETE FROM companies WHERE id = ? AND is_supplier = 1`,
+        `DELETE FROM companies WHERE id = ? AND is_supplier = TRUE`,
         [String(id)]
     );
 }
@@ -684,7 +684,7 @@ function parseCompanyRow(row: any) {
 export async function createCompany(company: InvenTreeCompany) {
     await db.run(
         `INSERT INTO companies (name, description, website, email, phone, is_customer, is_supplier, active, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [company.name, company.description || '', company.website || '', company.email || '', company.phone || '', company.is_customer ? 1 : 0, company.is_supplier ? 1 : 0, company.active ? 1 : 0, JSON.stringify(company.metadata || {})]
+        [company.name, company.description || '', company.website || '', company.email || '', company.phone || '', company.is_customer, company.is_supplier, company.active, JSON.stringify(company.metadata || {})]
     );
     const row = await db.get<any>(`SELECT * FROM companies ORDER BY id DESC LIMIT 1`);
     return parseCompanyRow(row);
@@ -693,9 +693,9 @@ export async function createCompany(company: InvenTreeCompany) {
 export async function getCompanies(params: { is_customer?: boolean, is_supplier?: boolean, search?: string, active?: boolean } = {}) {
     let sql = `SELECT * FROM companies WHERE 1=1`;
     const qp: any[] = [];
-    if (params.is_customer !== undefined) { sql += ` AND is_customer = ?`; qp.push(params.is_customer ? 1 : 0); }
-    if (params.is_supplier !== undefined) { sql += ` AND is_supplier = ?`; qp.push(params.is_supplier ? 1 : 0); }
-    if (params.active !== undefined) { sql += ` AND active = ?`; qp.push(params.active ? 1 : 0); }
+    if (params.is_customer !== undefined) { sql += ` AND is_customer = ?`; qp.push(params.is_customer); }
+    if (params.is_supplier !== undefined) { sql += ` AND is_supplier = ?`; qp.push(params.is_supplier); }
+    if (params.active !== undefined) { sql += ` AND active = ?`; qp.push(params.active); }
     if (params.search) { sql += ` AND name LIKE ?`; qp.push(`%${params.search}%`); }
 
     // Sort
@@ -714,7 +714,7 @@ export async function updateCompany(id: number, patch: Partial<InvenTreeCompany>
     if (patch.website !== undefined) { updates.push("website = ?"); params.push(patch.website); }
     if (patch.email !== undefined) { updates.push("email = ?"); params.push(patch.email); }
     if (patch.phone !== undefined) { updates.push("phone = ?"); params.push(patch.phone); }
-    if (patch.is_customer !== undefined) { updates.push("is_customer = ?"); params.push(patch.is_customer ? 1 : 0); }
+    if (patch.is_customer !== undefined) { updates.push("is_customer = ?"); params.push(patch.is_customer); }
     if (patch.metadata !== undefined) { updates.push("metadata = ?"); params.push(JSON.stringify(patch.metadata)); }
 
     if (updates.length > 0) {
@@ -801,7 +801,7 @@ export async function createStockMovement(tenantId: string, data: any): Promise<
 
 export async function getStockLocations(tenantId: string): Promise<any[]> {
     const rows = await db.all<any>(
-        `SELECT * FROM stock_locations WHERE (tenant_id = ? OR tenant_id = 'global') AND active = 1 ORDER BY name ASC`,
+        `SELECT * FROM stock_locations WHERE (tenant_id = ? OR tenant_id = 'global') AND active = TRUE ORDER BY name ASC`,
         [tenantId]
     );
     return rows.map(r => ({
