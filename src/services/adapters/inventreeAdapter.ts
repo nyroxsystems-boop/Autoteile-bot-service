@@ -350,39 +350,75 @@ export async function saveDeliveryAddress(orderId: string | number, address: str
     await updateOrderData(orderId, { deliveryAddress: address });
 }
 
-export async function listSuppliers(): Promise<any[]> {
+export async function listSuppliers(tenantId?: string, params?: any): Promise<any[]> {
     // For now, return mock suppliers - this should be replaced with actual WAWI integration
     return [
         {
             id: "1",
+            pk: 1,
             name: "Autodoc",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.autodoc.de",
-            priority: 1
+            priority: 1,
+            is_supplier: true
         },
         {
             id: "2",
+            pk: 2,
             name: "kfzteile24",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.kfzteile24.de",
-            priority: 2
+            priority: 2,
+            is_supplier: true
         },
         {
             id: "3",
+            pk: 3,
             name: "pkwteile.de",
             type: "scraper",
             status: "active",
+            active: true,
             url: "https://www.pkwteile.de",
-            priority: 3
+            priority: 3,
+            is_supplier: true
         }
     ];
 }
 
-export async function getSupplierById(id: string): Promise<any | null> {
-    const suppliers = await listSuppliers();
-    return suppliers.find(s => s.id === id) || null;
+export async function getSupplierById(tenantId: string, id: string): Promise<any | null> {
+    const suppliers = await listSuppliers(tenantId);
+    return suppliers.find(s => s.id === id || s.pk === parseInt(id)) || null;
+}
+
+export async function createSupplier(tenantId: string, data: any): Promise<any> {
+    // Mock implementation
+    logger.info(`Mock: Creating supplier for tenant ${tenantId}:`, data);
+    return {
+        pk: Date.now(),
+        id: String(Date.now()),
+        ...data,
+        is_supplier: true,
+        active: true
+    };
+}
+
+export async function updateSupplier(tenantId: string, id: string | number, patch: any): Promise<any> {
+    // Mock implementation
+    logger.info(`Mock: Updating supplier ${id} for tenant ${tenantId}:`, patch);
+    return {
+        pk: id,
+        id: String(id),
+        ...patch
+    };
+}
+
+export async function deleteSupplier(tenantId: string, id: string | number): Promise<void> {
+    // Mock implementation
+    logger.info(`Mock: Deleting supplier ${id} for tenant ${tenantId}`);
 }
 
 export async function listOffers(orderId?: string | number): Promise<any[]> {
@@ -630,4 +666,44 @@ export async function updateCompany(id: number, patch: Partial<InvenTreeCompany>
     const row = await db.get<any>(`SELECT * FROM companies WHERE id = ?`, [id]);
     if (!row) throw new Error("Company not found");
     return parseCompanyRow(row);
+}
+
+// --------------------------------------------------------------------------
+// Stock Movements (Mock/Stub)
+// --------------------------------------------------------------------------
+
+export async function getStockMovements(tenantId: string, filters: any = {}): Promise<any[]> {
+    // Mock implementation - returns empty for now
+    logger.info(`Mock: Getting stock movements for tenant ${tenantId}`);
+    return [];
+}
+
+export async function createStockMovement(tenantId: string, data: any): Promise<any> {
+    // Mock implementation
+    logger.info(`Mock: Creating stock movement for tenant ${tenantId}:`, data);
+    return {
+        id: Date.now(),
+        ...data,
+        created_at: new Date().toISOString()
+    };
+}
+
+export async function getStockLocations(tenantId: string): Promise<any[]> {
+    // Mock implementation - return some default locations
+    logger.info(`Mock: Getting stock locations for tenant ${tenantId}`);
+    return [
+        { id: 1, name: 'Hauptlager', description: 'Main warehouse' },
+        { id: 2, name: 'Wareneingang', description: 'Goods receipt' },
+        { id: 3, name: 'Versand', description: 'Shipping' }
+    ];
+}
+
+export async function receiveGoods(tenantId: string, data: any): Promise<any> {
+    // Mock implementation
+    logger.info(`Mock: Receiving goods for tenant ${tenantId}:`, data);
+    return {
+        success: true,
+        ...data,
+        received_at: new Date().toISOString()
+    };
 }

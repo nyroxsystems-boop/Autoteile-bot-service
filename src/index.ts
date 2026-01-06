@@ -28,6 +28,7 @@ if (process.env.REDIS_URL) {
 
 import { createBotHealthRouter } from "./routes/botHealth";
 import { createSuppliersRouter } from "./routes/suppliers";
+import stockMovementsRouter from "./routes/stockMovements";
 import { createOffersRouter } from "./routes/offers";
 import { createWwsConnectionsRouter } from "./routes/wwsConnections";
 import authRouter from "./routes/authRoutes";
@@ -115,6 +116,9 @@ app.use("/api/bot", createBotHealthRouter());
 
 // Suppliers API
 app.use("/api/suppliers", createSuppliersRouter());
+
+// Stock Movements API (WAWI)
+app.use("/api/stock", stockMovementsRouter);
 
 // Offers API  
 app.use("/api/offers", createOffersRouter());
