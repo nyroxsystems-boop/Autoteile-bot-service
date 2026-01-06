@@ -150,7 +150,8 @@ router.post("/tenants", async (req: Request, res: Response) => {
             is_customer: true,
             is_supplier: false,
             active: true,
-            description: "Auto-Created via Admin Dashboard"
+            description: "Auto-Created via Admin Dashboard",
+            currency: "EUR" // Required field by InvenTree API
         };
 
         // 1. Create Company in InvenTree
