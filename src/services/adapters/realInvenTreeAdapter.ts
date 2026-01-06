@@ -204,10 +204,17 @@ export async function createCompany(company: InvenTreeCompany) {
         return localAdapter.createCompany(company);
     }
     try {
+        logger.info(`Creating company in WAWI: ${JSON.stringify(company)}`);
         const response = await api.post('/api/company/', company);
+        logger.info(`Company created successfully: ${JSON.stringify(response.data)}`);
         return response.data;
     } catch (error: any) {
+        // Log the FULL error response from WAWI for debugging
+        const wawiError = error.response?.data;
         logger.error(`Failed to create company: ${error.message}`);
+        logger.error(`WAWI Response Status: ${error.response?.status}`);
+        logger.error(`WAWI Response Data: ${JSON.stringify(wawiError)}`);
+        logger.error(`Request Payload was: ${JSON.stringify(company)}`);
         throw error;
     }
 }
