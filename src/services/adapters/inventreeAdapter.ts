@@ -469,14 +469,17 @@ export async function getParts(tenantId: string, params: any = {}) {
 
     const rows = await db.all<any>(sql, queryParams);
     return rows.map(r => ({
+        id: r.id, // Frontend uses .id
         pk: r.id,
         name: r.name,
         description: r.description,
         oe_number: r.oem_number,
+        IPN: r.oem_number || r.ipn, // Map OEM to IPN for frontend display
         stock: r.stock,
-        category: r.category, // Just string in local DB
+        total_in_stock: r.stock, // Frontend uses .total_in_stock
+        minimum_stock: 5, // Default minimum for demo
+        category: r.category,
         location: r.location,
-        IPN: r.ipn,
         manufacturer: r.manufacturer,
         active: true,
         metadata: {}
