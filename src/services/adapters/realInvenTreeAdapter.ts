@@ -17,7 +17,7 @@ const API_TOKEN = process.env.INVENTREE_API_TOKEN;
 const api = axios.create({
     baseURL: BASE_URL,
     headers: {
-        'Authorization': `Token ${API_TOKEN}`,
+        'Authorization': `Bearer ${API_TOKEN}`,
         'Content-Type': 'application/json'
     },
     timeout: 5000,
