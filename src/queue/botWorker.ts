@@ -39,12 +39,21 @@ async function sendTwilioReply(
         }
 
         await client.messages.create(payload);
+
+        console.log("📤 BOT REPLY SENT:", {
+            to,
+            message: payload.body?.substring(0, 100) || "[template message]",
+            hasMedia: !!options.mediaUrl,
+            contentSid: options.contentSid
+        });
+
         logger.info("Sent WhatsApp reply via Twilio", {
             to,
             hasMedia: !!options.mediaUrl,
             contentSid: options.contentSid
         });
     } catch (error: any) {
+        console.error("❌ FAILED TO SEND WHATSAPP REPLY:", error?.message);
         logger.error("Failed to send WhatsApp reply", { error: error?.message, to });
     }
 }
@@ -53,6 +62,14 @@ const worker = new Worker<BotJobData>(
     BOT_QUEUE_NAME,
     async (job: Job<BotJobData>) => {
         const { from, text, orderId, mediaUrls } = job.data;
+
+        console.log("📥 INCOMING MESSAGE:", {
+            from,
+            message: text?.substring(0, 100),
+            hasMedia: !!(mediaUrls && mediaUrls.length > 0),
+            orderId
+        });
+
         logger.info("Processing bot job", { jobId: job.id, from });
 
         try {
@@ -62,6 +79,13 @@ const worker = new Worker<BotJobData>(
                 text,
                 orderId: orderId || null,
                 mediaUrls
+            });
+
+            console.log("🤖 BOT GENERATED REPLY:", {
+                replyLength: result.reply?.length,
+                replyPreview: result.reply?.substring(0, 150),
+                hasContentSid: !!result.contentSid,
+                orderId: result.orderId
             });
 
             // 2. Persist Reply
