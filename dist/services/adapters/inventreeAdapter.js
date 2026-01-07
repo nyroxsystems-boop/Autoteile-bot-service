@@ -353,7 +353,7 @@ async function saveDeliveryAddress(orderId, address) {
     await updateOrderData(orderId, { deliveryAddress: address });
 }
 async function listSuppliers(tenantId, params) {
-    let sql = `SELECT * FROM companies WHERE is_supplier = 1`;
+    let sql = `SELECT * FROM companies WHERE is_supplier = TRUE`;
     const queryParams = [];
     if (tenantId) {
         sql += ` AND (tenant_id = ? OR tenant_id IS NULL)`;
@@ -365,7 +365,7 @@ async function listSuppliers(tenantId, params) {
     }
     if (params?.active !== undefined) {
         sql += ` AND active = ?`;
-        queryParams.push(params.active ? 1 : 0);
+        queryParams.push(params.active);
     }
     sql += ` ORDER BY name ASC`;
     const rows = await db.all(sql, queryParams);
@@ -387,7 +387,7 @@ async function listSuppliers(tenantId, params) {
     }));
 }
 async function getSupplierById(tenantId, id) {
-    const row = await db.get(`SELECT * FROM companies WHERE id = ? AND is_supplier = 1`, [String(id)]);
+    const row = await db.get(`SELECT * FROM companies WHERE id = ? AND is_supplier = TRUE`, [String(id)]);
     if (!row)
         return null;
     return {
@@ -414,7 +414,7 @@ async function createSupplier(tenantId, data) {
     await db.run(`INSERT INTO companies (
             id, name, contact_person, email, phone, address, website, notes,
             is_supplier, active, payment_terms, tenant_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`, [
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?, ?, ?)`, [
         id,
         data.name,
         data.contact_person || null,
@@ -423,7 +423,7 @@ async function createSupplier(tenantId, data) {
         data.address || null,
         data.website || null,
         data.notes || null,
-        isActive ? 1 : 0,
+        isActive,
         data.payment_terms || null,
         tenantId,
         now
@@ -465,23 +465,24 @@ async function updateSupplier(tenantId, id, patch) {
         updates.push("payment_terms = ?");
         params.push(patch.payment_terms);
     }
-    if (patch.status !== undefined) {
-        updates.push("active = ?");
-        params.push(patch.status === 'active' ? 1 : 0);
-    }
+    // Handle active status - prioritize patch.active, fallback to patch.status
     if (patch.active !== undefined) {
         updates.push("active = ?");
-        params.push(patch.active ? 1 : 0);
+        params.push(patch.active);
+    }
+    else if (patch.status !== undefined) {
+        updates.push("active = ?");
+        params.push(patch.status === 'active');
     }
     if (updates.length > 0) {
-        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = 1`;
+        const sql = `UPDATE companies SET ${updates.join(', ')} WHERE id = ? AND is_supplier = TRUE`;
         params.push(String(id));
         await db.run(sql, params);
     }
     return getSupplierById(tenantId, String(id));
 }
 async function deleteSupplier(tenantId, id) {
-    await db.run(`DELETE FROM companies WHERE id = ? AND is_supplier = 1`, [String(id)]);
+    await db.run(`DELETE FROM companies WHERE id = ? AND is_supplier = TRUE`, [String(id)]);
 }
 async function listOffers(orderId) {
     let rows;
@@ -662,7 +663,7 @@ function parseCompanyRow(row) {
     };
 }
 async function createCompany(company) {
-    await db.run(`INSERT INTO companies (name, description, website, email, phone, is_customer, is_supplier, active, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [company.name, company.description || '', company.website || '', company.email || '', company.phone || '', company.is_customer ? 1 : 0, company.is_supplier ? 1 : 0, company.active ? 1 : 0, JSON.stringify(company.metadata || {})]);
+    await db.run(`INSERT INTO companies (name, description, website, email, phone, is_customer, is_supplier, active, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [company.name, company.description || '', company.website || '', company.email || '', company.phone || '', company.is_customer, company.is_supplier, company.active, JSON.stringify(company.metadata || {})]);
     const row = await db.get(`SELECT * FROM companies ORDER BY id DESC LIMIT 1`);
     return parseCompanyRow(row);
 }
@@ -671,15 +672,15 @@ async function getCompanies(params = {}) {
     const qp = [];
     if (params.is_customer !== undefined) {
         sql += ` AND is_customer = ?`;
-        qp.push(params.is_customer ? 1 : 0);
+        qp.push(params.is_customer);
     }
     if (params.is_supplier !== undefined) {
         sql += ` AND is_supplier = ?`;
-        qp.push(params.is_supplier ? 1 : 0);
+        qp.push(params.is_supplier);
     }
     if (params.active !== undefined) {
         sql += ` AND active = ?`;
-        qp.push(params.active ? 1 : 0);
+        qp.push(params.active);
     }
     if (params.search) {
         sql += ` AND name LIKE ?`;
@@ -715,7 +716,7 @@ async function updateCompany(id, patch) {
     }
     if (patch.is_customer !== undefined) {
         updates.push("is_customer = ?");
-        params.push(patch.is_customer ? 1 : 0);
+        params.push(patch.is_customer);
     }
     if (patch.metadata !== undefined) {
         updates.push("metadata = ?");
@@ -793,7 +794,7 @@ async function createStockMovement(tenantId, data) {
     };
 }
 async function getStockLocations(tenantId) {
-    const rows = await db.all(`SELECT * FROM stock_locations WHERE (tenant_id = ? OR tenant_id = 'global') AND active = 1 ORDER BY name ASC`, [tenantId]);
+    const rows = await db.all(`SELECT * FROM stock_locations WHERE (tenant_id = ? OR tenant_id = 'global') AND active = TRUE ORDER BY name ASC`, [tenantId]);
     return rows.map(r => ({
         id: r.id,
         name: r.name,
@@ -919,6 +920,16 @@ async function createPurchaseOrder(tenantId, data) {
     if (data.items && Array.isArray(data.items)) {
         for (const item of data.items) {
             const itemId = (0, crypto_1.randomUUID)();
+            // Fetch part_name from parts table if part_id is provided but part_name is missing
+            let partName = item.part_name;
+            if (!partName && item.part_id) {
+                const part = await db.get('SELECT name FROM parts WHERE id = ?', [item.part_id]);
+                partName = part?.name || `Part ${item.part_id}`;
+            }
+            // If still no part_name, use a default based on part_id or fallback
+            if (!partName) {
+                partName = item.part_id ? `Part ${item.part_id}` : 'Unknown Part';
+            }
             await db.run(`INSERT INTO purchase_order_items (
                     id, purchase_order_id, part_id, part_name, part_ipn,
                     quantity, unit_price, total_price, created_at
@@ -926,7 +937,7 @@ async function createPurchaseOrder(tenantId, data) {
                 itemId,
                 id,
                 item.part_id || null,
-                item.part_name,
+                partName,
                 item.part_ipn || null,
                 item.quantity,
                 item.unit_price,

@@ -334,27 +334,79 @@ interface OrchestratorResult {
 }
 
 async function callOrchestrator(payload: any): Promise<OrchestratorResult | null> {
+  const startTime = Date.now();
+
   try {
     const userContent = JSON.stringify(payload);
+
+    // LOG: What we're sending to OpenAI
+    logger.info("🤖 Calling Orchestrator", {
+      payloadSize: userContent.length,
+      status: payload.conversation?.status,
+      language: payload.conversation?.language,
+      hasOCR: !!payload.ocr,
+      messagePreview: payload.latestMessage?.substring(0, 100)
+    });
+
     // Use dynamic require so tests that mock `./openAiService` after this module
     // was loaded (compiled dist tests) still influence the invoked function.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const gen = require("./openAiService").generateChatCompletion;
+
     const raw = await gen({
       messages: [
         { role: "system", content: ORCHESTRATOR_PROMPT },
         { role: "user", content: userContent }
       ],
-      model: "gpt-4.1-mini"
+      model: "gpt-4.1-mini",
+      responseFormat: "json_object",
+      temperature: 0
     });
 
-    // Debug: log raw orchestrator response to aid test diagnostics
-    logger.debug?.("Orchestrator raw response", { raw, short: (typeof raw === 'string' ? raw.slice(0, 200) : raw) });
+    const elapsed = Date.now() - startTime;
 
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    const jsonString = start !== -1 && end !== -1 && end > start ? raw.slice(start, end + 1) : raw;
-    const parsed = JSON.parse(jsonString);
+    // LOG: Raw OpenAI response
+    logger.info("✅ Orchestrator raw response received", {
+      elapsed,
+      responseLength: raw?.length || 0,
+      responsePreview: raw?.substring(0, 200)
+    });
+
+    // Try to parse JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+      logger.info("✅ JSON parsed successfully", {
+        hasAction: !!parsed.action,
+        action: parsed.action,
+        hasReply: !!parsed.reply,
+        hasSlotsCount: Object.keys(parsed.slots || {}).length
+      });
+    } catch (parseErr: any) {
+      logger.error("❌ JSON parsing failed", {
+        error: parseErr.message,
+        rawResponse: raw,
+        responseType: typeof raw
+      });
+      return null;
+    }
+
+    // Validate required fields
+    if (!parsed.action) {
+      logger.error("❌ Orchestrator response missing 'action' field", {
+        parsed,
+        rawPreview: raw.slice(0, 500)
+      });
+      return null;
+    }
+
+    logger.info("✅ Orchestrator succeeded", {
+      action: parsed.action,
+      confidence: parsed.confidence,
+      slotsCount: Object.keys(parsed.slots || {}).length,
+      totalElapsed: Date.now() - startTime
+    });
+
     return {
       action: parsed.action as OrchestratorAction,
       reply: parsed.reply ?? "",
@@ -363,7 +415,19 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 1
     };
   } catch (err: any) {
-    logger.warn("Orchestrator call failed or returned invalid JSON", { error: err?.message });
+    const elapsed = Date.now() - startTime;
+
+    logger.error("❌ Orchestrator call FAILED", {
+      error: err?.message,
+      errorType: err?.constructor?.name,
+      errorCode: err?.code,
+      statusCode: err?.status || err?.statusCode,
+      elapsed,
+      stack: err?.stack?.split('\n').slice(0, 5).join('\n'),
+      isOpenAIError: err?.constructor?.name?.includes('OpenAI') || err?.message?.includes('OpenAI'),
+      isNetworkError: err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND'
+    });
+
     return null;
   }
 }
