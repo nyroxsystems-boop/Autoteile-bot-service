@@ -1,18 +1,23 @@
-import axios, { AxiosResponse } from "axios";
+import axios, { AxiosResponse, AxiosInstance } from "axios";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 // Read proxy from HTTPS_WEB or HTTP_WEB environment variables
 const PROXY_URL = process.env.HTTPS_WEB || process.env.HTTP_WEB;
 
-// Configure axios defaults with proxy
+// Create custom axios instance with proxy configuration
+let axiosInstance: AxiosInstance;
+
 if (PROXY_URL) {
   const proxyAgent = new HttpsProxyAgent(PROXY_URL);
-  axios.defaults.httpAgent = proxyAgent;
-  axios.defaults.httpsAgent = proxyAgent;
+  axiosInstance = axios.create({
+    httpAgent: proxyAgent,
+    httpsAgent: proxyAgent,
+  });
   console.log("✅ HTTP Client (axios): Using proxy from HTTPS_WEB/HTTP_WEB:", {
     proxyUrl: PROXY_URL.replace(/:[^:@]+@/, ':***@') // Hide password
   });
 } else {
+  axiosInstance = axios.create();
   console.warn("⚠️ HTTP Client: No proxy configured (HTTPS_WEB/HTTP_WEB not set) - requests may be blocked!");
 }
 
@@ -112,7 +117,7 @@ export async function fetchWithTimeoutAndRetry(url: string, options: FetchOption
     try {
       const mergedHeaders = { ...getStealthHeaders(), ...headers };
 
-      const axiosResponse = await axios({
+      const axiosResponse = await axiosInstance({
         url,
         method,
         headers: mergedHeaders,
