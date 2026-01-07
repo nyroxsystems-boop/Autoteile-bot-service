@@ -34,6 +34,10 @@ import { createOffersRouter } from "./routes/offers";
 import { createWwsConnectionsRouter } from "./routes/wwsConnections";
 import authRouter from "./routes/authRoutes";
 import userRouter from "./routes/userRoutes";
+import taxRouter from "./routes/taxRoutes";
+import invoiceRouter from "./routes/invoiceRoutes";
+import healthRouter from "./routes/healthRoutes";
+import { authMiddleware } from "./middleware/authMiddleware";
 
 
 const app = express();
@@ -61,27 +65,9 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Use same options for preflight
 app.use(express.json());
 
-// Einfacher Healthcheck – Service läuft?
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
 // Root Route - Visual Confirmation
 app.get("/", (_req, res) => {
   res.send("🚀 AutoTeile Bot Service is running!");
-});
-
-// Datenbank-Healthcheck – Verbindung funktioniert?
-app.get("/health/db", async (_req, res) => {
-  const result = await testDbConnection();
-  if (result) {
-    res.json({ status: "ok" });
-  } else {
-    res.status(500).json({
-      status: "error",
-      error: "DB connection failed"
-    });
-  }
 });
 
 // Orders-API für das spätere Dashboard
@@ -109,6 +95,9 @@ app.use("/api/auth", authRouter);
 // User Management API (requires auth)
 app.use("/api/users", userRouter);
 
+// Health Check API (extended diagnostics)
+app.use("/health", healthRouter);
+
 // Dashboard API
 registerDashboardRoutes(app);
 
@@ -129,6 +118,12 @@ app.use("/api/offers", createOffersRouter());
 
 // WWS Connections API
 app.use("/api/wws-connections", createWwsConnectionsRouter());
+
+// Tax Module API (requires auth)
+app.use("/api/tax", authMiddleware, taxRouter);
+
+// Invoice API (requires auth)
+app.use("/api/invoices", authMiddleware, invoiceRouter);
 
 // Internal API
 app.use("/internal", createInternalRouter());
@@ -161,7 +156,13 @@ app.use("/api/products", productsRouter);
 app.use("/simulate/whatsapp", simulateWhatsappRouter);
 
 // Serverstart
-initDb().then(() => {
+initDb().then(async () => {
+  // Run tax module migrations
+  const { runTaxMigrations } = await import('./migrations/runTaxMigrations');
+  await runTaxMigrations().catch(err => {
+    console.error('Tax migration failed (non-critical):', err);
+  });
+
   app.listen(env.port, () => {
     console.log(`Bot service listening on port ${env.port}`);
   });
