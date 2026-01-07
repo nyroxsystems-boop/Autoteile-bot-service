@@ -1,3 +1,14 @@
+// CRITICAL: Set global proxy BEFORE any imports
+// Read from HTTPS_WEB/HTTP_WEB and set to standard Node.js proxy env vars
+if (process.env.HTTPS_WEB || process.env.HTTP_WEB) {
+  const proxyUrl = process.env.HTTPS_WEB || process.env.HTTP_WEB;
+  process.env.HTTPS_PROXY = proxyUrl;
+  process.env.HTTP_PROXY = proxyUrl;
+  console.log("🌐 GLOBAL PROXY SET:", {
+    proxyUrl: proxyUrl?.replace(/:[^:@]+@/, ':***@')
+  });
+}
+
 import express from "express";
 import cors from "cors";
 
