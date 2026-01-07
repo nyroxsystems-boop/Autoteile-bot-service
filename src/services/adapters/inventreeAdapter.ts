@@ -930,12 +930,7 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
     const now = new Date().toISOString();
     const orderNumber = `PO-${Date.now()}`;
 
-    // Calculate total amount from items
-    let totalAmount = 0;
-    if (data.items && Array.isArray(data.items)) {
-        totalAmount = data.items.reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
-    }
-
+    // Initially create order with 0 total_amount (will update after items are inserted)
     await db.run(
         `INSERT INTO purchase_orders (
             id, order_number, supplier_id, status, order_date, expected_delivery,
@@ -948,7 +943,7 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
             data.status || 'draft',
             data.order_date || now,
             data.expected_delivery || null,
-            totalAmount,
+            0, // Will be calculated after items
             data.currency || 'EUR',
             data.notes || null,
             tenantId,
@@ -956,7 +951,8 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
         ]
     );
 
-    // Insert items
+    // Insert items and calculate total_amount correctly
+    let totalAmount = 0;
     if (data.items && Array.isArray(data.items)) {
         for (const item of data.items) {
             const itemId = randomUUID();
@@ -972,6 +968,10 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
                 partName = item.part_id ? `Part ${item.part_id}` : 'Unknown Part';
             }
 
+            // Calculate total_price for this item
+            const itemTotalPrice = item.total_price || (item.quantity * item.unit_price);
+            totalAmount += itemTotalPrice;
+
             await db.run(
                 `INSERT INTO purchase_order_items (
                     id, purchase_order_id, part_id, part_name, part_ipn,
@@ -985,12 +985,18 @@ export async function createPurchaseOrder(tenantId: string, data: any): Promise<
                     item.part_ipn || null,
                     item.quantity,
                     item.unit_price,
-                    item.total_price || (item.quantity * item.unit_price),
+                    itemTotalPrice,
                     now
                 ]
             );
         }
     }
+
+    // Update purchase_order with correct total_amount
+    await db.run(
+        `UPDATE purchase_orders SET total_amount = ? WHERE id = ?`,
+        [totalAmount, id]
+    );
 
     return getPurchaseOrderById(tenantId, id);
 }

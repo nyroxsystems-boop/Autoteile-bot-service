@@ -345,16 +345,23 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
         { role: "system", content: ORCHESTRATOR_PROMPT },
         { role: "user", content: userContent }
       ],
-      model: "gpt-4.1-mini"
+      model: "gpt-4.1-mini",
+      responseFormat: "json_object",  // CRITICAL: Enforce JSON response
+      temperature: 0  // Consistent, deterministic responses
     });
 
-    // Debug: log raw orchestrator response to aid test diagnostics
+    // Debug: log raw orchestrator response to aid diagnostics
     logger.debug?.("Orchestrator raw response", { raw, short: (typeof raw === 'string' ? raw.slice(0, 200) : raw) });
 
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    const jsonString = start !== -1 && end !== -1 && end > start ? raw.slice(start, end + 1) : raw;
-    const parsed = JSON.parse(jsonString);
+    // Try to parse JSON - with JSON mode this should always work
+    const parsed = JSON.parse(raw);
+
+    // Validate required fields
+    if (!parsed.action) {
+      logger.error("Orchestrator returned JSON without 'action' field", { parsed, raw: raw.slice(0, 500) });
+      return null;
+    }
+
     return {
       action: parsed.action as OrchestratorAction,
       reply: parsed.reply ?? "",
@@ -363,7 +370,11 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 1
     };
   } catch (err: any) {
-    logger.warn("Orchestrator call failed or returned invalid JSON", { error: err?.message });
+    logger.error("Orchestrator call failed", {
+      error: err?.message,
+      errorType: err?.constructor?.name,
+      stack: err?.stack?.split('\n').slice(0, 3).join('\n')
+    });
     return null;
   }
 }

@@ -151,8 +151,15 @@ export async function closeDb(): Promise<void> {
 }
 
 // Export db instance for compatibility
+export const db = {
+    run,
+    get,
+    all
+};
+
 export const dbInstance = {
     run,
     get,
     all
 };
+

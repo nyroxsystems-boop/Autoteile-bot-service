@@ -20,8 +20,10 @@ function truncateContent(content: string, maxLen = 2000): string {
 export async function generateChatCompletion(params: {
   messages: ChatMessage[];
   model?: string;
+  responseFormat?: "json_object" | "text";
+  temperature?: number;
 }): Promise<string> {
-  const { messages, model = "gpt-4.1-mini" } = params;
+  const { messages, model = "gpt-4.1-mini", responseFormat, temperature } = params;
 
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
@@ -33,10 +35,22 @@ export async function generateChatCompletion(params: {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await client.chat.completions.create({
+      const completionParams: any = {
         model,
         messages: sanitizedMessages
-      });
+      };
+
+      // Add response_format if JSON is requested
+      if (responseFormat === "json_object") {
+        completionParams.response_format = { type: "json_object" };
+      }
+
+      // Add temperature if specified
+      if (temperature !== undefined) {
+        completionParams.temperature = temperature;
+      }
+
+      const response = await client.chat.completions.create(completionParams);
 
       return response.choices[0]?.message?.content ?? "";
     } catch (err: any) {
