@@ -351,7 +351,7 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
     // Use dynamic require so tests that mock `./openAiService` after this module
     // was loaded (compiled dist tests) still influence the invoked function.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const gen = require("./openAiService").generateChatCompletion;
+    const gen = require("../intelligence/openAiService").generateChatCompletion;
 
     const raw = await gen({
       messages: [
