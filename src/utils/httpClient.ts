@@ -1,25 +1,28 @@
-import fetch, { Response } from "node-fetch";
+import axios, { AxiosResponse } from "axios";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 // Read proxy from HTTPS_WEB or HTTP_WEB environment variables
 const PROXY_URL = process.env.HTTPS_WEB || process.env.HTTP_WEB;
 
-// Create proxy agent if proxy is configured
-const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : undefined;
-
-// Log proxy status
-if (proxyAgent) {
-  console.log("✅ HTTP Client: Using proxy from HTTPS_WEB/HTTP_WEB:", {
-    proxyUrl: PROXY_URL?.replace(/:[^:@]+@/, ':***@') // Hide password
+// Configure axios defaults with proxy
+if (PROXY_URL) {
+  const proxyAgent = new HttpsProxyAgent(PROXY_URL);
+  axios.defaults.httpAgent = proxyAgent;
+  axios.defaults.httpsAgent = proxyAgent;
+  console.log("✅ HTTP Client (axios): Using proxy from HTTPS_WEB/HTTP_WEB:", {
+    proxyUrl: PROXY_URL.replace(/:[^:@]+@/, ':***@') // Hide password
   });
 } else {
   console.warn("⚠️ HTTP Client: No proxy configured (HTTPS_WEB/HTTP_WEB not set) - requests may be blocked!");
 }
 
-export interface FetchOptions extends RequestInit {
+export interface FetchOptions {
   timeoutMs?: number;
   retry?: number;
   retryDelayMs?: number;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: any;
 }
 
 async function delay(ms: number) {
@@ -56,44 +59,59 @@ export function getStealthHeaders(host?: string) {
   return headers;
 }
 
+// Adapter to make axios response compatible with node-fetch Response interface
+export interface Response {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: any;
+  text(): Promise<string>;
+  json(): Promise<any>;
+}
+
+function axiosToFetchResponse(axiosResponse: AxiosResponse): Response {
+  return {
+    ok: axiosResponse.status >= 200 && axiosResponse.status < 300,
+    status: axiosResponse.status,
+    statusText: axiosResponse.statusText,
+    headers: axiosResponse.headers,
+    text: async () => axiosResponse.data,
+    json: async () => typeof axiosResponse.data === 'string' ? JSON.parse(axiosResponse.data) : axiosResponse.data
+  };
+}
+
 export async function fetchWithTimeoutAndRetry(url: string, options: FetchOptions = {}): Promise<Response> {
   const {
     timeoutMs = Number(process.env.HTTP_TIMEOUT_MS || 10000),
     retry = Number(process.env.HTTP_RETRY_COUNT || 2),
     retryDelayMs = Number(process.env.HTTP_RETRY_DELAY_MS || 500),
-    ...rest
+    method = 'GET',
+    headers = {},
+    body
   } = options;
 
   let attempt = 0;
   while (true) {
     attempt++;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const headers = { ...getStealthHeaders(), ...(rest.headers as any) };
+      const mergedHeaders = { ...getStealthHeaders(), ...headers };
 
-      // Add proxy agent if available
-      const fetchOptions: any = {
-        ...rest,
-        headers,
-        body: (rest as any)?.body ?? undefined,
-        signal: controller.signal
-      };
+      const axiosResponse = await axios({
+        url,
+        method,
+        headers: mergedHeaders,
+        data: body,
+        timeout: timeoutMs,
+        validateStatus: () => true, // Don't throw on any status
+        maxRedirects: 5
+      });
 
-      if (proxyAgent) {
-        fetchOptions.agent = proxyAgent;
+      if (axiosResponse.status === 403 || axiosResponse.status === 429) {
+        throw new Error(`HTTP ${axiosResponse.status}`); // Trigger retry for bot detection
       }
 
-      const resp = await (fetch as any)(url, fetchOptions);
-      clearTimeout(timeout);
-
-      if (resp.status === 403 || resp.status === 429) {
-        throw new Error(`HTTP ${resp.status}`); // Trigger retry for bot detection
-      }
-
-      return resp;
+      return axiosToFetchResponse(axiosResponse);
     } catch (err: any) {
-      clearTimeout(timeout);
       if (attempt > retry) throw err;
       // Exponential backoff
       await delay(retryDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100);
