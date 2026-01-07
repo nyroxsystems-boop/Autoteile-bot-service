@@ -67,6 +67,7 @@ export interface Response {
   headers: any;
   text(): Promise<string>;
   json(): Promise<any>;
+  arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 function axiosToFetchResponse(axiosResponse: AxiosResponse): Response {
@@ -76,7 +77,22 @@ function axiosToFetchResponse(axiosResponse: AxiosResponse): Response {
     statusText: axiosResponse.statusText,
     headers: axiosResponse.headers,
     text: async () => axiosResponse.data,
-    json: async () => typeof axiosResponse.data === 'string' ? JSON.parse(axiosResponse.data) : axiosResponse.data
+    json: async () => typeof axiosResponse.data === 'string' ? JSON.parse(axiosResponse.data) : axiosResponse.data,
+    arrayBuffer: async () => {
+      if (axiosResponse.data instanceof ArrayBuffer) {
+        return axiosResponse.data;
+      }
+      // Convert Buffer to ArrayBuffer if needed
+      if (Buffer.isBuffer(axiosResponse.data)) {
+        return axiosResponse.data.buffer.slice(
+          axiosResponse.data.byteOffset,
+          axiosResponse.data.byteOffset + axiosResponse.data.byteLength
+        ) as ArrayBuffer;
+      }
+      // For string data, encode to ArrayBuffer
+      const encoder = new TextEncoder();
+      return encoder.encode(axiosResponse.data).buffer as ArrayBuffer;
+    }
   };
 }
 
