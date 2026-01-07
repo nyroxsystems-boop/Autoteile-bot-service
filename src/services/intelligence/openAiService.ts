@@ -1,7 +1,15 @@
 import OpenAI from "openai";
 
 const apiKey = process.env.OPENAI_API_KEY;
+
+console.log("🔑 OpenAI API Key check:", {
+  exists: !!apiKey,
+  length: apiKey?.length,
+  startsCorrectly: apiKey?.startsWith('sk-')
+});
+
 if (!apiKey) {
+  console.error("❌ CRITICAL: OPENAI_API_KEY is not set!");
   throw new Error("OPENAI_API_KEY is required but not set.");
 }
 

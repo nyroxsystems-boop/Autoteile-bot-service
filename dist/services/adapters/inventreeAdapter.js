@@ -82,8 +82,8 @@ exports.updatePurchaseOrder = updatePurchaseOrder;
 exports.cancelPurchaseOrder = cancelPurchaseOrder;
 exports.receivePurchaseOrder = receivePurchaseOrder;
 exports.getReorderSuggestions = getReorderSuggestions;
-const logger_1 = require("../../utils/logger");
-const db = __importStar(require("../core/database"));
+const logger_1 = require("@utils/logger");
+const db = __importStar(require("@core/database"));
 const crypto_1 = require("crypto");
 function parseJsonField(value, fallback) {
     if (value === null || value === undefined)
@@ -895,11 +895,7 @@ async function createPurchaseOrder(tenantId, data) {
     const id = (0, crypto_1.randomUUID)();
     const now = new Date().toISOString();
     const orderNumber = `PO-${Date.now()}`;
-    // Calculate total amount from items
-    let totalAmount = 0;
-    if (data.items && Array.isArray(data.items)) {
-        totalAmount = data.items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-    }
+    // Initially create order with 0 total_amount (will update after items are inserted)
     await db.run(`INSERT INTO purchase_orders (
             id, order_number, supplier_id, status, order_date, expected_delivery,
             total_amount, currency, notes, tenant_id, created_at
@@ -910,13 +906,14 @@ async function createPurchaseOrder(tenantId, data) {
         data.status || 'draft',
         data.order_date || now,
         data.expected_delivery || null,
-        totalAmount,
+        0, // Will be calculated after items
         data.currency || 'EUR',
         data.notes || null,
         tenantId,
         now
     ]);
-    // Insert items
+    // Insert items and calculate total_amount correctly
+    let totalAmount = 0;
     if (data.items && Array.isArray(data.items)) {
         for (const item of data.items) {
             const itemId = (0, crypto_1.randomUUID)();
@@ -930,6 +927,9 @@ async function createPurchaseOrder(tenantId, data) {
             if (!partName) {
                 partName = item.part_id ? `Part ${item.part_id}` : 'Unknown Part';
             }
+            // Calculate total_price for this item
+            const itemTotalPrice = item.total_price || (item.quantity * item.unit_price);
+            totalAmount += itemTotalPrice;
             await db.run(`INSERT INTO purchase_order_items (
                     id, purchase_order_id, part_id, part_name, part_ipn,
                     quantity, unit_price, total_price, created_at
@@ -941,11 +941,13 @@ async function createPurchaseOrder(tenantId, data) {
                 item.part_ipn || null,
                 item.quantity,
                 item.unit_price,
-                item.total_price || (item.quantity * item.unit_price),
+                itemTotalPrice,
                 now
             ]);
         }
     }
+    // Update purchase_order with correct total_amount
+    await db.run(`UPDATE purchase_orders SET total_amount = ? WHERE id = ?`, [totalAmount, id]);
     return getPurchaseOrderById(tenantId, id);
 }
 async function updatePurchaseOrder(tenantId, id, patch) {

@@ -417,6 +417,14 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
   } catch (err: any) {
     const elapsed = Date.now() - startTime;
 
+    // IMMEDIATE DETAILED ERROR LOG
+    console.error("❌❌❌ ORCHESTRATOR FAILED ❌❌❌");
+    console.error("Error message:", err?.message);
+    console.error("Error type:", err?.constructor?.name);
+    console.error("Error code:", err?.code);
+    console.error("Status code:", err?.status || err?.statusCode);
+    console.error("Full error:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+
     logger.error("❌ Orchestrator call FAILED", {
       error: err?.message,
       errorType: err?.constructor?.name,
