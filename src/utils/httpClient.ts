@@ -1,4 +1,20 @@
 import fetch, { Response } from "node-fetch";
+import { HttpsProxyAgent } from "https-proxy-agent";
+
+// Read proxy from HTTPS_WEB or HTTP_WEB environment variables
+const PROXY_URL = process.env.HTTPS_WEB || process.env.HTTP_WEB;
+
+// Create proxy agent if proxy is configured
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : undefined;
+
+// Log proxy status
+if (proxyAgent) {
+  console.log("✅ HTTP Client: Using proxy from HTTPS_WEB/HTTP_WEB:", {
+    proxyUrl: PROXY_URL?.replace(/:[^:@]+@/, ':***@') // Hide password
+  });
+} else {
+  console.warn("⚠️ HTTP Client: No proxy configured (HTTPS_WEB/HTTP_WEB not set) - requests may be blocked!");
+}
 
 export interface FetchOptions extends RequestInit {
   timeoutMs?: number;
@@ -55,7 +71,20 @@ export async function fetchWithTimeoutAndRetry(url: string, options: FetchOption
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers = { ...getStealthHeaders(), ...(rest.headers as any) };
-      const resp = await (fetch as any)(url, { ...rest, headers, body: (rest as any)?.body ?? undefined, signal: controller.signal });
+
+      // Add proxy agent if available
+      const fetchOptions: any = {
+        ...rest,
+        headers,
+        body: (rest as any)?.body ?? undefined,
+        signal: controller.signal
+      };
+
+      if (proxyAgent) {
+        fetchOptions.agent = proxyAgent;
+      }
+
+      const resp = await (fetch as any)(url, fetchOptions);
       clearTimeout(timeout);
 
       if (resp.status === 403 || resp.status === 429) {
