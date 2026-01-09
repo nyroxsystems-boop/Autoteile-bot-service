@@ -204,7 +204,18 @@ export async function listInvoices(
         params.push(options.offset);
     }
 
-    return db.all<Invoice>(query, params);
+    const invoices = await db.all\u003cInvoice\u003e(query, params);
+
+    // Fetch lines for each invoice
+    for (const invoice of invoices) {
+        const lines = await db.all\u003cInvoiceLine\u003e(
+            `SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY created_at`,
+            [invoice.id]
+        );
+        invoice.lines = lines;
+    }
+
+    return invoices;
 }
 
 /**
