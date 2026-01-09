@@ -131,6 +131,25 @@ export async function createInvoice(tenantId: string, data: CreateInvoiceRequest
 }
 
 /**
+ * Convert numeric string fields to numbers (SQLite returns numbers as strings)
+ */
+function normalizeInvoice(invoice: any): Invoice {
+    return {
+        ...invoice,
+        net_amount: parseFloat(invoice.net_amount) || 0,
+        vat_amount: parseFloat(invoice.vat_amount) || 0,
+        gross_amount: parseFloat(invoice.gross_amount) || 0,
+        lines: invoice.lines?.map((line: any) => ({
+            ...line,
+            quantity: parseFloat(line.quantity) || 0,
+            unit_price: parseFloat(line.unit_price) || 0,
+            tax_rate: parseFloat(line.tax_rate) || 0,
+            line_total: parseFloat(line.line_total) || 0
+        })) || []
+    };
+}
+
+/**
  * Get invoice by ID with lines
  */
 export async function getInvoiceById(tenantId: string, invoiceId: string): Promise<Invoice> {
@@ -149,10 +168,10 @@ export async function getInvoiceById(tenantId: string, invoiceId: string): Promi
         [invoiceId]
     );
 
-    return {
+    return normalizeInvoice({
         ...invoice,
         lines
-    };
+    });
 }
 
 /**
