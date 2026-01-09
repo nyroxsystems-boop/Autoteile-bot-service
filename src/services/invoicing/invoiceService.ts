@@ -204,11 +204,11 @@ export async function listInvoices(
         params.push(options.offset);
     }
 
-    const invoices = await db.all\u003cInvoice\u003e(query, params);
+    const invoices = await db.all<Invoice>(query, params);
 
     // Fetch lines for each invoice
     for (const invoice of invoices) {
-        const lines = await db.all\u003cInvoiceLine\u003e(
+        const lines = await db.all<InvoiceLine>(
             `SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY created_at`,
             [invoice.id]
         );
