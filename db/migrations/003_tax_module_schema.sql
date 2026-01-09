@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS tax_profiles (
 CREATE INDEX IF NOT EXISTS idx_tax_profiles_tenant ON tax_profiles(tenant_id);
 
 -- Invoices
-CREATE TABLE IF NOT EXISTS invoices (
-    id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS invoices (\n    id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     invoice_number VARCHAR(50) NOT NULL,
     issue_date DATE NOT NULL,
@@ -34,6 +33,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     gross_amount DECIMAL(12,2) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'draft',          -- 'draft' | 'issued' | 'paid' | 'canceled'
     notes TEXT,
+    source_order_id TEXT,                                  -- Link to order if created from order
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tenant_id, invoice_number)

@@ -130,11 +130,11 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             // Customer Address
             const customerY = 200;
             doc.fontSize(10)
-                .font('Helvetica')
+                .font(font)
                 .text('Rechnung an:', 50, customerY);
 
             doc.fontSize(11)
-                .font('Helvetica-Bold')
+                .font(`${font}-Bold`)
                 .text(invoice.customer_name || 'Kunde', 50, customerY + 20);
 
             // Line separator
@@ -152,7 +152,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             const col6 = 510;
 
             doc.fontSize(9)
-                .font('Helvetica-Bold')
+                .font(`${font}-Bold`)
                 .text('Pos.', col1, tableTop)
                 .text('Beschreibung', col2, tableTop)
                 .text('Menge', col3, tableTop)
@@ -171,7 +171,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
                 const lineTotal = line.quantity * line.unit_price;
 
                 doc.fontSize(9)
-                    .font('Helvetica')
+                    .font(font)
                     .text((index + 1).toString(), col1, yPosition)
                     .text(line.description, col2, yPosition, { width: 80 })
                     .text(line.quantity.toString(), col3, yPosition)
@@ -191,7 +191,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             // Totals
             yPosition += 15;
             doc.fontSize(10)
-                .font('Helvetica')
+                .font(font)
                 .text('Nettobetrag:', 400, yPosition)
                 .text(formatCurrency(invoice.net_amount), 510, yPosition, { align: 'right', width: 40 });
 
@@ -206,7 +206,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
 
             yPosition += 15;
             doc.fontSize(12)
-                .font('Helvetica-Bold')
+                .font(`${font}-Bold`)
                 .text('Gesamtbetrag:', 400, yPosition)
                 .text(formatCurrency(invoice.gross_amount), 510, yPosition, { align: 'right', width: 40 });
 
@@ -214,44 +214,44 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             if (profile?.vat_id) {
                 yPosition += 40;
                 doc.fontSize(8)
-                    .font('Helvetica')
+                    .font(font)
                     .text('USt-IdNr: ' + profile.vat_id, 50, yPosition);
             }
 
             if (profile?.small_business) {
                 yPosition += 25;
                 doc.fontSize(8)
-                    .font('Helvetica')
+                    .font(font)
                     .text('Gemäß §19 UStG wird keine Umsatzsteuer berechnet (Kleinunternehmerregelung)', 50, yPosition, { width: 500 });
             }
 
             // Payment terms
             yPosition += 40;
             doc.fontSize(9)
-                .font('Helvetica-Bold')
+                .font(`${font}-Bold`)
                 .text('Zahlungsbedingungen:', 50, yPosition);
 
             yPosition += 15;
             doc.fontSize(9)
-                .font('Helvetica')
+                .font(font)
                 .text(`Bitte überweisen Sie den Betrag bis ${invoice.due_date ? formatDate(invoice.due_date) : 'auf Rechnung'}.`, 50, yPosition, { width: 500 });
 
             if (invoice.notes) {
                 yPosition += 30;
                 doc.fontSize(9)
-                    .font('Helvetica-Bold')
+                    .font(`${font}-Bold`)
                     .text('Hinweise:', 50, yPosition);
 
                 yPosition += 15;
                 doc.fontSize(9)
-                    .font('Helvetica')
+                    .font(font)
                     .text(invoice.notes, 50, yPosition, { width: 500 });
             }
 
             // Footer
             const footerY = 750;
             doc.fontSize(8)
-                .font('Helvetica')
+                .font(font)
                 .text(
                     `${companyInfo.name} | ${companyInfo.address} | ${companyInfo.zip} ${companyInfo.city}`,
                     50,
