@@ -142,54 +142,23 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
                 .lineTo(550, customerY + 60)
                 .stroke();
 
-            // Table Header
+            // Render table based on design style
             const tableTop = customerY + 80;
-            const col1 = 50;
-            const col2 = 250;
-            const col3 = 340;
-            const col4 = 390;
-            const col5 = 450;
-            const col6 = 510;
+            const tableStyle = design?.table_style || 'grid';
 
-            doc.fontSize(9)
-                .font(`${font}-Bold`)
-                .text('Pos.', col1, tableTop)
-                .text('Beschreibung', col2, tableTop)
-                .text('Menge', col3, tableTop)
-                .text('Preis', col4, tableTop)
-                .text('MwSt.', col5, tableTop)
-                .text('Summe', col6, tableTop, { align: 'right', width: 40 });
+            if (tableStyle === 'gestreift' || tableStyle === 'minimal') {
+                // Gestrafft/Minimal: Clean, compact layout without borders
+                renderTableGestrafft(doc, invoice, tableTop, font, primaryColor);
+            } else {
+                // Grid: Traditional table with borders
+                renderTableGrid(doc, invoice, tableTop, font, primaryColor);
+            }
 
-            // Table Lines
-            let yPosition = tableTop + 20;
-            doc.moveTo(50, yPosition - 5)
-                .lineTo(550, yPosition - 5)
-                .stroke();
-
-            // Invoice Lines
-            invoice.lines?.forEach((line, index) => {
-                const lineTotal = line.quantity * line.unit_price;
-
-                doc.fontSize(9)
-                    .font(font)
-                    .text((index + 1).toString(), col1, yPosition)
-                    .text(line.description, col2, yPosition, { width: 80 })
-                    .text(line.quantity.toString(), col3, yPosition)
-                    .text(formatCurrency(line.unit_price), col4, yPosition)
-                    .text(`${line.tax_rate}%`, col5, yPosition)
-                    .text(formatCurrency(lineTotal), col6, yPosition, { align: 'right', width: 40 });
-
-                yPosition += 25;
-            });
-
-            // Line before totals
-            yPosition += 10;
-            doc.moveTo(350, yPosition)
-                .lineTo(550, yPosition)
-                .stroke();
+            // Calculate position after table
+            const yAfterTable = tableTop + 20 + (invoice.lines?.length || 0) * 25 + 30;
 
             // Totals
-            yPosition += 15;
+            let yPosition = yAfterTable;
             doc.fontSize(10)
                 .font(font)
                 .text('Nettobetrag:', 400, yPosition)
@@ -287,6 +256,119 @@ export async function saveInvoicePDF(tenantId: string, invoice: Invoice, outputP
     // Write to file
     fs.writeFileSync(outputPath, pdfBuffer);
     return outputPath;
+}
+
+// Table Rendering Functions
+
+/**
+ * Render table with Grid style (traditional bordered table)
+ */
+function renderTableGrid(doc: PDFKit.PDFDocument, invoice: Invoice, tableTop: number, font: string, primaryColor: string): void {
+    const col1 = 50;
+    const col2 = 250;
+    const col3 = 340;
+    const col4 = 390;
+    const col5 = 450;
+    const col6 = 510;
+
+    // Table Header
+    doc.fontSize(9)
+        .font(`${font}-Bold`)
+        .text('Pos.', col1, tableTop)
+        .text('Beschreibung', col2, tableTop)
+        .text('Menge', col3, tableTop)
+        .text('Preis', col4, tableTop)
+        .text('MwSt.', col5, tableTop)
+        .text('Summe', col6, tableTop, { align: 'right', width: 40 });
+
+    // Header underline
+    let yPosition = tableTop + 20;
+    doc.moveTo(50, yPosition - 5)
+        .lineTo(550, yPosition - 5)
+        .stroke();
+
+    // Invoice Lines
+    invoice.lines?.forEach((line, index) => {
+        const lineTotal = line.quantity * line.unit_price;
+
+        doc.fontSize(9)
+            .font(font)
+            .text((index + 1).toString(), col1, yPosition)
+            .text(line.description, col2, yPosition, { width: 80 })
+            .text(line.quantity.toFixed(2), col3, yPosition)
+            .text(formatCurrency(line.unit_price), col4, yPosition)
+            .text(`${line.tax_rate}%`, col5, yPosition)
+            .text(formatCurrency(lineTotal), col6, yPosition, { align: 'right', width: 40 });
+
+        yPosition += 25;
+    });
+
+    // Line before totals
+    yPosition += 10;
+    doc.moveTo(350, yPosition)
+        .lineTo(550, yPosition)
+        .stroke();
+}
+
+/**
+ * Render table with Gestrafft/Minimal style (clean, compact, no borders)
+ */
+function renderTableGestrafft(doc: PDFKit.PDFDocument, invoice: Invoice, tableTop: number, font: string, primaryColor: string): void {
+    const colDesc = 50;
+    const colQty = 340;
+    const colPrice = 420;
+    const colTax = 480;
+    const colTotal = 510;
+
+    // Table Header (subtle, no borders)
+    doc.fontSize(9)
+        .font(`${font}-Bold`)
+        .fillColor('#666666')
+        .text('Pos.', colDesc, tableTop)
+        .text('Beschreibung', colDesc + 50, tableTop)
+        .text('Menge', colQty, tableTop)
+        .text('Preis', colPrice, tableTop)
+        .text('MwSt.', colTax, tableTop)
+        .text('Summe', colTotal, tableTop, { align: 'right', width: 40 });
+
+    // Subtle separator
+    let yPosition = tableTop + 18;
+    doc.moveTo(50, yPosition)
+        .lineTo(550, yPosition)
+        .strokeColor('#e5e7eb')
+        .lineWidth(0.5)
+        .stroke()
+        .strokeColor('#000000')
+        .lineWidth(1);
+
+    yPosition += 10;
+
+    // Invoice Lines (clean, spacious)
+    invoice.lines?.forEach((line, index) => {
+        const lineTotal = line.quantity * line.unit_price;
+
+        doc.fontSize(9)
+            .font(font)
+            .fillColor('#000000')
+            .text((index + 1).toString(), colDesc, yPosition)
+            .text(line.description, colDesc + 50, yPosition, { width: 280 })
+            .text(line.quantity.toFixed(2), colQty, yPosition)
+            .text(formatCurrency(line.unit_price), colPrice, yPosition)
+            .text(`${line.tax_rate}%`, colTax, yPosition)
+            .text(formatCurrency(lineTotal), colTotal, yPosition, { align: 'right', width: 40 });
+
+        yPosition += 22;
+    });
+
+    // Subtle line before totals
+    yPosition += 5;
+    doc.moveTo(350, yPosition)
+        .lineTo(550, yPosition)
+        .strokeColor('#e5e7eb')
+        .lineWidth(0.5)
+        .stroke()
+        .strokeColor('#000000')
+        .lineWidth(1);
 }
 
 // Helper functions
