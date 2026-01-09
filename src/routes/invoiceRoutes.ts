@@ -184,4 +184,81 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     }
 });
 
+/**
+ * POST /api/invoices/from-order/:orderId
+ * Create invoice from order
+ */
+router.post('/from-order/:orderId', async (req: Request, res: Response) => {
+    try {
+        const { createInvoiceFromOrder } = await import('../services/invoicing/orderToInvoice');
+        const invoice = await createInvoiceFromOrder(req.tenantId!, req.params.orderId);
+        res.json(invoice);
+    } catch (error: any) {
+        console.error('Error creating invoice from order:', error);
+        res.status(500).json({ error: 'Failed to create invoice from order', message: error.message });
+    }
+});
+
+/**
+ * POST /api/invoices/bulk-from-orders
+ * Create invoices from multiple orders
+ * Body: { orderIds: string[] }
+ */
+router.post('/bulk-from-orders', async (req: Request, res: Response) => {
+    try {
+        const { orderIds } = req.body;
+
+        if (!Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'orderIds array is required' });
+        }
+
+        const { createInvoiceFromOrder } = await import('../services/invoicing/orderToInvoice');
+        const results = {
+            success: [] as any[],
+            failed: [] as { orderId: string; error: string }[]
+        };
+
+        // Process orders sequentially to avoid database conflicts
+        for (const orderId of orderIds) {
+            try {
+                const invoice = await createInvoiceFromOrder(req.tenantId!, orderId);
+                results.success.push(invoice);
+            } catch (error: any) {
+                results.failed.push({
+                    orderId,
+                    error: error.message || 'Unknown error'
+                });
+            }
+        }
+
+        res.json(results);
+    } catch (error: any) {
+        console.error('Error in bulk invoice creation:', error);
+        res.status(500).json({ error: 'Bulk invoice creation failed', message: error.message });
+    }
+});
+
+/**
+ * GET /api/invoices/by-order/:orderId
+ * Get invoice for specific order
+ */
+router.get('/by-order/:orderId', async (req: Request, res: Response) => {
+    try {
+        const { db } = await import('@core/database');
+        const invoice = await db.get(
+            'SELECT * FROM invoices WHERE source_order_id = ? AND tenant_id = ?',
+            [req.params.orderId, req.tenantId]
+        );
+
+        if (!invoice) {
+            return res.status(404).json({ error: 'Invoice not found for this order' });
+        }
+
+        res.json(invoice);
+    } catch (error: any) {
+        console.error('Error fetching invoice by order:', error);
+        res.status(500).json({ error: 'Failed to fetch invoice', message: error.message });
+    }
+});
+
 export default router;
