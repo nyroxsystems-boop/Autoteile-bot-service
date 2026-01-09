@@ -69,7 +69,7 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
                 quantity: item.quantity,
                 unit_price: item.price,
                 tax_rate: taxRate as 0 | 7 | 19,
-                tax_code: taxRate === 0 ? 'EXEMPT' : 'STANDARD' as 'STANDARD' | 'REDUCED' | 'EXEMPT'
+                tax_code: (taxRate === 0 ? 'TAX_FREE' : 'STANDARD') as TaxCode
             };
         });
 
