@@ -87,7 +87,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
 
             // Header - Company Info
             doc.fontSize(20)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .fillColor(primaryColor)
                 .text(companyInfo.name, 50, headerY);
 
@@ -104,7 +104,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             // Invoice Details (Right Side)
             const rightX = 350;
             doc.fontSize(14)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .fillColor(primaryColor)
                 .text('RECHNUNG', rightX, headerY);
 
@@ -112,18 +112,18 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
                 .font(font)
                 .fillColor('#000000')
                 .text(`Nummer:`, rightX, headerY + 20)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .text(invoice.invoice_number, rightX + 80, headerY + 20);
 
             doc.font(font)
                 .text(`Datum:`, rightX, headerY + 35)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .text(formatDate(invoice.issue_date), rightX + 80, headerY + 35);
 
             if (invoice.due_date) {
-                doc.font(font)
+                doc.font('Helvetica')
                     .text(`Fällig:`, rightX, headerY + 50)
-                    .font(`${font}-Bold`)
+                    .font('Helvetica-Bold')
                     .text(formatDate(invoice.due_date), rightX + 80, headerY + 50);
             }
 
@@ -134,7 +134,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
                 .text('Rechnung an:', 50, customerY);
 
             doc.fontSize(11)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .text(invoice.customer_name || 'Kunde', 50, customerY + 20);
 
             // Line separator
@@ -175,7 +175,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
 
             yPosition += 15;
             doc.fontSize(12)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .text('Gesamtbetrag:', 400, yPosition)
                 .text(formatCurrency(invoice.gross_amount), 510, yPosition, { align: 'right', width: 40 });
 
@@ -197,7 +197,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             // Payment terms
             yPosition += 40;
             doc.fontSize(9)
-                .font(`${font}-Bold`)
+                .font('Helvetica-Bold')
                 .text('Zahlungsbedingungen:', 50, yPosition);
 
             yPosition += 15;
@@ -208,7 +208,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             if (invoice.notes) {
                 yPosition += 30;
                 doc.fontSize(9)
-                    .font(`${font}-Bold`)
+                    .font('Helvetica-Bold')
                     .text('Hinweise:', 50, yPosition);
 
                 yPosition += 15;
@@ -273,7 +273,7 @@ function renderTableGrid(doc: PDFKit.PDFDocument, invoice: Invoice, tableTop: nu
 
     // Table Header
     doc.fontSize(9)
-        .font(`${font}-Bold`)
+        .font('Helvetica-Bold')
         .text('Pos.', col1, tableTop)
         .text('Beschreibung', col2, tableTop)
         .text('Menge', col3, tableTop)
@@ -322,7 +322,7 @@ function renderTableGestrafft(doc: PDFKit.PDFDocument, invoice: Invoice, tableTo
 
     // Table Header (subtle, no borders)
     doc.fontSize(9)
-        .font(`${font}-Bold`)
+        .font('Helvetica-Bold')
         .fillColor('#666666')
         .text('Pos.', colDesc, tableTop)
         .text('Beschreibung', colDesc + 50, tableTop)
