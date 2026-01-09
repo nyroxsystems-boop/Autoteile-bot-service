@@ -3,7 +3,7 @@
 
 import { createInvoice } from './invoiceService';
 import { db } from '@core/database';
-import type { CreateInvoiceRequest } from '../../types/tax';
+import type { CreateInvoiceRequest, TaxCode } from '../../types/tax';
 
 interface Order {
     id: string;
