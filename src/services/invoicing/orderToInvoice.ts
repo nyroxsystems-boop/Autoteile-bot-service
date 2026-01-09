@@ -62,12 +62,16 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
         }
 
         // Map order items to invoice lines
-        const invoiceLines = orderItems.map(item => ({
-            description: item.product_name,
-            quantity: item.quantity,
-            unit_price: item.price,
-            tax_rate: (item.tax_rate || 19) as 0 | 7 | 19 // Default to 19% if not specified
-        }));
+        const invoiceLines = orderItems.map(item => {
+            const taxRate = item.tax_rate || 19;
+            return {
+                description: item.product_name,
+                quantity: item.quantity,
+                unit_price: item.price,
+                tax_rate: taxRate as 0 | 7 | 19,
+                tax_code: taxRate === 0 ? 'EXEMPT' : 'STANDARD' as 'STANDARD' | 'REDUCED' | 'EXEMPT'
+            };
+        });
 
         // Create invoice request
         const invoiceData: CreateInvoiceRequest = {
