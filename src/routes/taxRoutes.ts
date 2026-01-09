@@ -127,6 +127,35 @@ router.post('/periods', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/tax/export/:year/:month
+ * Export monthly tax report
+ */
+router.get('/export/:year/:month', async (req: Request, res: Response) => {
+    try {
+        const { year, month } = req.params;
+
+        // Calculate period start and end
+        const periodStart = `${year}-${month.padStart(2, '0')}-01`;
+        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+        const periodEnd = `${year}-${month.padStart(2, '0')}-${lastDay}`;
+
+        // Calculate tax period
+        const calculation = await calculateTaxPeriod(req.tenantId!, periodStart, periodEnd);
+
+        // For now, return JSON (PDF generation can be added later)
+        res.json({
+            period: `${month}/${year}`,
+            period_start: periodStart,
+            period_end: periodEnd,
+            ...calculation
+        });
+    } catch (error: any) {
+        console.error('Error exporting monthly report:', error);
+        res.status(500).json({ error: 'Failed to export monthly report', message: error.message });
+    }
+});
+
+/**
  * POST /api/tax/periods/:id/export
  * Export tax period (XML + PDF)
  */
