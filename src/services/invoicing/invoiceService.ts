@@ -234,7 +234,9 @@ export async function listInvoices(
         invoice.lines = lines;
     }
 
-    return invoices;
+    
+    // Normalize all invoices to convert string numbers to actual numbers
+    return invoices.map(inv => normalizeInvoice(inv));
 }
 
 /**
