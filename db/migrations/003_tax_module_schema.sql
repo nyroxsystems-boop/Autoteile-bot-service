@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS tax_profiles (
 CREATE INDEX IF NOT EXISTS idx_tax_profiles_tenant ON tax_profiles(tenant_id);
 
 -- Invoices
-CREATE TABLE IF NOT EXISTS invoices (\n    id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS invoices (
+    id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     invoice_number VARCHAR(50) NOT NULL,
     issue_date DATE NOT NULL,
