@@ -32,8 +32,8 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
     try {
         // Fetch order details
         const order = await db.get<Order>(
-            'SELECT * FROM orders WHERE id = ? AND tenant_id = ?',
-            [orderId, tenantId]
+            'SELECT * FROM orders WHERE id = ?',
+            [orderId]
         );
 
         if (!order) {
