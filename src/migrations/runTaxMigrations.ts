@@ -9,6 +9,7 @@ export async function runTaxMigrations(): Promise<void> {
     try {
         console.log('Running tax module migrations...');
 
+        // Step 1: Run initial schema (CREATE TABLE IF NOT EXISTS)
         const schemaPath = path.join(__dirname, '../services/tax/schema.sql');
 
         if (!fs.existsSync(schemaPath)) {
@@ -32,6 +33,31 @@ export async function runTaxMigrations(): Promise<void> {
                 if (!error.message.includes('already exists')) {
                     console.error('[MIGRATION] Error executing statement:', error.message);
                     throw error;
+                }
+            }
+        }
+
+        console.log('✅ Initial tax schema created/verified');
+
+        // Step 2: Run additional migrations (ALTER TABLE, etc.)
+        const migrationsDir = path.join(__dirname, '../../db/migrations');
+
+        if (fs.existsSync(migrationsDir)) {
+            const migrationFiles = fs.readdirSync(migrationsDir)
+                .filter(f => f.startsWith('004_') && f.endsWith('.sql'))
+                .sort();
+
+            for (const file of migrationFiles) {
+                console.log(`[MIGRATION] Running ${file}...`);
+                const migrationPath = path.join(migrationsDir, file);
+                const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+
+                try {
+                    await db.run(migrationSql);
+                    console.log(`✅ ${file} completed`);
+                } catch (error: any) {
+                    console.error(`[MIGRATION] Error in ${file}:`, error.message);
+                    // Continue with other migrations even if one fails
                 }
             }
         }
