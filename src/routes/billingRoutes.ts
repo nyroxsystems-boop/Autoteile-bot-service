@@ -23,33 +23,54 @@ export function createBillingRouter(): Router {
         return res.status(404).json({ error: "PDF not available" });
     });
 
-    router.get("/settings/billing/tenant/", async (_req: Request, res: Response) => {
-        const defaultSettings = {
-            company_name: 'AutoTeile Müller GmbH',
-            address_line1: 'Musterstraße 123',
-            address_line2: '',
-            city: 'München',
-            postal_code: '80331',
-            country: 'Deutschland',
-            tax_id: 'DE123456789',
-            iban: 'DE89370400440532013000',
-            email: 'info@autoteile-mueller.de',
-            phone: '+49 89 123456',
-            invoice_template: 'modern',
-            invoice_color: '#4F8BFF',
-            invoice_font: 'Inter',
-            logo_position: 'left',
-            number_position: 'top-right',
-            address_layout: 'classic',
-            table_style: 'modern',
-            accent_color: '#4F8BFF'
-        };
-        return res.status(200).json(defaultSettings);
+    // Design Settings Endpoints
+    router.get("/settings/billing/tenant/", async (req: Request, res: Response) => {
+        try {
+            const tenantId = (req as any).tenantId;
+            if (!tenantId) {
+                return res.status(400).json({ error: 'Tenant ID required' });
+            }
+
+            const { getDesignSettings } = await import('../services/invoicing/designSettingsService');
+            const settings = await getDesignSettings(tenantId);
+
+            if (!settings) {
+                // Return default settings if not configured
+                const defaultSettings = {
+                    invoice_color: '#000000',
+                    accent_color: '#f3f4f6',
+                    invoice_font: 'helvetica',
+                    logo_position: 'left',
+                    number_position: 'right',
+                    address_layout: 'two-column',
+                    table_style: 'grid'
+                };
+                return res.status(200).json(defaultSettings);
+            }
+
+            return res.status(200).json(settings);
+        } catch (err: any) {
+            logger.error("Error fetching billing settings", { error: err.message });
+            return res.status(500).json({ error: "Failed to fetch billing settings" });
+        }
     });
 
     router.put("/settings/billing/tenant/", async (req: Request, res: Response) => {
-        logger.info("Billing settings updated", { settings: req.body });
-        return res.status(200).json({ success: true });
+        try {
+            const tenantId = (req as any).tenantId;
+            if (!tenantId) {
+                return res.status(400).json({ error: 'Tenant ID required' });
+            }
+
+            const { upsertDesignSettings } = await import('../services/invoicing/designSettingsService');
+            const settings = await upsertDesignSettings(tenantId, req.body);
+
+            logger.info("Billing settings updated", { tenantId, settings: req.body });
+            return res.status(200).json(settings);
+        } catch (err: any) {
+            logger.error("Error updating billing settings", { error: err.message });
+            return res.status(500).json({ error: "Failed to update billing settings" });
+        }
     });
 
     return router;

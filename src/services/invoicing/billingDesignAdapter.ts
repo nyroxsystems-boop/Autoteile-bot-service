@@ -16,37 +16,43 @@ interface BillingDesign {
     company_zip?: string;
 }
 
-const WAWI_API_URL = process.env.WAWI_API_URL || 'http://localhost:8000';
+import { getDesignSettings } from './designSettingsService';
 
 /**
- * Fetch billing design settings from WAWI API
+ * Fetch billing design settings from local database
  * Returns null if not found or on error (graceful fallback)
  */
 export async function fetchBillingDesign(tenantId: string): Promise<BillingDesign | null> {
     try {
         console.log(`[BillingDesign] Fetching design for tenant: ${tenantId}`);
 
-        const response = await fetch(`${WAWI_API_URL}/api/billing/settings`, {
-            method: 'GET',
-            headers: {
-                'X-Tenant-ID': tenantId,
-                'Content-Type': 'application/json',
-            },
-        });
+        const settings = await getDesignSettings(tenantId);
 
-        if (!response.ok) {
-            console.warn(`[BillingDesign] No design found (${response.status}), using defaults`);
+        if (!settings) {
+            console.warn(`[BillingDesign] No design found for tenant ${tenantId}, using defaults`);
             return null;
         }
 
-        const design = await response.json();
         console.log(`[BillingDesign] Design loaded successfully:`, {
-            color: design.invoice_color,
-            font: design.invoice_font,
-            hasLogo: !!design.logo_base64,
+            color: settings.invoice_color,
+            font: settings.invoice_font,
+            hasLogo: !!settings.logo_base64,
         });
 
-        return design;
+        return {
+            invoice_color: settings.invoice_color,
+            invoice_font: settings.invoice_font,
+            logo_position: settings.logo_position,
+            number_position: settings.number_position,
+            address_layout: settings.address_layout,
+            table_style: settings.table_style,
+            accent_color: settings.accent_color,
+            logo_base64: settings.logo_base64 || undefined,
+            company_name: settings.company_name || undefined,
+            company_address: settings.company_address || undefined,
+            company_city: settings.company_city || undefined,
+            company_zip: settings.company_zip || undefined,
+        };
     } catch (error: any) {
         console.warn('[BillingDesign] Failed to fetch design, using defaults:', error.message);
         return null;
