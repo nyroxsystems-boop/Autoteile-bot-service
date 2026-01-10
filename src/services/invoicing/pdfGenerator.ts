@@ -53,9 +53,12 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
 
             // Load billing design (colors, logo, fonts)
             const design = await fetchBillingDesign(tenantId);
+            console.log('[PDF] Design loaded:', design);
             const primaryColor = design?.invoice_color || '#000000';
             const accentColor = design?.accent_color || '#f3f4f6';
             const font = design?.invoice_font ? mapFont(design.invoice_font) : 'Helvetica';
+            const tableStyle = design?.table_style || 'grid';
+            console.log('[PDF] Using settings:', { primaryColor, accentColor, font, tableStyle });
 
             // Create PDF document
             const doc = new PDFDocument({
@@ -144,7 +147,6 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
 
             // Render table based on design style
             const tableTop = customerY + 80;
-            const tableStyle = design?.table_style || 'grid';
 
             if (tableStyle === 'gestreift' || tableStyle === 'minimal') {
                 // Gestrafft/Minimal: Clean, compact layout without borders
