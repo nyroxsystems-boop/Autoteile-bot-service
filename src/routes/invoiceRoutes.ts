@@ -12,6 +12,10 @@ import {
     cancelInvoice,
     deleteInvoice
 } from '../services/invoicing/invoiceService';
+import {
+    upsertDesignSettings,
+    getDesignSettings
+} from '../services/invoicing/designSettingsService';
 
 const router = Router();
 
@@ -259,6 +263,60 @@ router.get('/by-order/:orderId', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Error fetching invoice by order:', error);
         res.status(500).json({ error: 'Failed to fetch invoice', message: error.message });
+    }
+});
+
+/**
+ * GET /api/invoices/settings/billing
+ * Get billing design settings for tenant
+ */
+router.get('/settings/billing', async (req: Request, res: Response) => {
+    try {
+        console.log(`[Settings] GET request for tenant: ${req.tenantId}`);
+        const settings = await getDesignSettings(req.tenantId!);
+
+        if (!settings) {
+            console.log(`[Settings] No settings found for tenant: ${req.tenantId}, returning defaults`);
+            // Return default settings if none exist
+            return res.json({
+                tenant_id: req.tenantId,
+                invoice_template: 'modern',
+                invoice_color: '#000000',
+                invoice_font: 'Inter',
+                logo_position: 'left',
+                number_position: 'right',
+                address_layout: 'side-by-side',
+                table_style: 'grid',
+                accent_color: '#f3f4f6',
+                show_logo: true,
+                show_qr_code: false
+            });
+        }
+
+        console.log(`[Settings] Settings found for tenant: ${req.tenantId}`);
+        res.json(settings);
+    } catch (error: any) {
+        console.error('[Settings] Error fetching design settings:', error);
+        res.status(500).json({ error: 'Failed to fetch design settings', message: error.message });
+    }
+});
+
+/**
+ * PUT /api/invoices/settings/billing
+ * Update billing design settings for tenant
+ */
+router.put('/settings/billing', async (req: Request, res: Response) => {
+    try {
+        console.log(`[Settings] PUT request for tenant: ${req.tenantId}`);
+        console.log(`[Settings] Request body:`, JSON.stringify(req.body, null, 2));
+
+        const settings = await upsertDesignSettings(req.tenantId!, req.body);
+        console.log(`[Settings] Settings saved successfully for tenant: ${req.tenantId}`);
+
+        res.json(settings);
+    } catch (error: any) {
+        console.error('[Settings] Error updating design settings:', error);
+        res.status(500).json({ error: 'Failed to update design settings', message: error.message });
     }
 });
 
