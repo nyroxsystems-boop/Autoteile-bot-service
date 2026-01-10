@@ -17,11 +17,11 @@ interface Order {
 }
 
 interface OrderItem {
-    Ausweis: string;              // Primary key (UUID)
-    Bestellnummer: string;        // Order ID link
-    Produktname: string;          // Product name
-    Preis: number;                // Price
-    Marke?: string;               // Brand
+    id: string;                   // Primary key
+    order_id: string;             // Order ID link
+    product_name: string;         // Product name
+    price: number;                // Price
+    brand?: string;               // Brand
     quantity?: number;            // Quantity (may not exist in shop_offers)
     tax_rate?: number;            // Tax rate (may not exist)
 }
@@ -52,9 +52,9 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
             return existingInvoice;
         }
 
-        // Fetch order items from shop_offers table
+        // Fetch order items from shop_offers table (using correct column name)
         const orderItems = await db.all<OrderItem>(
-            'SELECT * FROM shop_offers WHERE Bestellnummer = ?',
+            'SELECT * FROM shop_offers WHERE order_id = ?',
             [orderId]
         );
 
@@ -67,9 +67,9 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
             const taxRate = item.tax_rate || 19;
             const quantity = item.quantity || 1; // Default to 1 if not specified
             return {
-                description: item.Produktname,
+                description: item.product_name,
                 quantity: quantity,
-                unit_price: item.Preis,
+                unit_price: item.price,
                 tax_rate: taxRate as 0 | 7 | 19,
                 tax_code: (taxRate === 0 ? 'TAX_FREE' : 'STANDARD') as TaxCode
             };
