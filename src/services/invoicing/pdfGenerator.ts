@@ -52,13 +52,22 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             }
 
             // Load billing design (colors, logo, fonts)
+            console.log('[PDF] Step 1: Loading design settings for tenant:', tenantId);
             const design = await fetchBillingDesign(tenantId);
-            console.log('[PDF] Design loaded:', design);
+            console.log('[PDF] Step 2: Design loaded:', JSON.stringify(design, null, 2));
+
             const primaryColor = design?.invoice_color || '#000000';
             const accentColor = design?.accent_color || '#f3f4f6';
             const font = design?.invoice_font ? mapFont(design.invoice_font) : 'Helvetica';
             const tableStyle = design?.table_style || 'grid';
-            console.log('[PDF] Using settings:', { primaryColor, accentColor, font, tableStyle });
+
+            console.log('[PDF] Step 3: Extracted settings:', {
+                primaryColor,
+                accentColor,
+                font,
+                tableStyle,
+                hasDesign: !!design
+            });
 
             // Create PDF document
             const doc = new PDFDocument({
