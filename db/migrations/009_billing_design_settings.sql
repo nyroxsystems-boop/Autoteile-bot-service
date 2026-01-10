@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS billing_design_settings (
     company_zip TEXT,
     
     -- Timestamps
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
     -- Constraints
     UNIQUE(tenant_id)
