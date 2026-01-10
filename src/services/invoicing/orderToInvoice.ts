@@ -54,7 +54,7 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
 
         // Fetch order items from shop_offers table
         const orderItems = await db.all<OrderItem>(
-            'SELECT * FROM shop_offers WHERE Bestellnummer = ?',
+                        'SELECT * FROM shop_offers WHERE order_id = ?',
             [orderId]
         );
 
