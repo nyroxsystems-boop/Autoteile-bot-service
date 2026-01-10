@@ -175,6 +175,31 @@ export async function getInvoiceById(tenantId: string, invoiceId: string): Promi
 }
 
 /**
+ * Get invoice by invoice number with lines
+ */
+export async function getInvoiceByNumber(tenantId: string, invoiceNumber: string): Promise<Invoice> {
+    const invoice = await db.get<Invoice>(
+        `SELECT * FROM invoices WHERE invoice_number = ? AND tenant_id = ?`,
+        [invoiceNumber, tenantId]
+    );
+
+    if (!invoice) {
+        throw new Error('Invoice not found');
+    }
+
+    // Get invoice lines
+    const lines = await db.all<InvoiceLine>(
+        `SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY created_at`,
+        [invoice.id]
+    );
+
+    return normalizeInvoice({
+        ...invoice,
+        lines
+    });
+}
+
+/**
  * List invoices for tenant with optional filters
  */
 export async function listInvoices(
@@ -234,7 +259,7 @@ export async function listInvoices(
         invoice.lines = lines;
     }
 
-    
+
     // Normalize all invoices to convert string numbers to actual numbers
     return invoices.map(inv => normalizeInvoice(inv));
 }

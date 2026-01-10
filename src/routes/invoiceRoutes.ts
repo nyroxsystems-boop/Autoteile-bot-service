@@ -5,6 +5,7 @@ import { Router, Request, Response } from 'express';
 import {
     createInvoice,
     getInvoiceById,
+    getInvoiceByNumber,
     listInvoices,
     updateInvoice,
     markInvoiceAsPaid,
@@ -146,9 +147,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         console.log(`[PDF] Loading PDF generator module...`);
         const { generateInvoicePDF } = await import('../services/invoicing/pdfGenerator');
 
-        // Step 2: Fetch invoice from database
+        // Step 2: Fetch invoice from database by invoice number
         console.log(`[PDF] Fetching invoice from database...`);
-        const invoice = await getInvoiceById(req.tenantId!, req.params.id);
+        const invoice = await getInvoiceByNumber(req.tenantId!, req.params.id);
         console.log(`[PDF] Invoice found: ${invoice.invoice_number}, status: ${invoice.status}, lines: ${invoice.lines?.length || 0}`);
 
         // Step 3: Generate PDF
