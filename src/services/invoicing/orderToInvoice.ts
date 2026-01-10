@@ -89,7 +89,14 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
         // Create invoice
         const invoice = await createInvoice(tenantId, invoiceData);
 
+        // Update order with generated invoice ID and status
+        await db.run(
+            'UPDATE orders SET generated_invoice_id = ?, status = ? WHERE id = ?',
+            [invoice.invoice_number, 'invoiced', orderId]
+        );
+
         console.log(`✅ Invoice ${invoice.invoice_number} created for order ${orderId}`);
+        console.log(`✅ Order ${orderId} updated with invoice ${invoice.invoice_number}`);
 
         return invoice;
 
