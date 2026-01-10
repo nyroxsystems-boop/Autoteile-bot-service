@@ -20,7 +20,7 @@ const requireTenant = (req: Request, res: Response, next: Function) => {
     if (!tenantId) {
         return res.status(400).json({ error: 'X-Tenant-ID header is required' });
     }
-    req.tenantId = tenantId;
+    (req as any).tenantId = tenantId;
     next();
 };
 
@@ -32,7 +32,7 @@ router.use(requireTenant);
  */
 router.get('/profile', async (req: Request, res: Response) => {
     try {
-        const profile = await getTaxProfile(req.tenantId!);
+        const profile = await getTaxProfile((req as any).tenantId!);
         if (!profile) {
             return res.status(404).json({ error: 'Tax profile not found. Please configure tax settings.' });
         }
@@ -49,7 +49,7 @@ router.get('/profile', async (req: Request, res: Response) => {
  */
 router.put('/profile', async (req: Request, res: Response) => {
     try {
-        const profile = await upsertTaxProfile(req.tenantId!, req.body);
+        const profile = await upsertTaxProfile((req as any).tenantId!, req.body);
         res.json(profile);
     } catch (error: any) {
         console.error('Error updating tax profile:', error);
@@ -64,7 +64,7 @@ router.put('/profile', async (req: Request, res: Response) => {
 router.get('/periods', async (req: Request, res: Response) => {
     try {
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 12;
-        const periods = await listTaxPeriods(req.tenantId!, limit);
+        const periods = await listTaxPeriods((req as any).tenantId!, limit);
         res.json(periods);
     } catch (error: any) {
         console.error('Error listing tax periods:', error);
@@ -78,7 +78,7 @@ router.get('/periods', async (req: Request, res: Response) => {
  */
 router.get('/periods/:id', async (req: Request, res: Response) => {
     try {
-        const period = await getTaxPeriodById(req.tenantId!, req.params.id);
+        const period = await getTaxPeriodById((req as any).tenantId!, req.params.id);
         res.json(period);
     } catch (error: any) {
         console.error('Error fetching tax period:', error);
@@ -98,7 +98,7 @@ router.post('/periods/calculate', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'period_start and period_end are required' });
         }
 
-        const aggregation = await calculateTaxPeriod(req.tenantId!, period_start, period_end);
+        const aggregation = await calculateTaxPeriod((req as any).tenantId!, period_start, period_end);
         res.json(aggregation);
     } catch (error: any) {
         console.error('Error calculating tax period:', error);
@@ -118,7 +118,7 @@ router.post('/periods', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'period_start and period_end are required' });
         }
 
-        const period = await saveTaxPeriod(req.tenantId!, period_start, period_end, 'calculated');
+        const period = await saveTaxPeriod((req as any).tenantId!, period_start, period_end, 'calculated');
         res.json(period);
     } catch (error: any) {
         console.error('Error saving tax period:', error);
@@ -140,7 +140,7 @@ router.get('/export/:year/:month', async (req: Request, res: Response) => {
         const periodEnd = `${year}-${month.padStart(2, '0')}-${lastDay}`;
 
         // Calculate tax period
-        const calculation = await calculateTaxPeriod(req.tenantId!, periodStart, periodEnd);
+        const calculation = await calculateTaxPeriod((req as any).tenantId!, periodStart, periodEnd);
 
         // For now, return JSON (PDF generation can be added later)
         res.json({
@@ -163,7 +163,7 @@ router.post('/periods/:id/export', async (req: Request, res: Response) => {
     try {
         // TODO: Implement export logic in next phase
         // For now, just mark as exported
-        const period = await markPeriodAsExported(req.tenantId!, req.params.id);
+        const period = await markPeriodAsExported((req as any).tenantId!, req.params.id);
 
         res.json({
             message: 'Export functionality will be implemented in Phase 2',
