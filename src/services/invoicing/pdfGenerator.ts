@@ -271,9 +271,10 @@ function renderTableGrid(doc: PDFKit.PDFDocument, invoice: Invoice, tableTop: nu
     const col5 = 450;
     const col6 = 510;
 
-    // Table Header
-    doc.fontSize(9)
+    // Table Header - Enhanced visibility
+    doc.fontSize(10)
         .font('Helvetica-Bold')
+        .fillColor(primaryColor)
         .text('Pos.', col1, tableTop)
         .text('Beschreibung', col2, tableTop)
         .text('Menge', col3, tableTop)
@@ -281,11 +282,15 @@ function renderTableGrid(doc: PDFKit.PDFDocument, invoice: Invoice, tableTop: nu
         .text('MwSt.', col5, tableTop)
         .text('Summe', col6, tableTop, { align: 'right', width: 40 });
 
-    // Header underline
-    let yPosition = tableTop + 20;
+    // Header underline - Stronger
+    let yPosition = tableTop + 22;
     doc.moveTo(50, yPosition - 5)
         .lineTo(550, yPosition - 5)
-        .stroke();
+        .strokeColor(primaryColor)
+        .lineWidth(1.5)
+        .stroke()
+        .strokeColor('#000000')
+        .lineWidth(1);
 
     // Invoice Lines
     invoice.lines?.forEach((line, index) => {
@@ -320,10 +325,10 @@ function renderTableGestrafft(doc: PDFKit.PDFDocument, invoice: Invoice, tableTo
     const colTax = 480;
     const colTotal = 510;
 
-    // Table Header (subtle, no borders)
-    doc.fontSize(9)
+    // Table Header - Enhanced visibility
+    doc.fontSize(10)
         .font('Helvetica-Bold')
-        .fillColor('#666666')
+        .fillColor(primaryColor)
         .text('Pos.', colDesc, tableTop)
         .text('Beschreibung', colDesc + 50, tableTop)
         .text('Menge', colQty, tableTop)
