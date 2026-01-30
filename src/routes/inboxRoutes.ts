@@ -31,7 +31,7 @@ async function getAdminFromToken(req: Request): Promise<any | null> {
     const session = await db.get<any>(
         `SELECT s.*, a.* FROM admin_sessions s 
          JOIN admin_users a ON s.admin_id = a.id 
-         WHERE s.token = ? AND s.expires_at > datetime('now')`,
+         WHERE s.token = $1 AND s.expires_at > NOW()`,
         [token]
     );
 
