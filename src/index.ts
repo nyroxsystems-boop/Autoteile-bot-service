@@ -177,6 +177,10 @@ app.use("/api/admin/emails", emailTemplatesRouter);
 import botTestingRouter from "./routes/botTestingRoutes";
 app.use("/api/bot-testing", botTestingRouter);
 
+// Inbox API (Admin Email Management)
+import inboxRouter from "./routes/inboxRoutes";
+app.use("/api/inbox", inboxRouter);
+
 // External Shop Integration (Phase 10)
 import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
 app.use("/api/integrations", shopIntegrationRouter);
@@ -208,6 +212,12 @@ initDb().then(async () => {
   const { runMigration: runActivityLogMigration } = await import('./migrations/003_admin_activity_log');
   await runActivityLogMigration().catch(err => {
     console.error('Activity log migration failed (non-critical):', err);
+  });
+
+  // Run email assignments migration
+  const { runMigration: runEmailAssignmentsMigration } = await import('./migrations/004_email_assignments');
+  await runEmailAssignmentsMigration().catch(err => {
+    console.error('Email assignments migration failed (non-critical):', err);
   });
 
   app.listen(env.port, () => {

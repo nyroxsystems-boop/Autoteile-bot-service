@@ -398,14 +398,14 @@ router.patch("/update-email", async (req: Request, res: Response) => {
 
 /**
  * POST /api/admin-auth/fix-emails (one-time migration helper)
- * Updates all admin emails to unique addresses
+ * Updates all admin emails to correct addresses
  */
 router.post("/fix-emails", async (_req: Request, res: Response) => {
     const emailMap: Record<string, string> = {
-        'Elias': 'elias@partsunion.de',
-        'Aaron': 'aaron@partsunion.de',
-        'Fecat': 'fecat@partsunion.de',
-        'Bardia': 'bardia@partsunion.de'
+        'Elias': 'elias.zafar@partsunion.de',
+        'Aaron': 'aaron.vogt@partsunion.de',
+        'Fecat': 'fecat.blawat@partsunion.de',
+        'Bardia': 'bardia.bagherian@partsunion.de'
     };
 
     try {
@@ -421,6 +421,144 @@ router.post("/fix-emails", async (_req: Request, res: Response) => {
     } catch (error: any) {
         console.error("Fix emails error:", error);
         return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/admin-auth/change-password
+ * Change current admin's password
+ */
+router.post("/change-password", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Aktuelles und neues Passwort erforderlich" });
+    }
+
+    if (newPassword.length < 8) {
+        return res.status(400).json({ error: "Neues Passwort muss mindestens 8 Zeichen haben" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        // Find valid session
+        const session = await db.get<any>(
+            `SELECT s.*, a.password_hash FROM admin_sessions s 
+             JOIN admin_users a ON s.admin_id = a.id 
+             WHERE s.token = ? AND s.expires_at > datetime('now')`,
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Session abgelaufen" });
+        }
+
+        // Verify current password
+        const currentHash = hashPassword(currentPassword);
+        if (session.password_hash !== currentHash) {
+            return res.status(400).json({ error: "Aktuelles Passwort ist falsch" });
+        }
+
+        // Update password
+        const newHash = hashPassword(newPassword);
+        await db.run(
+            'UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+            [newHash, session.admin_id]
+        );
+
+        console.log(`✅ Password changed for admin ID: ${session.admin_id}`);
+
+        return res.json({ success: true, message: "Passwort erfolgreich geändert" });
+
+    } catch (error: any) {
+        console.error("Change password error:", error);
+        return res.status(500).json({ error: "Fehler beim Ändern des Passworts" });
+    }
+});
+
+/**
+ * PATCH /api/admin-auth/update-signature
+ * Update current admin's email signature
+ */
+router.patch("/update-signature", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const { signature } = req.body;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        // Find valid session
+        const session = await db.get<any>(
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > datetime('now')`,
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Session abgelaufen" });
+        }
+
+        // Update signature
+        await db.run(
+            'UPDATE admin_users SET signature = ? WHERE id = ?',
+            [signature || '', session.admin_id]
+        );
+
+        return res.json({ success: true, message: "Signatur aktualisiert" });
+
+    } catch (error: any) {
+        console.error("Update signature error:", error);
+        return res.status(500).json({ error: "Fehler beim Aktualisieren der Signatur" });
+    }
+});
+
+/**
+ * GET /api/admin-auth/profile
+ * Get current admin's profile including signature
+ */
+router.get("/profile", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        const session = await db.get<any>(
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > datetime('now')`,
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Session abgelaufen" });
+        }
+
+        const admin = await db.get<any>(
+            `SELECT id, username, email, full_name, signature, imap_password_encrypted IS NOT NULL as has_imap_setup, created_at, last_login 
+             FROM admin_users WHERE id = ?`,
+            [session.admin_id]
+        );
+
+        if (!admin) {
+            return res.status(404).json({ error: "Admin nicht gefunden" });
+        }
+
+        return res.json(admin);
+
+    } catch (error: any) {
+        console.error("Get profile error:", error);
+        return res.status(500).json({ error: "Fehler beim Abrufen des Profils" });
     }
 });
 
