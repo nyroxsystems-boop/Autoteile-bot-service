@@ -341,4 +341,87 @@ router.post("/reset-password", async (req: Request, res: Response) => {
     }
 });
 
+/**
+ * PATCH /api/admin-auth/update-email
+ * Update current admin's email address (for password reset capability)
+ */
+router.patch("/update-email", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const { email } = req.body;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: "Gültige E-Mail-Adresse erforderlich" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        // Find valid session
+        const session = await db.get<any>(
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > datetime('now')`,
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Session abgelaufen" });
+        }
+
+        // Update email
+        await db.run(
+            'UPDATE admin_users SET email = ? WHERE id = ?',
+            [email.toLowerCase().trim(), session.admin_id]
+        );
+
+        // Get updated admin
+        const admin = await db.get<any>(
+            'SELECT username FROM admin_users WHERE id = ?',
+            [session.admin_id]
+        );
+
+        console.log(`✅ Email updated for admin: ${admin?.username} -> ${email}`);
+
+        return res.json({
+            success: true,
+            message: "E-Mail-Adresse aktualisiert",
+            email: email.toLowerCase().trim()
+        });
+
+    } catch (error: any) {
+        console.error("Update email error:", error);
+        return res.status(500).json({ error: "Fehler beim Aktualisieren der E-Mail" });
+    }
+});
+
+/**
+ * POST /api/admin-auth/fix-emails (one-time migration helper)
+ * Updates all admin emails to unique addresses
+ */
+router.post("/fix-emails", async (_req: Request, res: Response) => {
+    const emailMap: Record<string, string> = {
+        'Elias': 'elias@partsunion.de',
+        'Aaron': 'aaron@partsunion.de',
+        'Fecat': 'fecat@partsunion.de',
+        'Bardia': 'bardia@partsunion.de'
+    };
+
+    try {
+        for (const [username, email] of Object.entries(emailMap)) {
+            await db.run(
+                'UPDATE admin_users SET email = ? WHERE username = ?',
+                [email, username]
+            );
+            console.log(`✅ Fixed email for ${username}: ${email}`);
+        }
+
+        return res.json({ success: true, message: "Admin-E-Mails aktualisiert" });
+    } catch (error: any) {
+        console.error("Fix emails error:", error);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;

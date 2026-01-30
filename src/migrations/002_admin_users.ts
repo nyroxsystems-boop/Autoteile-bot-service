@@ -8,10 +8,10 @@ import { createHash, randomUUID } from 'crypto';
 
 const INITIAL_PASSWORD = 'Test007!';
 const ADMIN_USERS = [
-    { username: 'Elias', email: 'info@partsunion.de' },
-    { username: 'Aaron', email: 'info@partsunion.de' },
-    { username: 'Fecat', email: 'info@partsunion.de' },
-    { username: 'Bardia', email: 'info@partsunion.de' }
+    { username: 'Elias', email: 'elias@partsunion.de' },
+    { username: 'Aaron', email: 'aaron@partsunion.de' },
+    { username: 'Fecat', email: 'fecat@partsunion.de' },
+    { username: 'Bardia', email: 'bardia@partsunion.de' }
 ];
 
 function hashPassword(password: string): string {
