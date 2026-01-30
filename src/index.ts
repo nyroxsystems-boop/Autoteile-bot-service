@@ -44,21 +44,33 @@ import { authMiddleware } from "./middleware/authMiddleware";
 const app = express();
 
 // Middleware
+// Always include these critical domains
+const alwaysAllowedOrigins = [
+  'https://admin.partsunion.de',
+  'https://app.partsunion.de',
+  'https://partsunion.de',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174'
+];
+
+// Additional origins from env (if any)
+const envOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [
+    'https://autoteile-dashboard.onrender.com',
+    'https://crm-system.onrender.com',
+    'https://admin-dashboard.onrender.com',
+    'https://admin-dashboard-ufau.onrender.com'
+  ];
+
+// Merge and deduplicate
+const allowedOrigins = [...new Set([...alwaysAllowedOrigins, ...envOrigins])];
+
+console.log('[CORS] Allowed origins:', allowedOrigins);
+
 const corsOptions = {
-  origin: process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : [
-      'https://autoteile-dashboard.onrender.com',
-      'https://crm-system.onrender.com',
-      'https://admin-dashboard.onrender.com',
-      'https://admin-dashboard-ufau.onrender.com',
-      'https://admin.partsunion.de',
-      'https://app.partsunion.de',
-      'https://partsunion.de',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Device-ID', 'X-Tenant-ID'],
   credentials: true,
