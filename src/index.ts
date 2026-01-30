@@ -161,6 +161,10 @@ app.use("/api/admin-auth", adminAuthRouter);
 import emailTemplatesRouter from "./routes/emailTemplatesRoutes";
 app.use("/api/admin/emails", emailTemplatesRouter);
 
+// Bot Testing API (Admin Dashboard OEM Simulator)
+import botTestingRouter from "./routes/botTestingRoutes";
+app.use("/api/bot-testing", botTestingRouter);
+
 // External Shop Integration (Phase 10)
 import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
 app.use("/api/integrations", shopIntegrationRouter);
