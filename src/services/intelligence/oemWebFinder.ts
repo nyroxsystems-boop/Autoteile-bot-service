@@ -355,31 +355,21 @@ async function searchOemOnEbay(ctx: SearchContext): Promise<OemCandidate[]> {
 // ----------------------------------
 
 export async function fallbackResolveOem(ctx: SearchContext): Promise<string | null> {
-  // KI-gestützter Fallback: Versuche zuerst eine Nummer im Usertext, danach OpenAI-Guess.
+  // KI-gestützter Fallback: Versuche zuerst eine Nummer im Usertext, danach Gemini-Guess.
   const match = ctx.userQuery.match(/\b(?=.*\d)[A-Z0-9][A-Z0-9\.\-\s]{4,20}[A-Z0-9]\b/i);
   if (match) return normalizeOem(match[0]);
 
-  // OpenAI-gestützter Guess basierend auf Fahrzeug + Teilname
-  if (process.env.OPENAI_API_KEY) {
+  // Gemini-gestützter Guess basierend auf Fahrzeug + Teilname
+  if (process.env.GEMINI_API_KEY) {
     try {
-      const prompt = `Fahrzeugdaten:\n${JSON.stringify(ctx.vehicle, null, 2)}\nTeil: ${ctx.userQuery}\n\nGib eine JSON-Antwort: {\"oems\": [\"<OEM1>\", \"<OEM2>\"]}. Keine Erklärungen. OEMs normalisiert (Großbuchstaben, keine Sonderzeichen).`;
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
-          messages: [
-            { role: "system", content: "Du bist ein Automotive-OEM-Detektor. Antworte strikt mit JSON und plausiblen OEM-Nummern." },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0
-        })
+      const prompt = `Fahrzeugdaten:\n${JSON.stringify(ctx.vehicle, null, 2)}\nTeil: ${ctx.userQuery}\n\nGib eine JSON-Antwort: {"oems": ["<OEM1>", "<OEM2>"]}. Keine Erklärungen. OEMs normalisiert (Großbuchstaben, keine Sonderzeichen).`;
+      const txt = await generateChatCompletion({
+        messages: [
+          { role: "system", content: "Du bist ein Automotive-OEM-Detektor. Antworte strikt mit JSON und plausiblen OEM-Nummern." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0
       });
-      const data = await res.json();
-      const txt = data?.choices?.[0]?.message?.content || "";
       let parsed: any = null;
       try {
         parsed = JSON.parse(txt);
@@ -461,7 +451,7 @@ function smartExtractOems(html: string, ctx: SearchContext): string[] {
 
 export async function findBestOemForVehicle(ctx: SearchContext, useFallback = true): Promise<BestOemResult> {
   // Query-Expansion über OpenAI
-  const extraQueries = await openAiSuggestQueries(ctx);
+  const extraQueries = await geminiSuggestQueries(ctx);
   const queryVariants = [ctx.suspectedNumber || undefined, ctx.userQuery, ...extraQueries].filter(
     (v): v is string => typeof v === "string" && v.length > 0
   );
@@ -513,7 +503,7 @@ export async function findBestOemForVehicle(ctx: SearchContext, useFallback = tr
   }
 
   // OpenAI-Reranking
-  bestOem = await openAiRerank(bestOem, candidates, ctx);
+  bestOem = await geminiRerank(bestOem, candidates, ctx);
 
   // Fallback, falls nichts gefunden
   let fallbackUsed = false;

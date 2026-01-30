@@ -140,6 +140,7 @@ export async function langchainCallOrchestrator(payload: {
         const prompt = createPromptTemplate();
 
         // 3. Create agent with tools
+        // @ts-ignore - LangChain type instantiation is excessively deep
         const agent = await createToolCallingAgent({
             llm,
             tools: allTools,

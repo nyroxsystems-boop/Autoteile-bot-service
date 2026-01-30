@@ -49,6 +49,7 @@ const EscalateHumanSchema = z.object({
 /**
  * OEM Lookup Tool - Resolves part OEM numbers using 5-layer validation
  */
+// @ts-ignore - LangChain type instantiation is excessively deep
 export const oemLookupTool = tool(
     async (input) => {
         logger.info("[LangChain Tool] OEM Lookup", { input });
@@ -101,6 +102,7 @@ export const oemLookupTool = tool(
 /**
  * Stock Check Tool - Checks dealer inventory for part availability
  */
+// @ts-ignore - LangChain type instantiation is excessively deep
 export const stockCheckTool = tool(
     async (input) => {
         logger.info("[LangChain Tool] Stock Check", { oemNumber: input.oemNumber });
@@ -147,6 +149,7 @@ export const stockCheckTool = tool(
 /**
  * Order Status Tool - Retrieves status of customer orders
  */
+// @ts-ignore - LangChain type instantiation is excessively deep
 export const orderStatusTool = tool(
     async (input) => {
         logger.info("[LangChain Tool] Order Status", { input });
@@ -212,6 +215,7 @@ export const orderStatusTool = tool(
 /**
  * Escalate Human Tool - Hands off to a human agent
  */
+// @ts-ignore - LangChain type instantiation is excessively deep
 export const escalateHumanTool = tool(
     async (input) => {
         logger.info("[LangChain Tool] Escalate to Human", { reason: input.reason, urgency: input.urgency });
