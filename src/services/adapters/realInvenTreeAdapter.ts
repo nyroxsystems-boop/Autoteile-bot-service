@@ -356,7 +356,7 @@ export async function processStockAction(tenantId: string, partId: string | numb
     }
 }
 
-async function getStockItemForPart(tenantId: string, partId: string | number) {
+export async function getStockItemForPart(tenantId: string, partId: string | number) {
     const response = await api.get('/api/stock/', {
         params: { part: partId },
         headers: getTenantHeaders(tenantId)

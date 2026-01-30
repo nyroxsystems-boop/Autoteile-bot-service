@@ -43,10 +43,10 @@ exports.parseUserMessage = parseUserMessage;
 exports.handleIncomingBotMessage = handleIncomingBotMessage;
 const openai_1 = __importDefault(require("openai"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const supabaseService_1 = require("@adapters/supabaseService");
+const supabaseService_1 = require("../adapters/supabaseService");
 const oemRequiredFieldsService_1 = require("../intelligence/oemRequiredFieldsService");
-const oemService = __importStar(require("@intelligence/oemService"));
-const logger_1 = require("@utils/logger");
+const oemService = __importStar(require("../intelligence/oemService"));
+const logger_1 = require("../../utils/logger");
 const scrapingService_1 = require("../scraping/scrapingService");
 const generalQaPrompt_1 = require("../../prompts/generalQaPrompt");
 const textNluPrompt_1 = require("../../prompts/textNluPrompt");
@@ -271,7 +271,7 @@ async function callOrchestrator(payload) {
         // Use dynamic require so tests that mock `./openAiService` after this module
         // was loaded (compiled dist tests) still influence the invoked function.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const gen = require("./openAiService").generateChatCompletion;
+        const gen = require("../intelligence/openAiService").generateChatCompletion;
         const raw = await gen({
             messages: [
                 { role: "system", content: orchestratorPrompt_1.ORCHESTRATOR_PROMPT },
@@ -331,6 +331,13 @@ async function callOrchestrator(payload) {
     }
     catch (err) {
         const elapsed = Date.now() - startTime;
+        // IMMEDIATE DETAILED ERROR LOG
+        console.error("❌❌❌ ORCHESTRATOR FAILED ❌❌❌");
+        console.error("Error message:", err?.message);
+        console.error("Error type:", err?.constructor?.name);
+        console.error("Error code:", err?.code);
+        console.error("Status code:", err?.status || err?.statusCode);
+        console.error("Full error:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
         logger_1.logger.error("❌ Orchestrator call FAILED", {
             error: err?.message,
             errorType: err?.constructor?.name,

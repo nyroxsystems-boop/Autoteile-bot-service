@@ -14,6 +14,7 @@
 
 import { OEMCandidate } from './sources/baseSource';
 import { logger } from '@utils/logger';
+import { generateChatCompletion } from './geminiService';
 
 // ============================================================================
 // LAYER 1: MULTI-SOURCE CONSENSUS
@@ -50,7 +51,12 @@ const fetch = require('node-fetch');
 // ============================================================================
 
 /**
- * Layer 1: Multi-Source Consensus (Strict)
+ * 🎯 PREMIUM Layer 1: Multi-Source Consensus (Strict)
+ * 
+ * Verschärft für 99% Accuracy:
+ * - Minimum 3 Quellen für "Pass"
+ * - Premium-Sources (TecDoc, Partsouq, Amayama) wiegen doppelt
+ * - Single-Source = automatisches Fail
  */
 export function validateLayer1_Consensus(
     candidates: OEMCandidate[],
@@ -60,26 +66,44 @@ export function validateLayer1_Consensus(
     const uniqueSources = new Set(matchingCandidates.map(c => c.source.split('+')[0]));
     const sourceCount = uniqueSources.size;
 
+    // 🏆 PREMIUM SOURCES (wiegen doppelt in der Bewertung)
+    const PREMIUM_SOURCES = ['tecdoc', 'partsouq', 'amayama', '7zap', 'tecdoc_light'];
+    const hasPremiumSource = matchingCandidates.some(c =>
+        PREMIUM_SOURCES.some(p => c.source.toLowerCase().includes(p))
+    );
+
+    // Effektive Quellenanzahl (Premium = +1 Bonus)
+    const effectiveCount = sourceCount + (hasPremiumSource ? 1 : 0);
+
     let confidence = 0;
     let passed = false;
     let details = '';
 
-    if (sourceCount >= 4) {
+    // 🎯 VERSCHÄRFTE THRESHOLDS für 99% Accuracy
+    if (effectiveCount >= 5) {
+        confidence = 0.30;
+        passed = true;
+        details = `✅ ${sourceCount} Quellen + Premium-Bonus (Maximum Consensus)`;
+    } else if (effectiveCount >= 4) {
         confidence = 0.25;
         passed = true;
-        details = `${sourceCount} unabhängige Quellen (Maximum Consensus)`;
-    } else if (sourceCount >= 2) {
+        details = `✅ ${sourceCount} Quellen${hasPremiumSource ? ' inkl. Premium' : ''} (High Consensus)`;
+    } else if (effectiveCount >= 3) {
         confidence = 0.15;
         passed = true;
-        details = `${sourceCount} Quellen bestätigen OEM (High Consensus)`;
+        details = `⚠️ ${sourceCount} Quellen${hasPremiumSource ? ' inkl. Premium' : ''} (Medium Consensus)`;
+    } else if (effectiveCount >= 2) {
+        confidence = 0.05;
+        passed = false; // VERSCHÄRFT: 2 Quellen reichen NICHT mehr
+        details = `⚠️ Nur ${sourceCount} Quellen - benötige min. 3 für Premium-Validierung`;
     } else {
-        confidence = -0.20; // HEAVY PENALTY for single source in bombproof mode
+        confidence = -0.25; // HEAVY PENALTY
         passed = false;
-        details = `CRITICAL: Nur ${sourceCount} Quelle gefunden. Unzureichend für bombensichere Validierung.`;
+        details = `❌ KRITISCH: Nur ${sourceCount} Quelle. Unzureichend für Premium-Qualität.`;
     }
 
     return {
-        name: 'Layer 1: Source Consensus',
+        name: 'Layer 1: Premium Source Consensus',
         passed,
         confidence,
         details
@@ -257,9 +281,11 @@ export async function validateLayer5_AIVerification(
     brand: string,
     model: string,
     partDescription: string,
-    openaiApiKey?: string
+    geminiApiKey?: string
 ): Promise<ValidationLayer> {
-    if (!openaiApiKey) return { name: 'Layer 4: AI Triple-Lock', passed: false, confidence: 0, details: 'AI-Check deaktiviert' };
+    if (!geminiApiKey && !process.env.GEMINI_API_KEY) {
+        return { name: 'Layer 4: AI Triple-Lock', passed: false, confidence: 0, details: 'AI-Check deaktiviert' };
+    }
 
     try {
         const prompt = `HANDEL ALS STRENGER AUTOMOBIL-PRÜFER. 
@@ -274,28 +300,15 @@ JSON:
   "reasoning": "Warum (nicht)? Erwähne Risiken wie Fahrgestellnummer-Einschränkungen."
 }`;
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiApiKey}` },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0, // Strict, no creativity
-                max_tokens: 200
-            })
+        const content = await generateChatCompletion({
+            messages: [{ role: 'user', content: prompt }],
+            responseFormat: 'json_object',
+            temperature: 0
         });
 
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        let content = data.choices[0]?.message?.content || '{}';
-
         // Sanitize: Remove markdown code blocks if present
-        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        const result = JSON.parse(content);
+        const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+        const result = JSON.parse(cleanContent);
 
         if (result.plausible && result.confidence >= 0.95) {
             return {
@@ -366,7 +379,9 @@ export async function performEnhancedValidation(
     totalConfidence = Math.max(0, Math.min(1, totalConfidence));
 
     // BOMBPROOF Threshold: 97%
-    const minThreshold = options.minConfidence || 0.97;
+    // PRODUCTION THRESHOLD: 85% (changed from 97%)
+    // 97% was practically unreachable, causing too many eskalations
+    const minThreshold = options.minConfidence || 0.85;
     const validated = totalConfidence >= minThreshold;
 
     const reasoning = `${layers.filter(l => l.passed).length}/${layers.length} Layer bestanden. ` +

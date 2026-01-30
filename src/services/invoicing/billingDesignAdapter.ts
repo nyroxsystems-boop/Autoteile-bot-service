@@ -71,7 +71,9 @@ export function mapFont(designerFont: string): string {
         'arial': 'Helvetica',
     };
 
-    return fontMap[designerFont] || 'Helvetica';
+    // Normalize to lowercase for case-insensitive matching
+    const normalizedFont = designerFont?.toLowerCase() || '';
+    return fontMap[normalizedFont] || 'Helvetica';
 }
 
 /**

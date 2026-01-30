@@ -7,3 +7,8 @@ autoteile.db
 dist/
 dist
 dist/
+
+# OEM Database (too large for git)
+oem-data/*.sqlite
+oem-data/*.sqlite-wal
+oem-data/*.sqlite-shm

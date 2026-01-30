@@ -1,0 +1,296 @@
+openapi: 3.0.3
+info:
+  title: PartsUnion WhatsApp Bot API
+  description: |
+    B2B Auto Parts WhatsApp Bot Service API.
+    
+    Features:
+    - WhatsApp message handling via Twilio
+    - Vehicle document OCR extraction
+    - OEM part number resolution (multi-source)
+    - Shop offer scraping and comparison
+    - Order management and status tracking
+    - WAWI/InvenTree inventory integration
+  version: 2.0.0
+  contact:
+    name: PartsUnion Support
+    email: support@partsunion.de
+
+servers:
+  - url: https://bot-service.onrender.com
+    description: Production
+  - url: http://localhost:3001
+    description: Local Development
+
+tags:
+  - name: Orders
+    description: Order management endpoints
+  - name: OEM
+    description: OEM part number resolution
+  - name: Bot
+    description: WhatsApp bot endpoints
+  - name: Auth
+    description: Authentication endpoints
+  - name: Health
+    description: Service health checks
+
+paths:
+  /api/orders:
+    get:
+      summary: List orders
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, pending, confirmed, processing, shipped, delivered]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/orders/{orderId}:
+    get:
+      summary: Get order by ID
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/oem/resolve:
+    post:
+      summary: Resolve OEM part number
+      description: Multi-source OEM resolution with consensus validation
+      tags: [OEM]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OEMResolverRequest'
+      responses:
+        '200':
+          description: OEM resolution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OEMResolverResult'
+
+  /webhook/whatsapp:
+    post:
+      summary: Twilio WhatsApp Webhook
+      description: Receives incoming WhatsApp messages from Twilio
+      tags: [Bot]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                From:
+                  type: string
+                Body:
+                  type: string
+                NumMedia:
+                  type: string
+      responses:
+        '200':
+          description: TwiML response
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /api/auth/login:
+    post:
+      summary: User login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+
+  /health:
+    get:
+      summary: Health check
+      tags: [Health]
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [new, pending, confirmed, processing, shipped, delivered]
+        contact_number:
+          type: string
+        vehicle_description:
+          type: string
+        part_description:
+          type: string
+        oem_number:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    OEMResolverRequest:
+      type: object
+      required: [partQuery, vehicle]
+      properties:
+        partQuery:
+          type: object
+          properties:
+            rawText:
+              type: string
+            normalizedPart:
+              type: string
+        vehicle:
+          type: object
+          properties:
+            make:
+              type: string
+            model:
+              type: string
+            year:
+              type: integer
+            vin:
+              type: string
+            hsn:
+              type: string
+            tsn:
+              type: string
+
+    OEMResolverResult:
+      type: object
+      properties:
+        oem:
+          type: string
+        confidence:
+          type: number
+        status:
+          type: string
+          enum: [vetted, reliable, low_confidence, no_match]
+        sourceCount:
+          type: integer
+        candidates:
+          type: array
+          items:
+            type: object
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unhealthy]
+        uptime:
+          type: number
+        version:
+          type: string
+        database:
+          type: string
+          enum: [connected, disconnected]
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

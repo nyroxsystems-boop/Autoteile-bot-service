@@ -1,6 +1,6 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { OEMSource, clampConfidence, logSourceResult } from "./baseSource";
-import { generateChatCompletion } from "../openAiService";
+import { generateChatCompletion } from "../geminiService";
 
 /**
  * Uses LLM to guess potential OEM numbers based on vehicle data and part description.
@@ -29,7 +29,7 @@ Setze Confidence auf 0.5-0.7 je nach Sicherheit.`;
           { role: "system", content: "Du bist ein erfahrener KFZ-Teilehändler mit Zugriff auf TecDoc-Cross-Referenz-Wissen. Sei extrem präzise." },
           { role: "user", content: prompt }
         ],
-        model: "gpt-4.1-mini" // or gpt-4o if available for better reasoning
+        // Uses default Gemini model
       });
 
       const start = raw.indexOf("[");

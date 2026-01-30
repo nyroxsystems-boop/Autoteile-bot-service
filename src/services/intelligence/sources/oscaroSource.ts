@@ -13,11 +13,13 @@ export const oscaroSource: OEMSource = {
 
     async resolveCandidates(req: any): Promise<OEMCandidate[]> {
         try {
-            const { vehicle, partDescription } = req;
+            // FIXED: Use correct schema from OEMResolverRequest
+            const vehicle = req.vehicle || {};
+            const partDescription = req.partQuery?.rawText || "";
 
             // Oscaro uses a structured search with vehicle selection
             const parts = [
-                vehicle.brand,
+                vehicle.make,  // FIXED: was vehicle.brand
                 vehicle.model,
                 vehicle.year,
                 partDescription

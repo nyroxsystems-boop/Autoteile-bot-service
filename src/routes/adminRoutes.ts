@@ -351,6 +351,443 @@ router.post("/onboarding/shop", async (req: Request, res: Response) => {
     }
 });
 
+// --- OEM Database Management (Seeder Controls) ---
+
+import { spawn } from "child_process";
+import * as path from "path";
+
+// Get OEM Database Stats
+router.get("/oem-database/stats", async (_req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+
+        // Check if database exists
+        const fs = require('fs');
+        if (!fs.existsSync(dbPath)) {
+            return res.json({
+                exists: false,
+                totalRecords: 0,
+                sizeBytes: 0,
+                brands: []
+            });
+        }
+
+        const oemDb = new Database(dbPath, { readonly: true });
+
+        const total = oemDb.prepare('SELECT COUNT(*) as count FROM oem_records').get();
+        const brands = oemDb.prepare('SELECT brand, COUNT(*) as count FROM oem_records GROUP BY brand ORDER BY count DESC').all();
+        const categories = oemDb.prepare('SELECT part_category, COUNT(*) as count FROM oem_records GROUP BY part_category ORDER BY count DESC LIMIT 5').all();
+
+        const stats = fs.statSync(dbPath);
+
+        oemDb.close();
+
+        return res.json({
+            exists: true,
+            totalRecords: total.count,
+            sizeBytes: stats.size,
+            sizeMB: (stats.size / 1024 / 1024).toFixed(2),
+            brands,
+            categories
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Active seeder processes
+const activeSeederJobs = new Map<string, { pid: number; status: string; output: string[]; startTime: Date }>();
+
+// Trigger OEM Seeder Script
+router.post("/oem-database/seed", async (req: Request, res: Response) => {
+    try {
+        const { script = 'massive' } = req.body;
+
+        const scriptMap: Record<string, string> = {
+            'massive': 'seedOemMassive.js',
+            'remaining': 'addRemainingOems.js',
+            'standalone': 'seedOemDatabaseStandalone.js'
+        };
+
+        const scriptFile = scriptMap[script];
+        if (!scriptFile) {
+            return res.status(400).json({ error: `Unknown script: ${script}. Use: massive, remaining, standalone` });
+        }
+
+        const scriptPath = path.join(__dirname, '../scripts', scriptFile);
+        const jobId = `seed-${Date.now()}`;
+
+        // Start the seeder process
+        const child = spawn('node', [scriptPath], {
+            cwd: path.join(__dirname, '..'),
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        const job = {
+            pid: child.pid || 0,
+            status: 'running',
+            output: [] as string[],
+            startTime: new Date()
+        };
+
+        activeSeederJobs.set(jobId, job);
+
+        child.stdout.on('data', (data: Buffer) => {
+            const lines = data.toString().split('\n').filter(l => l.trim());
+            job.output.push(...lines.slice(-50)); // Keep last 50 lines
+            if (job.output.length > 100) job.output = job.output.slice(-50);
+        });
+
+        child.stderr.on('data', (data: Buffer) => {
+            job.output.push(`[ERROR] ${data.toString()}`);
+        });
+
+        child.on('close', (code: number) => {
+            job.status = code === 0 ? 'completed' : 'failed';
+        });
+
+        return res.json({
+            success: true,
+            jobId,
+            message: `Started ${scriptFile}`,
+            pid: child.pid
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Check seeder job status
+router.get("/oem-database/seed/:jobId", async (req: Request, res: Response) => {
+    const { jobId } = req.params;
+    const job = activeSeederJobs.get(jobId);
+
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    return res.json({
+        jobId,
+        status: job.status,
+        pid: job.pid,
+        startTime: job.startTime,
+        output: job.output.slice(-20) // Last 20 lines
+    });
+});
+
+// Quick seed - add specific number of records
+router.post("/oem-database/quick-seed", async (req: Request, res: Response) => {
+    try {
+        const { brand = 'VOLKSWAGEN', count = 1000 } = req.body;
+
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath);
+
+        const categories = ['brake', 'filter', 'suspension', 'cooling', 'engine', 'electrical'];
+        const prefixes = ['5Q0', '3G0', '1K0', '7E0', '06L', '04E'];
+        const parts = ['615301', '615601', '698151', '129620', '819653', '121111'];
+        const suffixes = ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+        const insert = db.prepare(`
+            INSERT OR IGNORE INTO oem_records (oem, brand, part_category, part_description, confidence, sources)
+            VALUES (?, ?, ?, ?, 0.7, '["quick-seed"]')
+        `);
+
+        const insertBatch = db.transaction(() => {
+            for (let i = 0; i < count; i++) {
+                const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+                const part = parts[Math.floor(Math.random() * parts.length)];
+                const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+                const category = categories[Math.floor(Math.random() * categories.length)];
+
+                insert.run(`${prefix}${part}${suffix}`, brand, category, `${brand} ${category} part`);
+            }
+        });
+
+        insertBatch();
+
+        const total = db.prepare('SELECT COUNT(*) as count FROM oem_records').get();
+        db.close();
+
+        return res.json({
+            success: true,
+            added: count,
+            brand,
+            totalRecords: total.count
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// --- OEM Registry CRUD (Search, View, Edit, Delete) ---
+
+// List/Search OEM Records with pagination and filters
+router.get("/oem-records", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+
+        const fs = require('fs');
+        if (!fs.existsSync(dbPath)) {
+            return res.json({ records: [], total: 0 });
+        }
+
+        const db = new Database(dbPath, { readonly: true });
+
+        // Query params
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+        const offset = (page - 1) * limit;
+        const search = req.query.search as string || '';
+        const brand = req.query.brand as string || '';
+        const category = req.query.category as string || '';
+        const sortBy = req.query.sortBy as string || 'oem';
+        const sortOrder = req.query.sortOrder === 'desc' ? 'DESC' : 'ASC';
+
+        // Build query
+        let whereClause = '1=1';
+        const params: any[] = [];
+
+        if (search) {
+            whereClause += ' AND (oem LIKE ? OR part_description LIKE ? OR model LIKE ?)';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        if (brand) {
+            whereClause += ' AND brand = ?';
+            params.push(brand);
+        }
+
+        if (category) {
+            whereClause += ' AND part_category = ?';
+            params.push(category);
+        }
+
+        // Get total count
+        const totalStmt = db.prepare(`SELECT COUNT(*) as count FROM oem_records WHERE ${whereClause}`);
+        const total = totalStmt.get(...params).count;
+
+        // Get records
+        const allowedSortFields = ['oem', 'brand', 'part_category', 'confidence', 'created_at'];
+        const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'oem';
+
+        const recordsStmt = db.prepare(`
+            SELECT id, oem, brand, part_category, part_description, model, confidence, sources, created_at
+            FROM oem_records 
+            WHERE ${whereClause}
+            ORDER BY ${sortField} ${sortOrder}
+            LIMIT ? OFFSET ?
+        `);
+
+        const records = recordsStmt.all(...params, limit, offset);
+
+        // Get unique brands for filter
+        const brands = db.prepare('SELECT DISTINCT brand FROM oem_records WHERE brand IS NOT NULL ORDER BY brand').all();
+        const categories = db.prepare('SELECT DISTINCT part_category FROM oem_records WHERE part_category IS NOT NULL ORDER BY part_category').all();
+
+        db.close();
+
+        return res.json({
+            records,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            filters: {
+                brands: brands.map((b: any) => b.brand),
+                categories: categories.map((c: any) => c.part_category)
+            }
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Get single OEM record
+router.get("/oem-records/:id", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath, { readonly: true });
+
+        const record = db.prepare('SELECT * FROM oem_records WHERE id = ?').get(req.params.id);
+        db.close();
+
+        if (!record) {
+            return res.status(404).json({ error: 'OEM record not found' });
+        }
+
+        return res.json(record);
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Update OEM record
+router.put("/oem-records/:id", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath);
+
+        const { oem, brand, part_category, part_description, model, confidence } = req.body;
+
+        const stmt = db.prepare(`
+            UPDATE oem_records 
+            SET oem = COALESCE(?, oem),
+                brand = COALESCE(?, brand),
+                part_category = COALESCE(?, part_category),
+                part_description = COALESCE(?, part_description),
+                model = COALESCE(?, model),
+                confidence = COALESCE(?, confidence),
+                sources = json_insert(COALESCE(sources, '[]'), '$[#]', 'manual-edit')
+            WHERE id = ?
+        `);
+
+        const result = stmt.run(oem, brand, part_category, part_description, model, confidence, req.params.id);
+        db.close();
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'OEM record not found' });
+        }
+
+        return res.json({ success: true, updated: result.changes });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Create new OEM record
+router.post("/oem-records", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath);
+
+        const { oem, brand, part_category, part_description, model, confidence = 0.9 } = req.body;
+
+        if (!oem || !brand) {
+            return res.status(400).json({ error: 'OEM and brand are required' });
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO oem_records (oem, brand, part_category, part_description, model, confidence, sources)
+            VALUES (?, ?, ?, ?, ?, ?, '["manual-entry"]')
+        `);
+
+        const result = stmt.run(oem, brand, part_category, part_description, model, confidence);
+        db.close();
+
+        return res.json({ success: true, id: result.lastInsertRowid });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete OEM record
+router.delete("/oem-records/:id", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath);
+
+        const result = db.prepare('DELETE FROM oem_records WHERE id = ?').run(req.params.id);
+        db.close();
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'OEM record not found' });
+        }
+
+        return res.json({ success: true, deleted: result.changes });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Bulk delete OEM records
+router.post("/oem-records/bulk-delete", async (req: Request, res: Response) => {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(__dirname, '../../oem-data/oem-database.sqlite');
+        const db = new Database(dbPath);
+
+        const { ids } = req.body;
+
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids array is required' });
+        }
+
+        const deleteMany = db.transaction((idsToDelete: number[]) => {
+            const stmt = db.prepare('DELETE FROM oem_records WHERE id = ?');
+            let deleted = 0;
+            for (const id of idsToDelete) {
+                deleted += stmt.run(id).changes;
+            }
+            return deleted;
+        });
+
+        const deleted = deleteMany(ids);
+        db.close();
+
+        return res.json({ success: true, deleted });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Run validator script
+router.post("/oem-database/validate", async (req: Request, res: Response) => {
+    try {
+        const { fix = false } = req.body;
+
+        const scriptPath = path.join(__dirname, '../scripts/validateOems.js');
+        const args = fix ? ['--fix'] : [];
+
+        const child = spawn('node', [scriptPath, ...args], {
+            cwd: path.join(__dirname, '..'),
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        const jobId = `validate-${Date.now()}`;
+
+        const job = {
+            pid: child.pid || 0,
+            status: 'running',
+            output: [] as string[],
+            startTime: new Date()
+        };
+
+        activeSeederJobs.set(jobId, job);
+
+        child.stdout.on('data', (data: Buffer) => {
+            const lines = data.toString().split('\n').filter(l => l.trim());
+            job.output.push(...lines.slice(-50));
+            if (job.output.length > 100) job.output = job.output.slice(-50);
+        });
+
+        child.stderr.on('data', (data: Buffer) => {
+            job.output.push(`[ERROR] ${data.toString()}`);
+        });
+
+        child.on('close', (code: number) => {
+            job.status = code === 0 ? 'completed' : 'failed';
+        });
+
+        return res.json({
+            success: true,
+            jobId,
+            message: `Validator started ${fix ? '(FIX mode)' : '(CHECK mode)'}`,
+            pid: child.pid
+        });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 export function createAdminRouter() {
     return router;
 }
+

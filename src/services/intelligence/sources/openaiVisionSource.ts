@@ -118,17 +118,20 @@ export const openaiVisionSource: OEMSource = {
         }
 
         try {
-            const { vehicle, partDescription, suspectedOEM } = req;
+            // FIXED: Use correct schema from OEMResolverRequest
+            const vehicle = req.vehicle || {};
+            const partDescription = req.partQuery?.rawText || "";
+            const suspectedOEM = req.partQuery?.suspectedNumber;
 
             // Build search context
-            const context = `Vehicle: ${vehicle.brand} ${vehicle.model} ${vehicle.year || ''}
+            const context = `Vehicle: ${vehicle.make} ${vehicle.model} ${vehicle.year || ''}
 Part: ${partDescription}
 ${suspectedOEM ? `Suspected OEM: ${suspectedOEM}` : ''}`;
 
             // Try multiple sources with Vision API
             const sources = [
-                `https://www.autodoc.de/search?keyword=${encodeURIComponent(`${vehicle.brand} ${vehicle.model} ${partDescription}`)}`,
-                `https://www.kfzteile24.de/search?q=${encodeURIComponent(`${vehicle.brand} ${vehicle.model} ${partDescription}`)}`
+                `https://www.autodoc.de/search?keyword=${encodeURIComponent(`${vehicle.make} ${vehicle.model} ${partDescription}`)}`,
+                `https://www.kfzteile24.de/search?q=${encodeURIComponent(`${vehicle.make} ${vehicle.model} ${partDescription}`)}`
             ];
 
             const allOems: string[] = [];

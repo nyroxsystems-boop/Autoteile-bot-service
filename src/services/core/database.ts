@@ -31,41 +31,49 @@ export async function initDb(): Promise<void> {
         console.log("[DB] Migrations completed successfully");
 
         // Seed Admin User (if not exists)
-        const adminEmail = (process.env.ADMIN_EMAIL || "nyroxsystems@gmail.com").toLowerCase();
-        const adminPassword = process.env.ADMIN_PASSWORD || "Test007!";
+        const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD;
 
-        const existingUser = await pool.query(
-            'SELECT id FROM users WHERE email = $1',
-            [adminEmail]
-        );
-
-        if (existingUser.rows.length === 0) {
-            const passwordHash = crypto.createHash('sha256').update(adminPassword).digest('hex');
-
-            await pool.query(
-                `INSERT INTO users (id, email, username, full_name, password_hash, role, is_active, merchant_id, created_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                [
-                    generateId(),
-                    adminEmail,
-                    "admin",
-                    "Admin User",
-                    passwordHash,
-                    "admin",
-                    1,
-                    "dealer-demo-001",
-                    new Date().toISOString()
-                ]
-            );
-            console.log(`[DB] Seeded admin user: ${adminEmail}`);
+        // SECURITY: Only create admin if credentials are explicitly configured
+        if (!adminEmail || !adminPassword) {
+            console.log("[DB] ⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set - skipping admin seeding");
         } else {
-            console.log("[DB] Admin user already exists");
+            const existingUser = await pool.query(
+                'SELECT id FROM users WHERE email = $1',
+                [adminEmail]
+            );
+
+            if (existingUser.rows.length === 0) {
+                // SECURITY: Use bcrypt for password hashing (10 salt rounds)
+                const bcrypt = await import('bcrypt');
+                const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+                await pool.query(
+                    `INSERT INTO users (id, email, username, full_name, password_hash, role, is_active, merchant_id, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                    [
+                        generateId(),
+                        adminEmail,
+                        "admin",
+                        "Admin User",
+                        passwordHash,
+                        "admin",
+                        1,
+                        process.env.MERCHANT_ID || "dealer-001",
+                        new Date().toISOString()
+                    ]
+                );
+                console.log(`[DB] ✅ Seeded admin user: ${adminEmail}`);
+            } else {
+                console.log("[DB] Admin user already exists");
+            }
         }
 
         // Seed demo data (orders, products) if enabled
         if (process.env.SEED_DEMO_DATA !== 'false') {
             await seedDemoData();
         }
+
 
         console.log("[DB] PostgreSQL database initialized successfully");
     } catch (error) {

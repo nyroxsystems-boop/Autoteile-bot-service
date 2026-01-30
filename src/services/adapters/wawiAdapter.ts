@@ -12,6 +12,7 @@ export type ConversationStatus =
   | "collect_delivery_preference"
   | "collect_address"
   | "await_pickup_confirmation"
+  | "cancelled"  // ADDED: For abort_order intent
   | "done";
 
 const ACTIVE_CONVERSATION_STATUSES: ConversationStatus[] = [

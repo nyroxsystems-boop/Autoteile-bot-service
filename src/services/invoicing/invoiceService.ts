@@ -66,6 +66,31 @@ function calculateInvoiceTotals(lines: Array<{ quantity: number; unit_price: num
  * Create a new invoice
  */
 export async function createInvoice(tenantId: string, data: CreateInvoiceRequest): Promise<Invoice> {
+    // Validation
+    if (!tenantId) {
+        throw new Error('Tenant ID is required');
+    }
+
+    if (!data.lines || data.lines.length === 0) {
+        throw new Error('Invoice must have at least one line item');
+    }
+
+    // Validate line items
+    for (const line of data.lines) {
+        if (!line.description || line.description.trim() === '') {
+            throw new Error('All line items must have a description');
+        }
+        if (line.quantity <= 0) {
+            throw new Error('Quantity must be greater than 0');
+        }
+        if (line.unit_price < 0) {
+            throw new Error('Unit price cannot be negative');
+        }
+        if (![0, 7, 19].includes(line.tax_rate)) {
+            throw new Error('Invalid tax rate. Must be 0, 7, or 19');
+        }
+    }
+
     const id = randomUUID();
     const now = new Date().toISOString();
 

@@ -66,6 +66,11 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Use same options for preflight
 app.use(express.json());
 
+// Rate Limiting - Apply globally to all API routes
+import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
+app.use("/api/", apiLimiter);        // Standard API limit: 60 req/min
+app.use("/api/auth", authLimiter);   // Strict auth limit: 5 req/15min
+
 // Root Route - Visual Confirmation
 app.get("/", (_req, res) => {
   res.send("🚀 AutoTeile Bot Service is running!");

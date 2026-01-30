@@ -13,10 +13,12 @@ export const pkwteileSource: OEMSource = {
 
     async resolveCandidates(req: any): Promise<OEMCandidate[]> {
         try {
-            const { vehicle, partDescription } = req;
+            // FIXED: Use correct schema from OEMResolverRequest
+            const vehicle = req.vehicle || {};
+            const partDescription = req.partQuery?.rawText || "";
 
             const parts = [
-                vehicle.brand,
+                vehicle.make,  // FIXED: was vehicle.brand
                 vehicle.model,
                 partDescription
             ].filter(Boolean);

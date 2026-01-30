@@ -82,8 +82,8 @@ exports.updatePurchaseOrder = updatePurchaseOrder;
 exports.cancelPurchaseOrder = cancelPurchaseOrder;
 exports.receivePurchaseOrder = receivePurchaseOrder;
 exports.getReorderSuggestions = getReorderSuggestions;
-const logger_1 = require("@utils/logger");
-const db = __importStar(require("@core/database"));
+const logger_1 = require("../../utils/logger");
+const db = __importStar(require("../core/database"));
 const crypto_1 = require("crypto");
 function parseJsonField(value, fallback) {
     if (value === null || value === undefined)

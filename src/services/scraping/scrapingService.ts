@@ -122,28 +122,107 @@ export async function scrapeOffersForOrder(
 }
 
 /**
- * Prüft ob das Teil im Händler-Lager vorhanden ist
- * Returns ein Angebot wenn vorhanden, sonst null
+ * 🎯 PREMIUM WAWI-INTEGRATION
+ * 
+ * Prüft ob das Teil im echten Händler-Lager (InvenTree) vorhanden ist.
+ * Returns ein Angebot wenn vorhanden, sonst null.
+ * 
+ * Nutzt die realInvenTreeAdapter APIs für echten Lagerbestandsabgleich.
  */
 async function checkDealerInventory(oemNumber: string): Promise<ScrapedOffer | null> {
-  // TODO: Hier InvenTree API oder eigene Datenbank abfragen
-  // Für jetzt: Mock-Implementierung
+  // Import dynamisch für bessere Testbarkeit
+  const { findPartByOem, getStockItemForPart } = await import("../adapters/realInvenTreeAdapter");
+  const { logger } = await import("@utils/logger");
 
-  // Beispiel: Wenn OEM-Nummer mit "1K0" beginnt, simuliere dass es auf Lager ist
-  if (oemNumber.startsWith("1K0")) {
+  const tenantId = process.env.MERCHANT_ID || "public";
+
+  try {
+    console.log("[WAWI] Checking inventory for OEM:", oemNumber);
+
+    // 1. Suche Teil in InvenTree nach OEM-Nummer
+    const part = await findPartByOem(tenantId, oemNumber);
+
+    if (!part) {
+      console.log("[WAWI] Part not found in InvenTree:", oemNumber);
+      return null;
+    }
+
+    console.log("[WAWI] Part found:", { pk: part.pk, name: part.name });
+
+    // 2. Prüfe Lagerbestand für dieses Teil
+    const stockItem = await getStockItemForPart(tenantId, part.pk);
+
+    if (!stockItem || stockItem.quantity <= 0) {
+      console.log("[WAWI] Part found but out of stock:", { pk: part.pk, quantity: stockItem?.quantity || 0 });
+      return null;
+    }
+
+    console.log("[WAWI] ✅ Part in stock!", {
+      pk: part.pk,
+      name: part.name,
+      quantity: stockItem.quantity
+    });
+
+    // 3. Berechne Verkaufspreis (aus InvenTree Pricing oder Fallback)
+    const sellingPrice = part.pricing?.selling_price
+      || part.pricing?.bom_cost
+      || part.pricing?.override_min
+      || 0;
+
+    // Fallback: Wenn kein Preis definiert, kann nicht verkauft werden
+    if (sellingPrice <= 0) {
+      console.warn("[WAWI] Part has no selling price defined:", part.pk);
+      return null;
+    }
+
+    // 4. Erstelle Premium-Angebot aus Lagerbestand
     return {
-      shopName: "Händler-Lager",
-      brand: "OEM",
-      price: 25.99, // Händler-Preis (günstiger als externe Shops)
+      shopName: "✨ Eigenes Lager",
+      brand: part.manufacturer_part || part.IPN || "OEM Original",
+      price: sellingPrice,
       currency: "EUR",
-      availability: "Sofort verfügbar",
+      availability: `${stockItem.quantity}x auf Lager`,
       deliveryTimeDays: 0, // Sofort abholbar!
-      productUrl: null, // Kein externer Link
-      imageUrl: "https://via.placeholder.com/400x300/4CAF50/white?text=Bremsscheibe+OEM", // Platzhalter-Bild
+      productUrl: null,
+      imageUrl: part.image || null,
       rating: null,
-      isRecommended: true
+      isRecommended: true // Eigenes Lager IMMER priorisiert
     };
+
+  } catch (err: any) {
+    // Bei Fehler: Log + graceful degradation zu externen Shops
+    console.error("[WAWI] Inventory check failed:", err.message);
+    logger?.warn?.("WAWI inventory check failed, falling back to external", {
+      oem: oemNumber,
+      error: err.message
+    });
+    return null;
+  }
+}
+
+/**
+ * Exportierte Funktion für externe Stock-Checks (z.B. vom Bot)
+ */
+export async function checkStockForOem(oemNumber: string): Promise<{
+  inStock: boolean;
+  quantity: number;
+  price: number | null;
+  partName: string | null;
+}> {
+  const offer = await checkDealerInventory(oemNumber);
+
+  if (!offer) {
+    return { inStock: false, quantity: 0, price: null, partName: null };
   }
 
-  return null;
+  // Parse quantity from availability string
+  const qtyMatch = offer.availability?.match(/(\d+)/);
+  const quantity = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+  return {
+    inStock: true,
+    quantity,
+    price: offer.price,
+    partName: offer.brand || null
+  };
 }

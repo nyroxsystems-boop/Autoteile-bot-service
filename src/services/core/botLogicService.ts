@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+// Gemini AI Service (replaces OpenAI)
 import fetch from "node-fetch";
 import {
   insertMessage,
@@ -27,7 +27,7 @@ import { TEXT_NLU_PROMPT } from '../../prompts/textNluPrompt';
 import { COLLECT_PART_BRAIN_PROMPT } from '../../prompts/collectPartBrainPrompt';
 import { fetchWithTimeoutAndRetry } from '../../utils/httpClient';
 import { ORCHESTRATOR_PROMPT } from '../../prompts/orchestratorPrompt';
-import { generateChatCompletion } from '../intelligence/openAiService';
+import { generateChatCompletion, generateVisionCompletion } from '../intelligence/geminiService';
 import * as fs from "fs/promises";
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
@@ -55,10 +55,7 @@ function calculateEstimatedDeliveryRange(days: number): string {
   return `${fmt(min)} - ${fmt(max)}`;
 }
 
-// KI-Client für NLU
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || ""
-});
+// Gemini is initialized in geminiService.ts
 
 async function answerGeneralQuestion(params: {
   userText: string;
@@ -86,8 +83,7 @@ async function answerGeneralQuestion(params: {
       }`) + "\n\nBitte beantworte die Frage oben.";
 
   try {
-    const response = await client.chat.completions.create({
-      model: "gpt-4.1",
+    const text = await generateChatCompletion({
       messages: [
         { role: "system", content: GENERAL_QA_SYSTEM_PROMPT },
         { role: "user", content: userPrompt }
@@ -95,11 +91,7 @@ async function answerGeneralQuestion(params: {
       temperature: 0.2
     });
 
-    let text = response.choices[0]?.message?.content?.trim() || "";
-
-    text += missingInfoSentence;
-
-    return text;
+    return (text?.trim() || "") + missingInfoSentence;
   } catch (err: any) {
     console.error("General QA failed:", err?.message);
     return language === "de"
@@ -126,16 +118,15 @@ async function runCollectPartBrain(params: {
   };
 
   try {
-    const resp = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const rawText = await generateChatCompletion({
       messages: [
         { role: "system", content: COLLECT_PART_BRAIN_PROMPT },
         { role: "user", content: JSON.stringify(payload) }
       ],
+      responseFormat: "json_object",
       temperature: 0.2
     });
 
-    const rawText = resp.choices[0]?.message?.content ?? "";
     const start = rawText.indexOf("{");
     const end = rawText.lastIndexOf("}");
     const jsonString = start !== -1 && end !== -1 && end > start ? rawText.slice(start, end + 1) : rawText;
@@ -266,19 +257,18 @@ async function verifyOemWithAi(params: {
   oem: string;
   language: string;
 }): Promise<boolean> {
-  if (!process.env.OPENAI_API_KEY) return true;
+  if (!process.env.GEMINI_API_KEY) return true;
   try {
     const prompt =
       "Prüfe, ob die OEM-Nummer zum Fahrzeug und Teil plausibel ist. Antworte NUR mit JSON: {\"ok\":true|false,\"reason\":\"...\"}.\n" +
       `Fahrzeug: ${JSON.stringify(params.vehicle)}\nTeil: ${params.part}\nOEM: ${params.oem}\n` +
       "Setze ok=false nur wenn OEM offensichtlich nicht zum Fahrzeug/Teil passen kann.";
 
-    const resp = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const raw = await generateChatCompletion({
       messages: [{ role: "user", content: prompt }],
+      responseFormat: "json_object",
       temperature: 0
     });
-    const raw = resp.choices[0]?.message?.content ?? "";
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
     const jsonString = start !== -1 && end !== -1 && end > start ? raw.slice(start, end + 1) : raw;
@@ -335,6 +325,25 @@ interface OrchestratorResult {
 
 async function callOrchestrator(payload: any): Promise<OrchestratorResult | null> {
   const startTime = Date.now();
+
+  // 🚀 LANGCHAIN AGENT FEATURE FLAG
+  // When enabled, use the new LangChain-based orchestrator
+  if (process.env.USE_LANGCHAIN_AGENT === "true") {
+    try {
+      const { langchainCallOrchestrator } = require("../intelligence/langchainAgent");
+      const sessionId = payload.from || payload.phoneNumber || "default";
+      const result = await langchainCallOrchestrator({
+        ...payload,
+        sessionId,
+      });
+      return result;
+    } catch (langchainError: any) {
+      logger.warn("🔄 LangChain agent failed, falling back to legacy orchestrator", {
+        error: langchainError?.message,
+      });
+      // Fall through to legacy implementation
+    }
+  }
 
   try {
     const userContent = JSON.stringify(payload);
@@ -945,26 +954,18 @@ Fülle unbekannte Felder mit null. rawText soll den gesamten erkannten Text enth
 `;
 
   try {
-    const resp = await client.chat.completions.create({
-      model: "gpt-4.1",
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: userPrompt },
-            { type: "image_url", image_url: { url: imageUrl } }
-          ]
-        }
-      ],
+    const fullPrompt = systemPrompt + "\n\n" + userPrompt;
+    const content = await generateVisionCompletion({
+      prompt: fullPrompt,
+      imageBase64: base64,
+      mimeType: "image/jpeg",
       temperature: 0
     });
 
-    const content = resp.choices[0]?.message?.content ?? "";
     const parsed = safeParseVehicleJson(content);
     return parsed;
   } catch (err: any) {
-    logger.error("OpenAI Vision OCR failed", { error: err?.message });
+    logger.error("Gemini Vision OCR failed", { error: err?.message });
     return {
       make: null,
       model: null,
@@ -1070,18 +1071,17 @@ Bereits angefragtes Teil: ${currentOrder?.requestedPart ?? null}
 Extrahiere neue Infos aus der Nachricht. Überschreibe bekannte Felder nur, wenn der Nutzer sie explizit korrigiert.`;
 
   try {
-    const resp = await client.chat.completions.create({
-      model: "gpt-4.1",
+    const content = await generateChatCompletion({
       messages: [
         { role: "system", content: system },
         { role: "user", content: user }
       ],
+      responseFormat: "json_object",
       temperature: 0
     });
-    const content = resp.choices[0]?.message?.content ?? "";
     return safeParseNlpJson(content);
   } catch (err: any) {
-    logger.error("OpenAI text understanding failed", { error: err?.message });
+    logger.error("Gemini text understanding failed", { error: err?.message });
     return {
       intent: "OTHER",
       requestedPart: null,
@@ -1142,21 +1142,20 @@ function isVehicleSufficientForOem(vehicle: any): boolean {
 // ------------------------------
 export async function parseUserMessage(text: string): Promise<ParsedUserMessage> {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not set");
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not set");
     }
 
     const sanitized = sanitizeText(text);
-    const resp = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const rawText = await generateChatCompletion({
       messages: [
         { role: "system", content: TEXT_NLU_PROMPT },
         { role: "user", content: sanitized }
       ],
+      responseFormat: "json_object",
       temperature: 0
     });
 
-    const rawText = resp.choices[0]?.message?.content ?? "";
     const start = rawText.indexOf("{");
     const end = rawText.lastIndexOf("}");
     const jsonString = start !== -1 && end !== -1 && end > start ? rawText.slice(start, end + 1) : rawText;
@@ -1295,10 +1294,32 @@ function sanitizeText(input: string, maxLen = 500): string {
   return trimmed.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
-type MessageIntent = "new_order" | "status_question" | "unknown";
+type MessageIntent = "new_order" | "status_question" | "abort_order" | "continue_order" | "unknown";
 function detectIntent(text: string, hasVehicleImage: boolean): MessageIntent {
   if (hasVehicleImage) return "new_order";
   const t = text.toLowerCase();
+
+  // Abort/cancel detection - user wants to stop current order
+  const abortKeywords = [
+    "abbrechen", "stornieren", "cancel", "nein doch nicht", "vergiss es",
+    "stopp", "halt", "aufhören", "nicht mehr", "egal", "lassen wir"
+  ];
+  if (abortKeywords.some((k) => t.includes(k))) return "abort_order";
+
+  // Continue with same vehicle for different part
+  const continueKeywords = [
+    "noch was", "auch noch", "außerdem", "zusätzlich", "dazu", "weiteres teil",
+    "gleiches auto", "selbes fahrzeug", "same car", "another part"
+  ];
+  if (continueKeywords.some((k) => t.includes(k))) return "continue_order";
+
+  // New order with different vehicle
+  const newOrderKeywords = [
+    "anderes auto", "anderen wagen", "neues fahrzeug", "zweites auto",
+    "other car", "different vehicle", "mein anderes"
+  ];
+  if (newOrderKeywords.some((k) => t.includes(k))) return "new_order";
+
   const statusKeywords = [
     "liefer", "zustellung", "wann", "abholung", "abholen", "zahlen", "zahlung",
     "vorkasse", "status", "wo bleibt", "retoure", "liefertermin", "tracking", "order", "bestellung"
@@ -1356,6 +1377,53 @@ export async function handleIncomingBotMessage(
           options,
         orderId: activeOrders[0].id
       };
+    }
+
+    // NEW: Handle abort_order intent - user wants to cancel current order
+    if (intent === "abort_order" && activeOrders.length > 0) {
+      const orderToCancel = activeOrders[0];
+      try {
+        await updateOrder(orderToCancel.id, { status: "cancelled" as ConversationStatus });
+        logger.info("Order cancelled by user request", { orderId: orderToCancel.id });
+      } catch (err) {
+        logger.error("Failed to cancel order", { orderId: orderToCancel.id, error: (err as any)?.message });
+      }
+      const lang = orderToCancel.language || "de";
+      return {
+        reply: lang === "en"
+          ? "No problem! I've cancelled your request. If you need anything else, just write me."
+          : "Kein Problem! Deine Anfrage wurde abgebrochen. Wenn du etwas anderes brauchst, schreib mir einfach.",
+        orderId: orderToCancel.id
+      };
+    }
+
+    // NEW: Handle continue_order intent - user wants another part for same vehicle
+    if (intent === "continue_order" && activeOrders.length > 0) {
+      const lastOrder = activeOrders[0];
+      if (lastOrder.vehicle_description || lastOrder.order_data?.vehicle) {
+        // Create new order but copy vehicle data
+        const newOrder = await getSupa().findOrCreateOrder(payload.from, null, { forceNew: true });
+        try {
+          await updateOrder(newOrder.id, {
+            vehicle_description: lastOrder.vehicle_description,
+            status: "collect_part" as ConversationStatus,
+            language: lastOrder.language
+          });
+          // Copy vehicle data if exists
+          if (lastOrder.order_data?.vehicle) {
+            await getSupa().updateOrderData(newOrder.id, { vehicle: lastOrder.order_data.vehicle });
+          }
+        } catch (err) {
+          logger.error("Failed to copy vehicle for continue_order", { error: (err as any)?.message });
+        }
+        const lang = lastOrder.language || "de";
+        return {
+          reply: lang === "en"
+            ? "Great! I'm using the same vehicle. What other part do you need?"
+            : "Super! Ich nutze das gleiche Fahrzeug. Welches andere Teil brauchst du?",
+          orderId: newOrder.id
+        };
+      }
     }
 
     // Ziel-Order bestimmen
@@ -2435,18 +2503,74 @@ export async function handleIncomingBotMessage(
       }
 
       case "done": {
-        // Fallback for when the user keeps writing after completion
-        replyText = language === "en"
-          ? "Your order is complete. If you have further questions, just ask!"
-          : "Deine Bestellung ist abgeschlossen. Wenn du weitere Fragen hast, frag einfach!";
+        // Context-aware handling: detect what user wants to do next
+        const t = userText.toLowerCase();
 
-        // Premium: Use Content API for success message if we have a SID
-        return {
-          reply: replyText,
-          orderId: order.id,
-          contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e', // Example Provided by User
-          contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
-        };
+        // Check if user wants another part for the same vehicle
+        const newPartKeywords = ["brauche auch", "noch ein", "außerdem", "dazu noch", "zusätzlich",
+          "another", "also need", "bremsbeläge", "scheiben", "filter", "zündkerzen", "kupplung"];
+        const wantsNewPart = newPartKeywords.some(k => t.includes(k)) ||
+          (t.length > 5 && !t.includes("?") && !t.includes("danke") && !t.includes("thanks"));
+
+        // Check if user wants to start completely fresh
+        const freshStartKeywords = ["neues auto", "anderes auto", "new car", "different vehicle", "von vorn"];
+        const wantsFreshStart = freshStartKeywords.some(k => t.includes(k));
+
+        // Check if it's just a thank you / goodbye
+        const goodbyeKeywords = ["danke", "thanks", "tschüss", "bye", "super", "perfekt", "ok"];
+        const isGoodbye = goodbyeKeywords.some(k => t.includes(k));
+
+        if (wantsFreshStart) {
+          // User wants different vehicle
+          nextStatus = "collect_vehicle";
+          replyText = language === "en"
+            ? "Sure! Send me a photo of the vehicle registration document for the new car."
+            : "Klar! Schick mir ein Foto vom Fahrzeugschein des neuen Autos.";
+        } else if (wantsNewPart && order.vehicle_description) {
+          // User wants another part for same vehicle - create new order with copied vehicle
+          try {
+            const newOrder = await getSupa().findOrCreateOrder(payload.from, null, { forceNew: true });
+            await updateOrder(newOrder.id, {
+              vehicle_description: order.vehicle_description,
+              status: "collect_part" as ConversationStatus,
+              language
+            });
+            if (orderData?.vehicle) {
+              await getSupa().updateOrderData(newOrder.id, { vehicle: orderData.vehicle });
+            }
+            replyText = language === "en"
+              ? `Great! I'm using your ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "vehicle"}. What part do you need?`
+              : `Super! Ich nutze dein ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil brauchst du?`;
+            return { reply: replyText, orderId: newOrder.id };
+          } catch (err) {
+            logger.error("Failed to create follow-up order", { error: (err as any)?.message });
+            replyText = language === "en"
+              ? "What part do you need for your vehicle?"
+              : "Welches Teil brauchst du für dein Fahrzeug?";
+            nextStatus = "collect_part";
+          }
+        } else if (isGoodbye) {
+          // User is saying goodbye
+          replyText = language === "en"
+            ? "Thank you! If you need anything else, just write me anytime. 👋"
+            : "Vielen Dank! Wenn du noch etwas brauchst, schreib mir jederzeit. 👋";
+        } else {
+          // Default: order complete message
+          replyText = language === "en"
+            ? "Your order is complete. If you have further questions, just ask!"
+            : "Deine Bestellung ist abgeschlossen. Wenn du weitere Fragen hast, frag einfach!";
+        }
+
+        // Only use Content API for actual goodbye, not for follow-up parts
+        if (isGoodbye) {
+          return {
+            reply: replyText,
+            orderId: order.id,
+            contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
+            contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
+          };
+        }
+        break;
       }
 
       default: {
