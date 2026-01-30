@@ -52,6 +52,9 @@ const corsOptions = {
       'https://crm-system.onrender.com',
       'https://admin-dashboard.onrender.com',
       'https://admin-dashboard-ufau.onrender.com',
+      'https://admin.partsunion.de',
+      'https://app.partsunion.de',
+      'https://partsunion.de',
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:5174'
@@ -150,6 +153,14 @@ app.use("/api/billing", createBillingRouter());
 import { createCrmRouter } from "./routes/crmRoutes";
 app.use("/api/crm", createCrmRouter());
 
+// Admin Authentication API (separate from merchant auth)
+import adminAuthRouter from "./routes/adminAuthRoutes";
+app.use("/api/admin-auth", adminAuthRouter);
+
+// Email Templates API (for admin marketing)
+import emailTemplatesRouter from "./routes/emailTemplatesRoutes";
+app.use("/api/admin/emails", emailTemplatesRouter);
+
 // External Shop Integration (Phase 10)
 import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
 app.use("/api/integrations", shopIntegrationRouter);
@@ -170,6 +181,17 @@ initDb().then(async () => {
   const { runTaxMigrations } = await import('./migrations/runTaxMigrations');
   await runTaxMigrations().catch(err => {
     console.error('Tax migration failed (non-critical):', err);
+  });
+
+  // Run admin module migrations
+  const { runMigration: runAdminUsersMigration } = await import('./migrations/002_admin_users');
+  await runAdminUsersMigration().catch(err => {
+    console.error('Admin users migration failed (non-critical):', err);
+  });
+
+  const { runMigration: runActivityLogMigration } = await import('./migrations/003_admin_activity_log');
+  await runActivityLogMigration().catch(err => {
+    console.error('Activity log migration failed (non-critical):', err);
   });
 
   app.listen(env.port, () => {
