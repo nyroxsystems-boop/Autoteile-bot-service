@@ -2,13 +2,9 @@ import { Router, type Request, type Response } from "express";
 import * as db from "../services/core/database";
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 const router = Router();
-
-// Hash password using SHA-256
-function hashPassword(password: string): string {
-    return crypto.createHash('sha256').update(password).digest('hex');
-}
 
 // Generate session token
 function generateToken(): string {
@@ -42,10 +38,10 @@ router.post("/login", async (req: Request, res: Response) => {
             return res.status(401).json({ error: "Invalid email/username or password" });
         }
 
-        // Verify password
-        const passwordHash = hashPassword(password);
+        // Verify password using bcrypt (matches how passwords are stored)
+        const passwordValid = await bcrypt.compare(password, user.password_hash);
 
-        if (user.password_hash !== passwordHash) {
+        if (!passwordValid) {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
@@ -278,14 +274,14 @@ router.post("/change-password", async (req: Request, res: Response) => {
 
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        // Verify old password
-        const oldHash = hashPassword(oldPassword);
-        if (user.password_hash !== oldHash) {
+        // Verify old password using bcrypt
+        const oldPasswordValid = await bcrypt.compare(oldPassword, user.password_hash);
+        if (!oldPasswordValid) {
             return res.status(400).json({ error: "Incorrect old password" });
         }
 
-        // Set new password
-        const newHash = hashPassword(newPassword);
+        // Set new password using bcrypt
+        const newHash = await bcrypt.hash(newPassword, 10);
         await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, user.id]);
 
         return res.json({ success: true, message: "Passwort erfolgreich geändert" });
