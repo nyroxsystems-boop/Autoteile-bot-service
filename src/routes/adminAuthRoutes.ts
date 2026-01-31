@@ -157,7 +157,7 @@ router.get("/me", async (req: Request, res: Response) => {
     try {
         // Find valid session
         const session = await db.get<any>(
-            `SELECT * FROM admin_sessions WHERE token = $1 AND expires_at > NOW()`,
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > NOW()`,
             [token]
         );
 
@@ -285,7 +285,7 @@ router.post("/reset-password", async (req: Request, res: Response) => {
         // Find valid token
         const resetToken = await db.get<any>(
             `SELECT * FROM password_reset_tokens 
-             WHERE token = $1 AND expires_at > NOW() AND used = 0`,
+             WHERE token = ? AND expires_at > NOW() AND used = 0`,
             [token]
         );
 
@@ -362,7 +362,7 @@ router.patch("/update-email", async (req: Request, res: Response) => {
     try {
         // Find valid session
         const session = await db.get<any>(
-            `SELECT * FROM admin_sessions WHERE token = $1 AND expires_at > NOW()`,
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > NOW()`,
             [token]
         );
 
@@ -451,7 +451,7 @@ router.post("/change-password", async (req: Request, res: Response) => {
         const session = await db.get<any>(
             `SELECT s.*, a.password_hash FROM admin_sessions s 
              JOIN admin_users a ON s.admin_id = a.id 
-             WHERE s.token = $1 AND s.expires_at > NOW()`,
+             WHERE s.token = ? AND s.expires_at > NOW()`,
             [token]
         );
 
@@ -499,7 +499,7 @@ router.patch("/update-signature", async (req: Request, res: Response) => {
     try {
         // Find valid session
         const session = await db.get<any>(
-            `SELECT * FROM admin_sessions WHERE token = $1 AND expires_at > NOW()`,
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > NOW()`,
             [token]
         );
 
@@ -536,7 +536,7 @@ router.get("/profile", async (req: Request, res: Response) => {
 
     try {
         const session = await db.get<any>(
-            `SELECT * FROM admin_sessions WHERE token = $1 AND expires_at > NOW()`,
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at > NOW()`,
             [token]
         );
 
