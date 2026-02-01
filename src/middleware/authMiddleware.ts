@@ -39,10 +39,13 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             return next();
         }
 
-        // 2. Check Database Session
+        // 2. Check Database Session (admin_sessions for Admin Dashboard)
         try {
-            // Updated to use await with the promise-based db.get
-            const session = await get<any>('SELECT * FROM sessions WHERE token = ?', [token]);
+            // Check admin_sessions table with proper timestamp casting
+            const session = await get<any>(
+                'SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
+                [token]
+            );
 
             if (session) {
                 // Attach user to request if needed
