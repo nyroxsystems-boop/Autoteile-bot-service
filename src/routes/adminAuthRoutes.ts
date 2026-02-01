@@ -545,7 +545,9 @@ router.get("/profile", async (req: Request, res: Response) => {
         }
 
         const admin = await db.get<any>(
-            `SELECT id, username, email, full_name, signature, imap_password_encrypted IS NOT NULL as has_imap_setup, created_at, last_login 
+            `SELECT id, username, email, full_name, signature, 
+             CASE WHEN imap_password_encrypted IS NOT NULL THEN true ELSE false END as has_imap_setup, 
+             created_at, last_login 
              FROM admin_users WHERE id = ?`,
             [session.admin_id]
         );
