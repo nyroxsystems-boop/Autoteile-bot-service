@@ -535,12 +535,17 @@ router.get("/profile", async (req: Request, res: Response) => {
     const token = authHeader.substring(6);
 
     try {
+        console.log(`[Admin/Profile] Checking token (length: ${token.length})`);
+
         const session = await db.get<any>(
             `SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()`,
             [token]
         );
 
+        console.log(`[Admin/Profile] Session found: ${!!session}`);
+
         if (!session) {
+            console.log(`[Admin/Profile] No valid session found for token`);
             return res.status(401).json({ error: "Session abgelaufen" });
         }
 
@@ -559,8 +564,8 @@ router.get("/profile", async (req: Request, res: Response) => {
         return res.json(admin);
 
     } catch (error: any) {
-        console.error("Get profile error:", error);
-        return res.status(500).json({ error: "Fehler beim Abrufen des Profils" });
+        console.error("[Admin/Profile] Error:", error.message);
+        return res.status(500).json({ error: "Fehler beim Abrufen des Profils", details: error.message });
     }
 });
 

@@ -25,17 +25,28 @@ const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || '';
  */
 async function getAdminFromToken(req: Request): Promise<any | null> {
     const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Token ')) return null;
+    if (!authHeader?.startsWith('Token ')) {
+        console.log('[Inbox] No Token header found');
+        return null;
+    }
 
     const token = authHeader.substring(6);
-    const session = await db.get<any>(
-        `SELECT s.*, a.* FROM admin_sessions s 
-         JOIN admin_users a ON s.admin_id = a.id 
-         WHERE s.token = ? AND s.expires_at::TIMESTAMP > NOW()`,
-        [token]
-    );
+    console.log(`[Inbox] Checking admin token (length: ${token.length})`);
 
-    return session;
+    try {
+        const session = await db.get<any>(
+            `SELECT s.*, a.* FROM admin_sessions s 
+             JOIN admin_users a ON s.admin_id = a.id 
+             WHERE s.token = ? AND s.expires_at::TIMESTAMP > NOW()`,
+            [token]
+        );
+
+        console.log(`[Inbox] Admin session found: ${!!session}, username: ${session?.username || 'none'}`);
+        return session;
+    } catch (error: any) {
+        console.error('[Inbox] Token check error:', error.message);
+        return null;
+    }
 }
 
 /**
