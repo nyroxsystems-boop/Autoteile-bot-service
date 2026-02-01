@@ -39,6 +39,28 @@ export async function runMigration(): Promise<void> {
     `);
     console.log('✅ Created admin_users table');
 
+    // Add missing columns if they don't exist (for existing tables)
+    try {
+        await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS full_name TEXT`);
+        console.log('✅ Added full_name column');
+    } catch (e: any) {
+        if (!e.message?.includes('already exists')) console.log('ℹ️ full_name column check:', e.message);
+    }
+
+    try {
+        await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS signature TEXT DEFAULT ''`);
+        console.log('✅ Added signature column');
+    } catch (e: any) {
+        if (!e.message?.includes('already exists')) console.log('ℹ️ signature column check:', e.message);
+    }
+
+    try {
+        await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS imap_password_encrypted TEXT`);
+        console.log('✅ Added imap_password_encrypted column');
+    } catch (e: any) {
+        if (!e.message?.includes('already exists')) console.log('ℹ️ imap_password_encrypted column check:', e.message);
+    }
+
     // Create admin_sessions table
     await db.run(`
         CREATE TABLE IF NOT EXISTS admin_sessions (
