@@ -533,7 +533,7 @@ router.get("/list-admins", async (req: Request, res: Response) => {
     }
 
     try {
-        const admins = await db.query<any>(
+        const admins = await db.all<any>(
             `SELECT id, username, email, full_name, created_at FROM admin_users ORDER BY id`
         );
 
