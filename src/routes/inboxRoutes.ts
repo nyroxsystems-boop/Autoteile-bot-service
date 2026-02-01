@@ -87,18 +87,29 @@ router.get('/emails', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'E-Mail-Passwort nicht konfiguriert' });
         }
 
-        const emails = await fetchEmails(email, password, folder, limit);
+        const allEmails = await fetchEmails(email, password, folder, limit * 2); // Fetch more to account for filtering
+
+        // Filter emails by recipient address
+        // For shared mailbox: only show emails TO info@partsunion.de
+        // For personal mailbox: only show emails TO user's email
+        const targetEmail = email.toLowerCase();
+        const filteredEmails = allEmails.filter(e => {
+            const recipients = e.to.map(addr => addr.toLowerCase());
+            return recipients.some(addr => addr === targetEmail);
+        }).slice(0, limit); // Limit after filtering
+
+        console.log(`[Inbox] Fetched ${allEmails.length} emails, filtered to ${filteredEmails.length} for ${targetEmail}`);
 
         // Enrich with assignment info
-        const messageIds = emails.map(e => e.messageId).filter(Boolean);
-        const assignments = await db.all<any>(
+        const messageIds = filteredEmails.map(e => e.messageId).filter(Boolean);
+        const assignments = messageIds.length > 0 ? await db.all<any>(
             `SELECT * FROM email_assignments WHERE message_id IN (${messageIds.map(() => '?').join(',')})`,
             messageIds
-        );
+        ) : [];
 
         const assignmentMap = new Map(assignments.map(a => [a.message_id, a]));
 
-        const enrichedEmails = emails.map(e => ({
+        const enrichedEmails = filteredEmails.map(e => ({
             ...e,
             assignment: assignmentMap.get(e.messageId) || null
         }));
