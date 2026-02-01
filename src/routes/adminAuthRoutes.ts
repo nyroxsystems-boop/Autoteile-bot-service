@@ -522,6 +522,60 @@ router.patch("/update-signature", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/admin-auth/list-admins
+ * List all admin users (for debugging/management)
+ */
+router.get("/list-admins", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    try {
+        const admins = await db.query<any>(
+            `SELECT id, username, email, full_name, created_at FROM admin_users ORDER BY id`
+        );
+
+        return res.json({ admins });
+    } catch (error: any) {
+        console.error("List admins error:", error);
+        return res.status(500).json({ error: "Fehler beim Abrufen der Admins" });
+    }
+});
+
+/**
+ * PUT /api/admin-auth/update-email
+ * Update an admin user's email address
+ */
+router.put("/update-email", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const { adminId, email } = req.body;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    if (!adminId || !email) {
+        return res.status(400).json({ error: "Admin ID und E-Mail erforderlich" });
+    }
+
+    try {
+        await db.run(
+            'UPDATE admin_users SET email = ? WHERE id = ?',
+            [email, adminId]
+        );
+
+        console.log(`[Admin] Updated email for admin ${adminId} to ${email}`);
+        return res.json({ success: true, message: `E-Mail aktualisiert auf ${email}` });
+
+    } catch (error: any) {
+        console.error("Update email error:", error);
+        return res.status(500).json({ error: "Fehler beim Aktualisieren der E-Mail" });
+    }
+});
+
+/**
  * GET /api/admin-auth/profile
  * Get current admin's profile including signature
  */
