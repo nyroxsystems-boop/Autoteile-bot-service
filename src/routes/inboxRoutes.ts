@@ -18,7 +18,11 @@ import { generateEmailReply } from '../services/intelligence/geminiEmailReply';
 const router = Router();
 
 // Shared mailbox password (from env)
-const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || '';
+const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || process.env.SHARED_MAILBOX_PASSWORD || '';
+
+// Debug log on startup
+console.log(`[Inbox] STRATO_PASSWORD env: ${SHARED_MAILBOX_PASSWORD ? 'SET (' + SHARED_MAILBOX_PASSWORD.length + ' chars)' : 'NOT SET'}`);
+console.log(`[Inbox] SHARED_MAILBOX: ${SHARED_MAILBOX}`);
 
 /**
  * Middleware: Get current admin from token
@@ -84,7 +88,11 @@ router.get('/emails', async (req: Request, res: Response) => {
         }
 
         if (!password) {
-            return res.status(400).json({ error: 'E-Mail-Passwort nicht konfiguriert' });
+            const errorMsg = mailbox === 'shared'
+                ? 'STRATO_PASSWORD Umgebungsvariable nicht gesetzt. Bitte in Railway konfigurieren.'
+                : 'E-Mail-Passwort nicht konfiguriert';
+            console.error(`[Inbox] Password missing for ${mailbox}: ${errorMsg}`);
+            return res.status(400).json({ error: errorMsg });
         }
 
         const allEmails = await fetchEmails(email, password, folder, limit * 2); // Fetch more to account for filtering
