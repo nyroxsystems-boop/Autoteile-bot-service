@@ -128,22 +128,16 @@ router.get("/me", async (req: Request, res: Response) => {
     const token = authHeader.substring(6);
 
     try {
-        // Find session
+        // Find session with proper PostgreSQL timestamp comparison
         console.log(`[Auth/Me] Checking session token (Length: ${token.length})`);
 
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ?',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
             [token]
         );
 
         if (!session) {
-            console.log(`[Auth/Me] Session not found in DB.`);
-            return res.status(401).json({ error: "Invalid or expired session" });
-        }
-
-        const now = new Date().toISOString();
-        if (session.expires_at < now) {
-            console.log(`[Auth/Me] Session expired. Exp: ${session.expires_at}, Now: ${now}`);
+            console.log(`[Auth/Me] Session not found or expired.`);
             return res.status(401).json({ error: "Invalid or expired session" });
         }
 
@@ -199,18 +193,13 @@ router.get("/me/tenants", async (req: Request, res: Response) => {
     const token = authHeader.substring(6);
 
     try {
-        // Find session
+        // Find session with proper PostgreSQL timestamp comparison
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ?',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
             [token]
         );
 
         if (!session) {
-            return res.status(401).json({ error: "Invalid or expired session" });
-        }
-
-        const now = new Date().toISOString();
-        if (session.expires_at < now) {
             return res.status(401).json({ error: "Invalid or expired session" });
         }
 
@@ -260,8 +249,9 @@ router.post("/change-password", async (req: Request, res: Response) => {
     const token = authHeader.substring(6);
 
     try {
+        // Find session with proper PostgreSQL timestamp comparison
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ?',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
             [token]
         );
 
