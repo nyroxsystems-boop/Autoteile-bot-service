@@ -132,7 +132,7 @@ router.get("/me", async (req: Request, res: Response) => {
         console.log(`[Auth/Me] Checking session token (Length: ${token.length})`);
 
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at > NOW()',
             [token]
         );
 
@@ -195,7 +195,7 @@ router.get("/me/tenants", async (req: Request, res: Response) => {
     try {
         // Find session with proper PostgreSQL timestamp comparison
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at > NOW()',
             [token]
         );
 
@@ -251,7 +251,7 @@ router.post("/change-password", async (req: Request, res: Response) => {
     try {
         // Find session with proper PostgreSQL timestamp comparison
         const session = await db.get<any>(
-            'SELECT * FROM sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
+            'SELECT * FROM sessions WHERE token = ? AND expires_at > NOW()',
             [token]
         );
 
