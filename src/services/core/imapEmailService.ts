@@ -203,18 +203,30 @@ export async function sendEmail(
     signature?: string,
     replyTo?: string
 ): Promise<boolean> {
+    console.log(`[Email] Attempting to send from ${fromEmail} to ${to}`);
+
+    if (!password) {
+        console.error('[Email] No password provided for SMTP');
+        throw new Error('SMTP-Passwort fehlt');
+    }
+
     try {
         const transporter: Transporter = createTransport({
             ...SMTP_CONFIG,
             auth: {
                 user: fromEmail,
                 pass: password
-            }
+            },
+            connectionTimeout: 30000, // 30 seconds
+            greetingTimeout: 30000,
+            socketTimeout: 60000 // 60 seconds for sending
         });
 
         const fullBody = signature ? `${body}\n\n--\n${signature}` : body;
 
-        await transporter.sendMail({
+        console.log(`[Email] Connecting to SMTP ${SMTP_CONFIG.host}:${SMTP_CONFIG.port}...`);
+
+        const result = await transporter.sendMail({
             from: fromEmail,
             to,
             subject,
@@ -224,11 +236,12 @@ export async function sendEmail(
             references: replyTo ? [replyTo] : undefined
         });
 
-        console.log(`✉️ Email sent from ${fromEmail} to ${to}`);
+        console.log(`✉️ Email sent from ${fromEmail} to ${to}, messageId: ${result.messageId}`);
         return true;
-    } catch (error) {
-        console.error('Failed to send email:', error);
-        return false;
+    } catch (error: any) {
+        console.error('[Email] Failed to send:', error.message);
+        console.error('[Email] Full error:', error);
+        throw new Error(`E-Mail-Versand fehlgeschlagen: ${error.message}`);
     }
 }
 

@@ -245,6 +245,8 @@ router.post('/email/send', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Empfänger, Betreff und Text erforderlich' });
     }
 
+    console.log(`[Inbox Send] User: ${admin.username}, To: ${to}, UseShared: ${useSharedMailbox}`);
+
     try {
         let fromEmail: string;
         let password: string;
@@ -252,6 +254,11 @@ router.post('/email/send', async (req: Request, res: Response) => {
         if (useSharedMailbox) {
             fromEmail = SHARED_MAILBOX;
             password = SHARED_MAILBOX_PASSWORD;
+
+            if (!password) {
+                console.error('[Inbox Send] STRATO_PASSWORD environment variable not set!');
+                return res.status(500).json({ error: 'STRATO_PASSWORD nicht konfiguriert. Bitte in Railway setzen.' });
+            }
         } else {
             fromEmail = admin.email;
             if (!admin.imap_password_encrypted) {
@@ -259,6 +266,8 @@ router.post('/email/send', async (req: Request, res: Response) => {
             }
             password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
         }
+
+        console.log(`[Inbox Send] Sending from ${fromEmail}...`);
 
         const success = await sendEmail(
             fromEmail,
@@ -271,14 +280,15 @@ router.post('/email/send', async (req: Request, res: Response) => {
         );
 
         if (success) {
+            console.log(`[Inbox Send] Success! Email sent to ${to}`);
             return res.json({ success: true, message: 'E-Mail gesendet' });
         } else {
             return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden' });
         }
 
     } catch (error: any) {
-        console.error('Send email error:', error);
-        return res.status(500).json({ error: error.message });
+        console.error('[Inbox Send] Error:', error.message);
+        return res.status(500).json({ error: error.message || 'E-Mail-Versand fehlgeschlagen' });
     }
 });
 
