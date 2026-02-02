@@ -8,22 +8,21 @@ import * as db from '../services/core/database';
 import {
     fetchEmails,
     fetchEmailByUid,
+    sendEmail,
     markEmailRead,
     testConnection,
     SHARED_MAILBOX
 } from '../services/core/imapEmailService';
-import { sendEmailViaResend, isResendConfigured } from '../services/core/resendEmailService';
 import { generateEmailReply } from '../services/intelligence/geminiEmailReply';
 
 const router = Router();
 
 // Debug log on startup
 console.log(`[Inbox] SHARED_MAILBOX: ${SHARED_MAILBOX}`);
-console.log(`[Inbox] Resend configured: ${isResendConfigured()}`);
 
-// STRATO password still needed for IMAP (reading emails)
+// STRATO password for IMAP and SMTP
 const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || process.env.SHARED_MAILBOX_PASSWORD || '';
-console.log(`[Inbox] STRATO_PASSWORD for IMAP: ${SHARED_MAILBOX_PASSWORD ? 'SET' : 'NOT SET'}`);
+console.log(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET (' + SHARED_MAILBOX_PASSWORD.length + ' chars)' : 'NOT SET'}`);
 
 /**
  * Middleware: Get current admin from token
@@ -240,39 +239,51 @@ router.post('/email/send', async (req: Request, res: Response) => {
         return res.status(401).json({ error: 'Nicht authentifiziert' });
     }
 
-    const { to, subject, body, htmlContent, useSharedMailbox, replyToMessageId } = req.body;
+    const { to, subject, body, useSharedMailbox, replyToMessageId } = req.body;
 
     if (!to || !subject || !body) {
         return res.status(400).json({ error: 'Empfänger, Betreff und Text erforderlich' });
     }
 
-    // Check if Resend is configured
-    if (!isResendConfigured()) {
-        console.error('[Inbox Send] RESEND_API_KEY not configured!');
-        return res.status(500).json({ error: 'RESEND_API_KEY nicht konfiguriert. Bitte in Railway setzen.' });
-    }
-
-    const fromEmail = useSharedMailbox ? SHARED_MAILBOX : (admin.email || SHARED_MAILBOX);
-    console.log(`[Inbox Send] User: ${admin.username}, From: ${fromEmail}, To: ${to}`);
+    console.log(`[Inbox Send] User: ${admin.username}, To: ${to}, UseShared: ${useSharedMailbox}`);
 
     try {
-        const result = await sendEmailViaResend({
+        let fromEmail: string;
+        let password: string;
+
+        if (useSharedMailbox) {
+            fromEmail = SHARED_MAILBOX;
+            password = SHARED_MAILBOX_PASSWORD;
+
+            if (!password) {
+                console.error('[Inbox Send] STRATO_PASSWORD not set!');
+                return res.status(500).json({ error: 'STRATO_PASSWORD nicht konfiguriert' });
+            }
+        } else {
+            fromEmail = admin.email;
+            if (!admin.imap_password_encrypted) {
+                return res.status(400).json({ error: 'IMAP-Passwort nicht konfiguriert' });
+            }
+            password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
+        }
+
+        console.log(`[Inbox Send] Sending via SMTP from ${fromEmail} (port 587/STARTTLS)...`);
+
+        const success = await sendEmail(
+            fromEmail,
+            password,
             to,
             subject,
             body,
-            html: htmlContent || undefined,
-            from: fromEmail,
-            fromName: useSharedMailbox ? 'Partsunion' : admin.username,
-            replyTo: replyToMessageId,
-            signature: admin.signature || undefined
-        });
+            admin.signature || undefined,
+            replyToMessageId
+        );
 
-        if (result.success) {
-            console.log(`[Inbox Send] Success! Email sent to ${to}, ID: ${result.messageId}`);
-            return res.json({ success: true, message: 'E-Mail gesendet', messageId: result.messageId });
+        if (success) {
+            console.log(`[Inbox Send] Success! Email sent to ${to}`);
+            return res.json({ success: true, message: 'E-Mail gesendet' });
         } else {
-            console.error('[Inbox Send] Failed:', result.error);
-            return res.status(500).json({ error: result.error || 'E-Mail konnte nicht gesendet werden' });
+            return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden' });
         }
 
     } catch (error: any) {
@@ -280,6 +291,7 @@ router.post('/email/send', async (req: Request, res: Response) => {
         return res.status(500).json({ error: error.message || 'E-Mail-Versand fehlgeschlagen' });
     }
 });
+
 
 /**
  * POST /api/inbox/email/ai-reply

@@ -16,8 +16,9 @@ const IMAP_CONFIG = {
 
 const SMTP_CONFIG = {
     host: 'smtp.strato.de',
-    port: 465,
-    secure: true
+    port: 587,
+    secure: false, // Use STARTTLS instead of implicit SSL
+    requireTLS: true
 };
 
 // Shared mailbox (all admins have access)
