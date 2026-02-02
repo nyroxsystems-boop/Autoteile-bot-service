@@ -72,23 +72,47 @@ export async function generateEmailTemplate(prompt: string, type: 'normal' | 'pr
 
     // Different prompts for different email types
     const typeSpecificPrompt = type === 'promotional'
-        ? `WICHTIG: Dies ist eine WERBE-MAIL (Marketing Email). 
-Erstelle ein visuell ansprechendes HTML-Template mit:
-- Professionellem Header mit Partsunion Branding (Dunkelblau #1e3a5f, Orange #f59e0b)
-- Auffälligem Hero-Bereich mit Gradient-Hintergrund
-- Gut gestalteten Abschnitten mit Icons/Symbolen (nutze Unicode Emojis)
-- Call-to-Action Buttons mit Hover-Styling
-- Sauberem Footer mit Kontaktdaten
+        ? `WICHTIG: Dies ist eine WERBE-MAIL (Marketing Email) für Partsunion.
 
-CSS STYLING (inline styles im HTML):
-- Verwende moderne Farben: Primary #1e3a5f, Accent #f59e0b, Background #f8fafc
-- Buttons: border-radius 8px, padding 16px 32px, Gradient backgrounds
-- Fonts: font-family: 'Segoe UI', system-ui, sans-serif
-- Sections: Padding, Border-radius, subtle shadows
+LOGO & BRANDING (IMMER EINBAUEN):
+Füge das Partsunion Logo als erstes Element im Header ein:
+<img src="https://partsunion.de/logo.png" alt="Partsunion" style="height: 48px; width: auto; margin-bottom: 24px;" />
+
+Falls das Logo nicht geladen werden kann, nutze als Fallback:
+<div style="font-size: 28px; font-weight: 700; color: #2563eb; letter-spacing: -0.5px;">🔗 Partsunion</div>
+
+PARTSUNION FARBEN (PFLICHT - orientiere dich an partsunion.de):
+- Primary Blue: #2563eb (Hauptfarbe für Logo, Buttons, Links)
+- Dark Blue: #1e3a8a (Für dunkle Hintergründe, Header)
+- Light Blue: #3b82f6 (Für Hover-States, Accents)
+- Background Dark: #0f172a (Sehr dunkler Hintergrund wie auf Website)
+- Background Card: #1e293b (Karten-Hintergrund)
+- Text Light: #f1f5f9 (Heller Text)
+- Text Muted: #94a3b8 (Gedämpfter Text)
+- Accent: #22c55e (Grün für Erfolgsmeldungen)
+
+HTML STRUKTUR:
+1. Container mit max-width: 600px, margin: auto
+2. Header: Dunkler Hintergrund (#0f172a), Logo zentriert, optional Tagline
+3. Hero-Bereich: Gradient von #1e3a8a zu #2563eb, große Headline
+4. Content-Sections: Weißer oder hellgrauer Hintergrund, gut lesbar
+5. CTA-Button: Background #2563eb, hover #3b82f6, border-radius 12px, padding 16px 32px
+6. Footer: Dunkler Hintergrund, Kontaktdaten, Social Links
+
+STYLING (inline styles):
+- Fonts: font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif
+- Buttons: border-radius: 12px; background: #2563eb; color: white; font-weight: 600; text-decoration: none; display: inline-block; padding: 16px 32px;
+- Cards: background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+- Überschriften: color: #0f172a; font-weight: 700;
 - Mobile-freundlich: max-width: 600px, margin: auto`
         : `WICHTIG: Dies ist eine NORMALE geschäftliche E-Mail.
+
+LOGO (immer einbauen am Anfang):
+<img src="https://partsunion.de/logo.png" alt="Partsunion" style="height: 32px; width: auto; margin-bottom: 16px;" />
+
 Halte das HTML minimal und fokussiere auf den Inhalt:
 - Einfache Formatierung mit <p>, <strong>, <br>
+- Links in Partsunion-Blau: color: #2563eb
 - Keine aufwendigen Styles oder Grafiken
 - Klare, professionelle Sprache
 - Optional ein einfacher Link für CTAs`;
