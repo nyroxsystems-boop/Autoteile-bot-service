@@ -39,7 +39,7 @@ async function getAdminUsername(req: Request): Promise<string> {
  * Generate email template using Gemini AI
  */
 router.post("/generate", async (req: Request, res: Response) => {
-    const { prompt, improve, existingContent } = req.body;
+    const { prompt, improve, existingContent, type } = req.body;
 
     if (!prompt) {
         return res.status(400).json({ error: "Prompt ist erforderlich" });
@@ -50,7 +50,8 @@ router.post("/generate", async (req: Request, res: Response) => {
         if (improve && existingContent) {
             result = await improveEmailContent(existingContent, prompt);
         } else {
-            result = await generateEmailTemplate(prompt);
+            // Pass email type to generator (normal or promotional)
+            result = await generateEmailTemplate(prompt, type || 'normal');
         }
 
         return res.json({

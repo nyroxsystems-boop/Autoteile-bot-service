@@ -52,8 +52,10 @@ interface GeneratedEmail {
 
 /**
  * Generate email template using Gemini AI
+ * @param prompt User's description of the email
+ * @param type 'normal' for simple text or 'promotional' for styled marketing HTML
  */
-export async function generateEmailTemplate(prompt: string): Promise<GeneratedEmail> {
+export async function generateEmailTemplate(prompt: string, type: 'normal' | 'promotional' = 'normal'): Promise<GeneratedEmail> {
     if (!GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY nicht konfiguriert');
     }
@@ -64,11 +66,36 @@ export async function generateEmailTemplate(prompt: string): Promise<GeneratedEm
         generationConfig: {
             temperature: 0.7,
             topP: 0.9,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 4096,
         }
     });
 
+    // Different prompts for different email types
+    const typeSpecificPrompt = type === 'promotional'
+        ? `WICHTIG: Dies ist eine WERBE-MAIL (Marketing Email). 
+Erstelle ein visuell ansprechendes HTML-Template mit:
+- Professionellem Header mit Partsunion Branding (Dunkelblau #1e3a5f, Orange #f59e0b)
+- Auffälligem Hero-Bereich mit Gradient-Hintergrund
+- Gut gestalteten Abschnitten mit Icons/Symbolen (nutze Unicode Emojis)
+- Call-to-Action Buttons mit Hover-Styling
+- Sauberem Footer mit Kontaktdaten
+
+CSS STYLING (inline styles im HTML):
+- Verwende moderne Farben: Primary #1e3a5f, Accent #f59e0b, Background #f8fafc
+- Buttons: border-radius 8px, padding 16px 32px, Gradient backgrounds
+- Fonts: font-family: 'Segoe UI', system-ui, sans-serif
+- Sections: Padding, Border-radius, subtle shadows
+- Mobile-freundlich: max-width: 600px, margin: auto`
+        : `WICHTIG: Dies ist eine NORMALE geschäftliche E-Mail.
+Halte das HTML minimal und fokussiere auf den Inhalt:
+- Einfache Formatierung mit <p>, <strong>, <br>
+- Keine aufwendigen Styles oder Grafiken
+- Klare, professionelle Sprache
+- Optional ein einfacher Link für CTAs`;
+
     const fullPrompt = `${EMAIL_SYSTEM_PROMPT}
+
+${typeSpecificPrompt}
 
 BENUTZER-ANFRAGE:
 ${prompt}
@@ -93,7 +120,7 @@ Generiere jetzt die E-Mail im JSON-Format.`;
             throw new Error('Unvollständige E-Mail-Daten generiert');
         }
 
-        console.log(`✅ Email template generated: "${emailData.subject.substring(0, 50)}..."`);
+        console.log(`✅ ${type === 'promotional' ? 'Promotional' : 'Normal'} email template generated: "${emailData.subject.substring(0, 50)}..."`);
         return emailData;
 
     } catch (error: any) {
