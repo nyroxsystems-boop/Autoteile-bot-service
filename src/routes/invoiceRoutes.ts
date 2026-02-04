@@ -16,8 +16,12 @@ import {
     upsertDesignSettings,
     getDesignSettings
 } from '../services/invoicing/designSettingsService';
+import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// Apply auth to all invoice routes
+router.use(authMiddleware);
 
 // Middleware to extract tenant ID (from header or authenticated user)
 const requireTenant = (req: Request, res: Response, next: Function) => {
