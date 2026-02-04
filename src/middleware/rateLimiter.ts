@@ -56,6 +56,12 @@ export function createRateLimiter(config: RateLimitConfig) {
     } = config;
 
     return (req: Request, res: Response, next: NextFunction): void => {
+        // Skip rate limiting for CORS preflight requests
+        if (req.method === 'OPTIONS') {
+            next();
+            return;
+        }
+
         const key = keyGenerator(req);
         const now = Date.now();
 
@@ -103,7 +109,7 @@ export function createRateLimiter(config: RateLimitConfig) {
  */
 export const authLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 5,           // 5 attempts per 15 min
+    maxRequests: 15,          // 15 attempts per 15 min (more reasonable)
     message: "Too many login attempts. Please try again in 15 minutes."
 });
 

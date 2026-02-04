@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import * as db from "../services/core/database";
-import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { authMiddleware } from "../middleware/authMiddleware";
 
 const router = Router();
@@ -9,9 +9,9 @@ const router = Router();
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-// Hash password using SHA-256
-function hashPassword(password: string): string {
-    return crypto.createHash('sha256').update(password).digest('hex');
+// Hash password using bcrypt (matching authRoutes.ts)
+async function hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 10);
 }
 
 /**
@@ -121,7 +121,7 @@ router.post("/", async (req: Request, res: Response) => {
 
         // Create user
         const userId = `user-${randomUUID()}`;
-        const passwordHash = hashPassword(password);
+        const passwordHash = await hashPassword(password);
         const now = new Date().toISOString();
 
         await db.run(
@@ -231,7 +231,7 @@ router.put("/:id", async (req: Request, res: Response) => {
                 });
             }
             updates.push('password_hash = ?');
-            values.push(hashPassword(password));
+            values.push(await hashPassword(password));
         }
 
         if (updates.length === 0) {

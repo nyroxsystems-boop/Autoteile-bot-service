@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
+import * as bcrypt from 'bcrypt';
 import * as db from "../services/core/database";
 import { authMiddleware } from "../middleware/authMiddleware";
 
@@ -21,8 +22,9 @@ router.get("/users", async (req: Request, res: Response) => {
 
 import { createHash } from "crypto";
 
-function hashPassword(password: string): string {
-    return createHash('sha256').update(password).digest('hex');
+// Hash password using bcrypt (matching authRoutes.ts)
+async function hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 10);
 }
 
 router.post("/users", async (req: Request, res: Response) => {
@@ -35,11 +37,11 @@ router.post("/users", async (req: Request, res: Response) => {
 
     let passwordHash = null;
     if (password) {
-        passwordHash = hashPassword(password);
+        passwordHash = await hashPassword(password);
     } else {
         // Generate default password if not provided
         const defaultPassword = 'Welcome123!';
-        passwordHash = hashPassword(defaultPassword);
+        passwordHash = await hashPassword(defaultPassword);
     }
 
     const username = providedUsername || email.split('@')[0]; // Use provided or derive from email
@@ -55,7 +57,43 @@ router.post("/users", async (req: Request, res: Response) => {
     }
 });
 
-// --- Devices (Mock) ---
+/**
+ * POST /api/admin/users/:id/reset-password
+ * Reset a user's password (fixes users created with wrong hash)
+ */
+router.post("/users/:id/reset-password", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    try {
+        // Verify user exists
+        const user = await db.get<any>('SELECT id, email, username FROM users WHERE id = ?', [id]);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Hash with bcrypt (matching authRoutes.ts login verification)
+        const passwordHash = await hashPassword(newPassword);
+
+        await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
+
+        console.log(`✅ Password reset for user: ${user.username || user.email} (${id})`);
+
+        return res.json({
+            success: true,
+            message: `Password reset for ${user.username || user.email}`,
+            user: { id: user.id, username: user.username, email: user.email }
+        });
+    } catch (err: any) {
+        console.error("Password reset error:", err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 const activeDevicesMock = new Map<string, any[]>();
 
 router.get("/tenants/:id/devices", async (req: Request, res: Response) => {
@@ -203,7 +241,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
         const userId = randomUUID();
         const createdAt = new Date().toISOString();
         const initialPassword = password || "Start123!";
-        const passwordHash = hashPassword(initialPassword);
+        const passwordHash = await hashPassword(initialPassword);
 
         // We assume 'merchant' role for the dealer admin
         const username = email.split('@')[0];
