@@ -145,6 +145,37 @@ export const SUPPLIERS: SupplierDefinition[] = [
     }
 ];
 
+// ══════════════════════════════════════════════════════════════════
+// B2B MARGIN ENGINE TYPES
+// ══════════════════════════════════════════════════════════════════
+
+export interface B2BSupplierConfig {
+    margin_type: 'fixed' | 'percentage';
+    margin_value: number;
+    minimum_margin: number;
+    rounding_strategy: 'up' | 'down' | 'nearest';
+    round_to: number;
+}
+
+export interface B2BPartSearchResult {
+    partNumber: string;
+    name: string;
+    brand: string;
+    purchasePrice: number;
+    availability: string;
+    deliveryDays: number;
+    supplierKey: string;
+}
+
+export interface B2BPartOffer extends B2BPartSearchResult {
+    sellingPrice: number;
+    marginAmount: number;
+    marginPercent: number;
+}
+
+// Type alias for backward compatibility
+export type B2BSupplierConfiguration = SupplierConfig;
+
 // Helper functions
 export function getSupplier(key: string): SupplierDefinition | undefined {
     return SUPPLIERS.find(s => s.key === key);
