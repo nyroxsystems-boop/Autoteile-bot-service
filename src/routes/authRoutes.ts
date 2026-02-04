@@ -281,4 +281,55 @@ router.post("/change-password", async (req: Request, res: Response) => {
     }
 });
 
+/**
+ * GET /api/auth/team/
+ * Get team members for current user's tenant
+ */
+router.get("/team/", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        // Find session
+        const session = await db.get<any>(
+            'SELECT * FROM sessions WHERE token = ? AND expires_at > NOW()',
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Invalid or expired session" });
+        }
+
+        // Get user to find their merchant_id
+        const user = await db.get<any>(
+            'SELECT * FROM users WHERE id = ? AND is_active = 1',
+            [session.user_id]
+        );
+
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+
+        // Get all team members with same merchant_id
+        const teamMembers = await db.all<any>(
+            'SELECT id, email, username, full_name, role, created_at FROM users WHERE merchant_id = ? AND is_active = 1',
+            [user.merchant_id]
+        );
+
+        return res.status(200).json(teamMembers);
+
+    } catch (error: any) {
+        console.error("Error in GET /api/auth/team:", error);
+        return res.status(500).json({
+            error: "Failed to get team",
+            details: error?.message ?? String(error)
+        });
+    }
+});
+
 export default router;

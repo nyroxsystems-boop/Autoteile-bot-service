@@ -41,19 +41,33 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
         // 2. Check Database Session (admin_sessions for Admin Dashboard)
         try {
-            // Check admin_sessions table with proper timestamp casting
-            const session = await get<any>(
+            // First check admin_sessions table with proper timestamp casting
+            const adminSession = await get<any>(
                 'SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
                 [token]
             );
 
-            if (session) {
-                // Attach user to request if needed
-                (req as any).user = session;
+            if (adminSession) {
+                // Attach user to request
+                (req as any).user = adminSession;
+                (req as any).isAdmin = true;
                 return next();
-            } else {
-                logger.warn(`[Auth] Session invalid or expired for ${path}`);
             }
+
+            // Then check regular sessions table (User Dashboard)
+            const userSession = await get<any>(
+                'SELECT s.*, u.id as user_id, u.email, u.username, u.role, u.merchant_id FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at::TIMESTAMP > NOW()',
+                [token]
+            );
+
+            if (userSession) {
+                // Attach user to request
+                (req as any).user = userSession;
+                (req as any).isAdmin = false;
+                return next();
+            }
+
+            logger.warn(`[Auth] Session invalid or expired for ${path}`);
         } catch (error) {
             logger.error("[Auth] DB session check failed", error);
         }

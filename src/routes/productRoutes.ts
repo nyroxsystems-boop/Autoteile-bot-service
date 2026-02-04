@@ -2,17 +2,29 @@
 import { Router } from 'express';
 import * as adapter from '@adapters/inventreeAdapter';
 import { logger } from '@utils/logger';
+import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Middleware: Extract Tenant ID
+// Apply auth to all product routes
+router.use(authMiddleware);
+
+// Middleware: Extract Tenant ID (from header or authenticated user)
 const requireTenant = (req: any, res: any, next: any) => {
+    // Try header first
     const tenantId = req.headers['x-tenant-id'];
-    if (!tenantId) {
-        return res.status(400).json({ error: "Missing X-Tenant-ID header" });
+    if (tenantId) {
+        req.tenantId = tenantId.toString();
+        return next();
     }
-    req.tenantId = tenantId.toString();
-    next();
+
+    // Fallback to user's merchant_id from auth session
+    if (req.user?.merchant_id) {
+        req.tenantId = req.user.merchant_id.toString();
+        return next();
+    }
+
+    return res.status(400).json({ error: "Missing X-Tenant-ID header or user not authenticated with tenant" });
 };
 
 router.use(requireTenant);

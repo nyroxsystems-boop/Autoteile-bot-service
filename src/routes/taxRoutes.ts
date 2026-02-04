@@ -14,14 +14,22 @@ import {
 
 const router = Router();
 
-// Middleware to extract tenant ID from header
+// Middleware to extract tenant ID (from header or authenticated user)
 const requireTenant = (req: Request, res: Response, next: Function) => {
+    // Try header first
     const tenantId = req.headers['x-tenant-id'] as string;
-    if (!tenantId) {
-        return res.status(400).json({ error: 'X-Tenant-ID header is required' });
+    if (tenantId) {
+        (req as any).tenantId = tenantId;
+        return next();
     }
-    (req as any).tenantId = tenantId;
-    next();
+
+    // Fallback to user's merchant_id from auth session
+    if ((req as any).user?.merchant_id) {
+        (req as any).tenantId = (req as any).user.merchant_id.toString();
+        return next();
+    }
+
+    return res.status(400).json({ error: 'X-Tenant-ID header is required' });
 };
 
 router.use(requireTenant);
