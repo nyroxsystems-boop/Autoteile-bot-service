@@ -26,6 +26,8 @@ import { mercedesEpcSource } from "./sources/mercedesEpcSource";
 import { vagEtkaSource } from "./sources/vagEtkaSource";
 // 🏆 ENTERPRISE: Database Source (Priority 1)
 import { databaseSource } from "./sources/databaseSource";
+// 🔥 NEW: TecDoc Cross-Reference (Aftermarket→OEM mapping)
+import { tecDocCrossRefSource } from "./sources/tecDocCrossRefSource";
 
 
 // PRODUCTION SOURCES ONLY - Fake/empty sources removed to prevent
@@ -33,13 +35,15 @@ import { databaseSource } from "./sources/databaseSource";
 const SOURCES = [
   // 🏆 ENTERPRISE DATABASE (instant, highest priority)
   databaseSource,            // SQLite database - 0ms response, 0.95+ confidence
+  // 🔥 TECDOC CROSS-REFERENCE (Aftermarket→OEM mapping)
+  tecDocCrossRefSource,      // Cross-reference database - instant local lookup
   // PREMIUM CATALOG SOURCES (brand-specific, high accuracy)
   realOemSource,          // BMW OEM catalog (RealOEM.com)
   mercedesEpcSource,      // Mercedes EPC catalog
   vagEtkaSource,          // VAG ETKA catalog (VW/Audi/Skoda/Seat)
   // GENERAL WEB SCRAPERS
   webScrapeSource,        // Integrates oemWebFinder with 8 web scrapers
-  llmHeuristicSource,     // GPT-based OEM inference
+  llmHeuristicSource,     // Premium AI OEM inference with TecDoc knowledge
   motointegratorSource,   // Direct web scraper
   autodocWebSource,       // Direct Autodoc scraper
   sepZapWebSource,        // 7zap scraper
