@@ -214,12 +214,15 @@ type SmalltalkType = "greeting" | "thanks" | "bot_question";
 // ------------------------------
 // Hilfsfunktionen
 // ------------------------------
-function detectLanguageSelection(text: string): "de" | "en" | null {
+function detectLanguageSelection(text: string): "de" | "en" | "tr" | "ku" | "pl" | null {
   if (!text) return null;
   const t = text.trim().toLowerCase();
 
   if (["1", "de", "deutsch", "german", "ger"].includes(t)) return "de";
   if (["2", "en", "english", "englisch", "eng"].includes(t)) return "en";
+  if (["3", "tr", "türkçe", "turkce", "turkish", "türkisch"].includes(t)) return "tr";
+  if (["4", "ku", "kurdî", "kurdi", "kurdisch", "kurdish"].includes(t)) return "ku";
+  if (["5", "pl", "polski", "polnisch", "polish"].includes(t)) return "pl";
 
   return null;
 }
@@ -2464,15 +2467,6 @@ export async function handleIncomingBotMessage(
         break;
       }
 
-      case "done": {
-        replyText =
-          language === "en"
-            ? "Do you want to start a new request for another vehicle or part?"
-            : "Möchtest du eine neue Anfrage für ein weiteres Fahrzeug oder Teil starten?";
-        nextStatus = "choose_language";
-        language = null;
-        break;
-      }
 
       case "collect_delivery_preference": {
         const choice = userText.toLowerCase();
@@ -2491,6 +2485,7 @@ export async function handleIncomingBotMessage(
           replyText = language === "en"
             ? "Please decide: Delivery (D) or Pickup (P)?"
             : "Bitte entscheide dich: Lieferung (D) oder Abholung (P)?";
+          nextStatus = "collect_delivery_preference";
         }
         break;
       }
@@ -2510,6 +2505,7 @@ export async function handleIncomingBotMessage(
           replyText = language === "en"
             ? "Please provide a valid delivery address."
             : "Bitte gib eine gültige Lieferadresse an.";
+          nextStatus = "collect_address";
         }
         break;
       }
