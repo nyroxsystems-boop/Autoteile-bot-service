@@ -171,6 +171,12 @@ function detectLanguageSelection(text) {
         return "de";
     if (["2", "en", "english", "englisch", "eng"].includes(t))
         return "en";
+    if (["3", "tr", "türkçe", "turkce", "turkish", "türkisch"].includes(t))
+        return "tr";
+    if (["4", "ku", "kurdî", "kurdi", "kurdisch", "kurdish"].includes(t))
+        return "ku";
+    if (["5", "pl", "polski", "polnisch", "polish"].includes(t))
+        return "pl";
     return null;
 }
 function detectLanguageFromText(text) {
@@ -1512,7 +1518,22 @@ async function handleIncomingBotMessage(payload) {
                         logger_1.logger.error("Failed to persist chosen language", { error: err?.message, orderId: order.id });
                     }
                     nextStatus = "collect_vehicle";
-                    // We will generate the reply below
+                    // Generate greeting after language selection
+                    if (language === "en") {
+                        replyText = "Great! 🎉 Please send me a photo of your vehicle registration document, or tell me: brand, model, year.";
+                    }
+                    else if (language === "tr") {
+                        replyText = "Harika! 🎉 Lütfen araç ruhsatınızın fotoğrafını gönderin veya marka, model, yıl bilgilerini yazın.";
+                    }
+                    else if (language === "ku") {
+                        replyText = "Baş e! 🎉 Ji kerema xwe wêneya belgeya qeydkirina wesayîta xwe bişînin, an jî marka, model, sal binivîsin.";
+                    }
+                    else if (language === "pl") {
+                        replyText = "Świetnie! 🎉 Wyślij mi zdjęcie dowodu rejestracyjnego pojazdu lub podaj: markę, model, rok.";
+                    }
+                    else {
+                        replyText = "Super! 🎉 Schick mir bitte ein Foto deines Fahrzeugscheins, oder nenne mir: Marke, Modell, Baujahr.";
+                    }
                 }
                 else {
                     replyText =
@@ -2142,15 +2163,6 @@ async function handleIncomingBotMessage(payload) {
                 nextStatus = "done";
                 break;
             }
-            case "done": {
-                replyText =
-                    language === "en"
-                        ? "Do you want to start a new request for another vehicle or part?"
-                        : "Möchtest du eine neue Anfrage für ein weiteres Fahrzeug oder Teil starten?";
-                nextStatus = "choose_language";
-                language = null;
-                break;
-            }
             case "collect_delivery_preference": {
                 const choice = userText.toLowerCase();
                 if (choice.includes("d") || choice.includes("liefer")) {
@@ -2170,6 +2182,7 @@ async function handleIncomingBotMessage(payload) {
                     replyText = language === "en"
                         ? "Please decide: Delivery (D) or Pickup (P)?"
                         : "Bitte entscheide dich: Lieferung (D) oder Abholung (P)?";
+                    nextStatus = "collect_delivery_preference";
                 }
                 break;
             }
@@ -2190,6 +2203,7 @@ async function handleIncomingBotMessage(payload) {
                     replyText = language === "en"
                         ? "Please provide a valid delivery address."
                         : "Bitte gib eine gültige Lieferadresse an.";
+                    nextStatus = "collect_address";
                 }
                 break;
             }

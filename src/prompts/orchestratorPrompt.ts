@@ -55,6 +55,19 @@ Wenn der Nutzer explizit einen Menschen will:
 - "Kein Bot"
 → action: "escalate_human"
 
+NEUES TEIL / NEUSTART ERKENNUNG:
+Wenn der Nutzer ein ANDERES Teil suchen will (aktuelles abbrechen):
+- "Anderes Teil probieren"
+- "Kann ich was anderes suchen?"
+- "Lass mal ein anderes Teil"
+- "Neues Teil"
+- "Andere Anfrage"
+- "Nochmal von vorne"
+- "Alles gut, kann ich..."
+→ action: "new_order"
+→ Setze ALLE slots auf null zurück!
+→ reply: "Natürlich! Was für ein Teil darf ich für Sie suchen?"
+
 INPUT-FORMAT:
 {
   "conversation": { "status": "...", "language": "de|en", "orderData": {...} },

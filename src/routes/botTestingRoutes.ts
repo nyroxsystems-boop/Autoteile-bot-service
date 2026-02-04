@@ -21,10 +21,10 @@ const testSessions = new Map<string, {
  * Send a message to the bot and get a response
  */
 router.post("/chat", async (req: Request, res: Response) => {
-    const { from, text, simulateImage } = req.body ?? {};
+    const { from, text, imageBase64 } = req.body ?? {};
 
-    if (!from || !text) {
-        return res.status(400).json({ error: "from and text are required" });
+    if (!from || (!text && !imageBase64)) {
+        return res.status(400).json({ error: "from and (text or imageBase64) are required" });
     }
 
     // Normalize phone number
@@ -32,7 +32,12 @@ router.post("/chat", async (req: Request, res: Response) => {
     const sessionKey = `test:${normalizedFrom}`;
 
     try {
-        console.log("[BotTesting] Incoming message:", { from: normalizedFrom, text });
+        console.log("[BotTesting] Incoming message:", {
+            from: normalizedFrom,
+            text,
+            hasImage: !!imageBase64,
+            imageSize: imageBase64?.length || 0
+        });
 
         // Initialize session if needed
         if (!testSessions.has(sessionKey)) {
@@ -41,14 +46,22 @@ router.post("/chat", async (req: Request, res: Response) => {
         const session = testSessions.get(sessionKey)!;
 
         // Store user message
-        session.messages.push({ role: 'user', text, timestamp: new Date() });
+        session.messages.push({ role: 'user', text: text || '📷 Bild', timestamp: new Date() });
+
+        // Build mediaUrls if image is provided
+        // For bot testing, we pass base64 directly as a data URL
+        let mediaUrls: string[] | undefined;
+        if (imageBase64) {
+            // Create a data URL from base64 - the bot logic can parse this
+            mediaUrls = [`data:image/jpeg;base64,${imageBase64}`];
+        }
 
         // Call the actual bot logic
         const result = await handleIncomingBotMessage({
             from: normalizedFrom,
-            text,
+            text: text || 'Fahrzeugschein-Bild',
             orderId: session.orderId ?? null,
-            mediaUrls: simulateImage ? ['https://placeholder.test/image.jpg'] : undefined
+            mediaUrls
         });
 
         // Update session with order ID
