@@ -226,9 +226,23 @@ export function addMessageToSession(sessionId: string, role: "user" | "assistant
 
 /**
  * Get session history as simple string array (for Gemini Agent context)
+ * This version reads from in-memory store (which is kept in sync with Redis)
  */
 export function getSessionHistory(sessionId: string): Array<{ role: "user" | "assistant"; content: string }> {
     const messages = inMemoryStore.get(sessionId) || [];
+    return messages.map(m => ({
+        role: m._getType() === "human" ? "user" as const : "assistant" as const,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    }));
+}
+
+/**
+ * Get session history with Redis support (async version)
+ * Reads from Redis if available, falls back to in-memory
+ */
+export async function getSessionHistoryAsync(sessionId: string): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+    const chatHistory = new ProductionChatHistory(sessionId);
+    const messages = await chatHistory.getMessages();
     return messages.map(m => ({
         role: m._getType() === "human" ? "user" as const : "assistant" as const,
         content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
@@ -286,6 +300,7 @@ export default {
     isRedisConnected,
     addMessageToSession,
     getSessionHistory,
+    getSessionHistoryAsync,
     ProductionChatHistory,
     SessionChatHistory,
 };

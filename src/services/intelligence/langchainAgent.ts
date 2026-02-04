@@ -115,23 +115,44 @@ export async function langchainCallOrchestrator(payload: {
         // 1. Get conversation history for context
         const history = getSessionHistory(payload.sessionId);
 
-        // 2. Build input context
-        const inputContext = JSON.stringify({
+        // 2. Build messages array with proper multi-turn conversation
+        // This is the KEY FIX: Send history as actual alternating messages, not embedded JSON
+        const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+            { role: "system", content: ORCHESTRATOR_PROMPT }
+        ];
+
+        // Add conversation history as actual alternating user/assistant messages
+        // This allows Gemini to understand the conversation context properly
+        const relevantHistory = history.slice(-10); // Last 10 messages for context
+        for (const msg of relevantHistory) {
+            messages.push({
+                role: msg.role,
+                content: msg.content
+            });
+        }
+
+        // 3. Build current context (without previousMessages, since we're sending them properly now)
+        const currentContext = JSON.stringify({
             conversation: payload.conversation,
             latestMessage: payload.latestMessage,
             ocr: payload.ocr || null,
-            previousMessages: history.slice(-5), // Last 5 messages for context
         });
 
-        // 3. Add current message to memory
+        // Add current message as the final user message
+        messages.push({ role: "user", content: currentContext });
+
+        // 4. Add current message to memory BEFORE calling Gemini
         addMessageToSession(payload.sessionId, "user", payload.latestMessage);
 
-        // 4. Call Gemini with structured JSON output
+        logger.info("🧠 [Gemini Agent] Sending multi-turn conversation", {
+            sessionId: payload.sessionId,
+            historyLength: relevantHistory.length,
+            totalMessages: messages.length,
+        });
+
+        // 5. Call Gemini with structured JSON output and full conversation history
         const response = await generateChatCompletion({
-            messages: [
-                { role: "system", content: ORCHESTRATOR_PROMPT },
-                { role: "user", content: inputContext }
-            ],
+            messages,
             responseFormat: "json_object",
             temperature: 0
         });
