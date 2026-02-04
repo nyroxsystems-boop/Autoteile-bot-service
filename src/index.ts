@@ -36,6 +36,7 @@ import authRouter from "./routes/authRoutes";
 import userRouter from "./routes/userRoutes";
 import taxRouter from "./routes/taxRoutes";
 import invoiceRouter from "./routes/invoiceRoutes";
+import b2bRouter from "./routes/b2bRoutes";
 import healthRouter from "./routes/healthRoutes";
 import settingsRouter from "./routes/settingsRoutes";
 import { authMiddleware } from "./middleware/authMiddleware";
@@ -148,6 +149,9 @@ app.use("/api/invoices", authMiddleware, invoiceRouter);
 
 // Settings API (requires auth)
 app.use("/api/settings", authMiddleware, settingsRouter);
+
+// B2B Supplier API (requires auth)
+app.use("/api/b2b", b2bRouter);
 
 // Internal API
 app.use("/internal", createInternalRouter());
