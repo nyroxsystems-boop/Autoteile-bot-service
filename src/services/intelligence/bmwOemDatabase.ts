@@ -178,31 +178,43 @@ function detectBMWPartType(query: string): PartDetection {
     let type: BMWPartType = null;
     let position: BMWPosition = null;
 
-    // Detect type
-    if (q.includes("sattel") || q.includes("caliper") || q.includes("bremssattel")) {
+    // Detect type - EXPANDED for German plurals and variations
+    if (q.includes("sattel") || q.includes("sättel") || q.includes("caliper") ||
+        q.includes("bremssattel") || q.includes("bremssättel") ||
+        q.includes("brake caliper") || q.includes("bremsattel")) {
         type = "caliper";
-    } else if (q.includes("scheibe") || q.includes("disc") || q.includes("bremsscheibe")) {
+    } else if (q.includes("scheibe") || q.includes("disc") || q.includes("bremsscheibe") ||
+        q.includes("scheiben") || q.includes("bremsscheiben") || q.includes("rotor")) {
         type = "disc";
-    } else if (q.includes("belag") || q.includes("beläge") || q.includes("pad") || q.includes("bremsbelag")) {
+    } else if (q.includes("belag") || q.includes("beläge") || q.includes("pad") ||
+        q.includes("bremsbelag") || q.includes("bremsbeläge") || q.includes("pads") ||
+        q.includes("klötze") || q.includes("bremsklotz") || q.includes("bremsklötze")) {
         type = "pad";
-    } else if (q.includes("leitung") || q.includes("schlauch") || q.includes("line") || q.includes("bremsleitung")) {
+    } else if (q.includes("leitung") || q.includes("schlauch") || q.includes("line") ||
+        q.includes("bremsleitung") || q.includes("bremsleitungen") ||
+        q.includes("schläuche") || q.includes("bremsschlauch")) {
         type = "line";
-    } else if (q.includes("sensor") || q.includes("verschleiß")) {
+    } else if (q.includes("sensor") || q.includes("verschleiß") || q.includes("warnkontakt") ||
+        q.includes("sensoren") || q.includes("verschleissanzeige")) {
         type = "sensor";
     }
 
     // Detect position
-    if (q.includes("vorne links") || q.includes("front left") || q.includes("vl")) {
+    if (q.includes("vorne links") || q.includes("front left") || q.includes("vl") ||
+        q.includes("links vorne") || q.includes("vorn links")) {
         position = "front_left";
-    } else if (q.includes("vorne rechts") || q.includes("front right") || q.includes("vr")) {
+    } else if (q.includes("vorne rechts") || q.includes("front right") || q.includes("vr") ||
+        q.includes("rechts vorne") || q.includes("vorn rechts")) {
         position = "front_right";
-    } else if (q.includes("hinten links") || q.includes("rear left") || q.includes("hl")) {
+    } else if (q.includes("hinten links") || q.includes("rear left") || q.includes("hl") ||
+        q.includes("links hinten")) {
         position = "rear_left";
-    } else if (q.includes("hinten rechts") || q.includes("rear right") || q.includes("hr")) {
+    } else if (q.includes("hinten rechts") || q.includes("rear right") || q.includes("hr") ||
+        q.includes("rechts hinten")) {
         position = "rear_right";
-    } else if (q.includes("vorn") || q.includes("front") || q.includes("vorder")) {
+    } else if (q.includes("vorn") || q.includes("front") || q.includes("vorder") || q.includes("va")) {
         position = "front";
-    } else if (q.includes("hint") || q.includes("rear") || q.includes("hinter")) {
+    } else if (q.includes("hint") || q.includes("rear") || q.includes("hinter") || q.includes("ha")) {
         position = "rear";
     }
 
