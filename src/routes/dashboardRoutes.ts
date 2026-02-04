@@ -132,20 +132,33 @@ export function createDashboardRouter(): Router {
   router.get("/stats", async (req: Request, res: Response) => {
     try {
       const orders = await wawi.listOrders();
+
+      // Count orders by status
+      const ordersNew = orders.filter(o => o.status === 'new').length;
+      const ordersInProgress = orders.filter(o =>
+        o.status !== 'new' && o.status !== 'done' && o.status !== 'aborted'
+      ).length;
+      const ordersDone = orders.filter(o => o.status === 'done').length;
+
+      // Get today's orders
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const ordersToday = orders.filter(o => {
+        const orderDate = new Date(o.createdAt);
+        return orderDate >= today;
+      }).length;
+
       const stats = {
-        ordersNew: orders.filter(o => o.status === 'new').length,
-        ordersInProgress: orders.filter(o => o.status !== 'new' && o.status !== 'done' && o.status !== 'aborted').length,
+        ordersNew,
+        ordersInProgress,
+        ordersDone,
+        ordersTotal: orders.length,
+        ordersToday,
         invoicesDraft: 0,
         invoicesIssued: 0,
-        revenueToday: 1250.50, // Mocked
+        revenueToday: 0, // Will be calculated when invoice system is live
         lastSync: new Date().toISOString(),
-
-        // Optional arrays empty for now (safe)
-        revenueHistory: [
-          { date: '2025-01-01', revenue: 1200, orders: 5 },
-          { date: '2025-01-02', revenue: 850, orders: 3 },
-          { date: '2025-01-03', revenue: 2100, orders: 8 }
-        ],
+        revenueHistory: [],
         topCustomers: [],
         activities: []
       };
