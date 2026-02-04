@@ -1762,7 +1762,18 @@ export async function handleIncomingBotMessage(
             logger.error("Failed to persist chosen language", { error: err?.message, orderId: order.id });
           }
           nextStatus = "collect_vehicle";
-          // We will generate the reply below
+          // Generate greeting after language selection
+          if (language === "en") {
+            replyText = "Great! 🎉 Please send me a photo of your vehicle registration document, or tell me: brand, model, year.";
+          } else if (language === "tr") {
+            replyText = "Harika! 🎉 Lütfen araç ruhsatınızın fotoğrafını gönderin veya marka, model, yıl bilgilerini yazın.";
+          } else if (language === "ku") {
+            replyText = "Baş e! 🎉 Ji kerema xwe wêneya belgeya qeydkirina wesayîta xwe bişînin, an jî marka, model, sal binivîsin.";
+          } else if (language === "pl") {
+            replyText = "Świetnie! 🎉 Wyślij mi zdjęcie dowodu rejestracyjnego pojazdu lub podaj: markę, model, rok.";
+          } else {
+            replyText = "Super! 🎉 Schick mir bitte ein Foto deines Fahrzeugscheins, oder nenne mir: Marke, Modell, Baujahr.";
+          }
         } else {
           replyText =
             "Hallo! Bitte wähle deine Sprache:\n" +
@@ -1775,6 +1786,7 @@ export async function handleIncomingBotMessage(
         }
         break;
       }
+
 
       case "collect_vehicle": {
         // Bild zählt als Fahrzeugschein
