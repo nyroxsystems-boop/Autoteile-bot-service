@@ -9,7 +9,7 @@ import { seedDemoData } from './seedDemoData';
 // Create connection pool
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes('render.com')
+    ssl: process.env.DATABASE_URL?.includes('render.com') || process.env.DATABASE_URL?.includes('railway.app')
         ? { rejectUnauthorized: false }
         : undefined,
     max: 20, // Maximum number of connections
