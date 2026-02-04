@@ -206,6 +206,35 @@ export function getActiveSessionIds(): string[] {
     return Array.from(inMemoryStore.keys());
 }
 
+/**
+ * Add a message to session memory (simplified API for Gemini Agent)
+ */
+export function addMessageToSession(sessionId: string, role: "user" | "assistant", content: string): void {
+    sessionActivity.set(sessionId, Date.now());
+
+    let messages = inMemoryStore.get(sessionId) || [];
+    const message = role === "user" ? new HumanMessage(content) : new AIMessage(content);
+    messages.push(message);
+
+    // Trim if too many
+    if (messages.length > MAX_MESSAGES_PER_SESSION) {
+        messages = messages.slice(-MAX_MESSAGES_PER_SESSION);
+    }
+
+    inMemoryStore.set(sessionId, messages);
+}
+
+/**
+ * Get session history as simple string array (for Gemini Agent context)
+ */
+export function getSessionHistory(sessionId: string): Array<{ role: "user" | "assistant"; content: string }> {
+    const messages = inMemoryStore.get(sessionId) || [];
+    return messages.map(m => ({
+        role: m._getType() === "human" ? "user" as const : "assistant" as const,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    }));
+}
+
 export function getMemoryStats(): {
     activeSessions: number;
     totalMessages: number;
@@ -255,6 +284,8 @@ export default {
     getActiveSessionIds,
     getMemoryStats,
     isRedisConnected,
+    addMessageToSession,
+    getSessionHistory,
     ProductionChatHistory,
     SessionChatHistory,
 };
