@@ -1,184 +1,111 @@
 // B2B Supplier Routes
-// API endpoints for managing B2B supplier configurations
+// API endpoints for managing suppliers
 
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import {
-    getSupplierConfigs,
+    getSuppliersWithConfigs,
     getSupplierConfig,
     upsertSupplierConfig,
-    deleteSupplierConfig,
-    getAvailableSuppliers
+    deleteSupplierConfig
 } from '../services/b2bSuppliers/supplierConfigService';
-import { applyMargin, getPriceTierInfo } from '../services/b2bSuppliers/marginEngine';
-import type { B2BSupplierName } from '../services/b2bSuppliers/types';
+import { getSupplier, getAllSuppliers } from '../services/b2bSuppliers/types';
+import { applyMargin } from '../services/b2bSuppliers/marginEngine';
 
 const router = Router();
-
-// Apply auth to all routes
 router.use(authMiddleware);
 
-// Middleware to extract tenant ID
 const requireTenant = (req: Request, res: Response, next: Function) => {
     const tenantId = req.headers['x-tenant-id'] as string || (req as any).user?.merchant_id?.toString();
-    if (!tenantId) {
-        return res.status(400).json({ error: 'Tenant ID required' });
-    }
+    if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
     req.tenantId = tenantId;
     next();
 };
-
 router.use(requireTenant);
 
-/**
- * GET /api/b2b/suppliers
- * List all available suppliers with their configs
- */
+// GET /api/b2b/suppliers - List all suppliers with configs
 router.get('/suppliers', async (req: Request, res: Response) => {
     try {
-        const available = getAvailableSuppliers();
-        const configs = await getSupplierConfigs(req.tenantId!);
+        const suppliers = await getSuppliersWithConfigs(req.tenantId!);
+        // Mask credentials
+        const safe = suppliers.map(s => ({
+            ...s,
+            config: s.config ? {
+                ...s.config,
+                credentials: Object.fromEntries(
+                    Object.entries(s.config.credentials).map(([k, v]) => [k, v ? '••••••••' : null])
+                )
+            } : null
+        }));
+        res.json(safe);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
-        // Merge available suppliers with their configs
-        const suppliers = available.map(supplier => {
-            const config = configs.find(c => c.supplier_name === supplier.name);
-            return {
-                ...supplier,
-                config: config ? {
-                    enabled: config.enabled,
-                    price_tier: config.price_tier,
-                    margin_type: config.margin_type,
-                    margin_value: config.margin_value,
-                    minimum_margin: config.minimum_margin,
-                    rounding_strategy: config.rounding_strategy,
-                    round_to: config.round_to,
-                    priority: config.priority,
-                    hasCredentials: !!(config.api_key || config.username)
-                } : null
-            };
+// GET /api/b2b/suppliers/:key - Get specific supplier
+router.get('/suppliers/:key', async (req: Request, res: Response) => {
+    try {
+        const definition = getSupplier(req.params.key);
+        if (!definition) return res.status(404).json({ error: 'Supplier not found' });
+
+        const config = await getSupplierConfig(req.tenantId!, req.params.key);
+        res.json({
+            ...definition,
+            config: config ? {
+                ...config,
+                credentials: Object.fromEntries(
+                    Object.entries(config.credentials).map(([k, v]) => [k, v ? '••••••••' : null])
+                )
+            } : null,
+            isEnabled: config?.enabled || false
         });
-
-        res.json(suppliers);
     } catch (error: any) {
-        console.error('[B2B] Error fetching suppliers:', error);
-        res.status(500).json({ error: 'Failed to fetch suppliers', message: error.message });
+        res.status(500).json({ error: error.message });
     }
 });
 
-/**
- * GET /api/b2b/suppliers/:name
- * Get specific supplier config
- */
-router.get('/suppliers/:name', async (req: Request, res: Response) => {
+// PUT /api/b2b/suppliers/:key - Update supplier config
+router.put('/suppliers/:key', async (req: Request, res: Response) => {
     try {
-        const supplierName = req.params.name as B2BSupplierName;
-        const config = await getSupplierConfig(req.tenantId!, supplierName);
-
-        if (!config) {
-            return res.status(404).json({ error: 'Supplier config not found' });
-        }
-
-        // Don't expose sensitive credentials
-        const safeConfig = {
-            ...config,
-            api_key: config.api_key ? '***configured***' : null,
-            api_secret: config.api_secret ? '***configured***' : null
-        };
-
-        res.json(safeConfig);
+        const { enabled, credentials, settings } = req.body;
+        const config = await upsertSupplierConfig(req.tenantId!, req.params.key, { enabled, credentials, settings });
+        res.json({ success: true, config: { ...config, credentials: {} } });
     } catch (error: any) {
-        console.error('[B2B] Error fetching supplier config:', error);
-        res.status(500).json({ error: 'Failed to fetch supplier config', message: error.message });
+        res.status(500).json({ error: error.message });
     }
 });
 
-/**
- * PUT /api/b2b/suppliers/:name
- * Update supplier config
- */
-router.put('/suppliers/:name', async (req: Request, res: Response) => {
+// DELETE /api/b2b/suppliers/:key - Reset supplier
+router.delete('/suppliers/:key', async (req: Request, res: Response) => {
     try {
-        const supplierName = req.params.name as B2BSupplierName;
-        const validSuppliers: B2BSupplierName[] = ['inter_cars', 'moto_profil', 'auto_partner', 'gordon'];
-
-        if (!validSuppliers.includes(supplierName)) {
-            return res.status(400).json({ error: 'Invalid supplier name' });
-        }
-
-        const config = await upsertSupplierConfig(req.tenantId!, supplierName, req.body);
-
-        // Don't expose sensitive credentials
-        const safeConfig = {
-            ...config,
-            api_key: config.api_key ? '***configured***' : null,
-            api_secret: config.api_secret ? '***configured***' : null
-        };
-
-        res.json(safeConfig);
+        await deleteSupplierConfig(req.tenantId!, req.params.key);
+        res.json({ success: true });
     } catch (error: any) {
-        console.error('[B2B] Error updating supplier config:', error);
-        res.status(500).json({ error: 'Failed to update supplier config', message: error.message });
+        res.status(500).json({ error: error.message });
     }
 });
 
-/**
- * DELETE /api/b2b/suppliers/:name
- * Delete supplier config (resets to default)
- */
-router.delete('/suppliers/:name', async (req: Request, res: Response) => {
-    try {
-        const supplierName = req.params.name as B2BSupplierName;
-        await deleteSupplierConfig(req.tenantId!, supplierName);
-        res.json({ success: true, message: 'Supplier config reset to default' });
-    } catch (error: any) {
-        console.error('[B2B] Error deleting supplier config:', error);
-        res.status(500).json({ error: 'Failed to delete supplier config', message: error.message });
-    }
-});
-
-/**
- * POST /api/b2b/calculate-margin
- * Calculate selling price from purchase price
- */
+// POST /api/b2b/calculate-margin - Test margin calculation
 router.post('/calculate-margin', async (req: Request, res: Response) => {
     try {
-        const { purchasePrice, supplierName } = req.body;
-
-        if (!purchasePrice || !supplierName) {
-            return res.status(400).json({ error: 'purchasePrice and supplierName required' });
-        }
-
-        const config = await getSupplierConfig(req.tenantId!, supplierName);
-        if (!config) {
-            return res.status(404).json({ error: 'Supplier config not found' });
-        }
-
-        const result = applyMargin(purchasePrice, config);
+        const { purchasePrice, marginPercent = 15, minMargin = 5 } = req.body;
+        const result = applyMargin(purchasePrice, {
+            margin_type: 'percentage',
+            margin_value: marginPercent,
+            minimum_margin: minMargin,
+            rounding_strategy: 'up',
+            round_to: 0.99
+        } as any);
         res.json({
             purchasePrice,
-            ...result,
-            formatted: {
-                purchase: new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(purchasePrice),
-                selling: new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(result.sellingPrice),
-                margin: new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(result.marginAmount)
-            }
+            sellingPrice: result.sellingPrice,
+            marginAmount: result.marginAmount,
+            marginPercent: result.marginPercent
         });
     } catch (error: any) {
-        console.error('[B2B] Error calculating margin:', error);
-        res.status(500).json({ error: 'Failed to calculate margin', message: error.message });
+        res.status(500).json({ error: error.message });
     }
-});
-
-/**
- * GET /api/b2b/price-tiers
- * Get available price tier info
- */
-router.get('/price-tiers', (req: Request, res: Response) => {
-    const tiers = ['basic', 'silver', 'gold', 'platinum'].map(tier => ({
-        id: tier,
-        ...getPriceTierInfo(tier)
-    }));
-    res.json(tiers);
 });
 
 export default router;

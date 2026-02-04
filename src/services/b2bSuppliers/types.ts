@@ -1,98 +1,155 @@
-// B2B Supplier Types
-// Shared types for all B2B supplier integrations
+// Flexible B2B Supplier System - Types
+// Supports any supplier, easily extensible
 
-export interface B2BSupplierConfig {
+export interface SupplierDefinition {
+    key: string;
+    name: string;
+    description: string;
+    icon: string;
+    color: string;
+    website: string;
+    country: string;
+    hasApi: boolean;
+    features: string[];
+
+    // Configuration fields
+    credentialFields: CredentialField[];
+    settingFields: SettingField[];
+}
+
+export interface CredentialField {
+    key: string;
+    label: string;
+    type: 'text' | 'password';
+    placeholder?: string;
+    required?: boolean;
+}
+
+export interface SettingField {
+    key: string;
+    label: string;
+    type: 'number' | 'select' | 'toggle';
+    description?: string;
+    defaultValue?: any;
+    options?: { value: string; label: string }[];
+    min?: number;
+    max?: number;
+}
+
+export interface SupplierConfig {
     id: string;
     tenant_id: string;
-    supplier_name: B2BSupplierName;
+    supplier_key: string;
     enabled: boolean;
-
-    // API Credentials
-    api_key?: string;
-    api_secret?: string;
-    account_number?: string;
-    username?: string;
-
-    // Pricing Configuration
-    price_tier: PriceTier;
-    margin_type: 'percentage' | 'fixed';
-    margin_value: number;
-    minimum_margin: number;
-    rounding_strategy: 'up' | 'down' | 'nearest';
-    round_to: number;
-
-    priority: number;
+    credentials: Record<string, string>;
+    settings: Record<string, any>;
+    status: 'connected' | 'disconnected' | 'error';
+    last_sync?: string;
+    error_message?: string;
     created_at: string;
     updated_at: string;
 }
 
-export type B2BSupplierName = 'inter_cars' | 'moto_profil' | 'auto_partner' | 'gordon';
-export type PriceTier = 'basic' | 'silver' | 'gold' | 'platinum';
+// ══════════════════════════════════════════════════════════════════
+// SUPPLIER REGISTRY - Add new suppliers here
+// ══════════════════════════════════════════════════════════════════
 
-export interface B2BPartSearchResult {
-    supplierId: string;
-    supplierName: B2BSupplierName;
-    partNumber: string;
-    oemNumber: string;
-    name: string;
-    brand: string;
+export const SUPPLIERS: SupplierDefinition[] = [
+    {
+        key: 'inter_cars',
+        name: 'Inter Cars',
+        description: 'Größter Autoteile-Großhändler in Mitteleuropa',
+        icon: '🚗',
+        color: '#e31837',
+        website: 'https://intercars.eu',
+        country: 'PL',
+        hasApi: true,
+        features: ['REST API', 'Echtzeit-Preise', 'Auto-Bestellung', 'Lieferverfolgung'],
+        credentialFields: [
+            { key: 'api_key', label: 'API Key', type: 'password', required: true },
+            { key: 'api_secret', label: 'API Secret', type: 'password', required: true },
+            { key: 'customer_id', label: 'Kundennummer', type: 'text', required: true }
+        ],
+        settingFields: [
+            {
+                key: 'price_tier',
+                label: 'Preisstufe',
+                type: 'select',
+                description: 'Rabatt basierend auf Bestellvolumen',
+                options: [
+                    { value: 'basic', label: 'Basic (0%)' },
+                    { value: 'silver', label: 'Silver (5%)' },
+                    { value: 'gold', label: 'Gold (10%)' },
+                    { value: 'platinum', label: 'Platinum (15%)' }
+                ],
+                defaultValue: 'basic'
+            },
+            { key: 'margin_percent', label: 'Marge (%)', type: 'number', defaultValue: 15, min: 0, max: 100 },
+            { key: 'min_margin', label: 'Mindestmarge (€)', type: 'number', defaultValue: 5, min: 0 },
+            { key: 'auto_order', label: 'Auto-Bestellung', type: 'toggle', defaultValue: false }
+        ]
+    },
+    {
+        key: 'moto_profil',
+        name: 'Moto-Profil',
+        description: 'ProfiAuto Katalog & ProfiBiznes',
+        icon: '🔧',
+        color: '#1e3a8a',
+        website: 'https://moto-profil.pl',
+        country: 'PL',
+        hasApi: false,
+        features: ['ProfiAuto Katalog', 'TecDoc-Daten', '50.000+ Nutzer'],
+        credentialFields: [
+            { key: 'username', label: 'Benutzername', type: 'text', required: true },
+            { key: 'password', label: 'Passwort', type: 'password', required: true }
+        ],
+        settingFields: [
+            { key: 'margin_percent', label: 'Marge (%)', type: 'number', defaultValue: 15, min: 0, max: 100 }
+        ]
+    },
+    {
+        key: 'auto_partner',
+        name: 'Auto Partner',
+        description: 'WEBterminal B2B-Plattform',
+        icon: '🛠️',
+        color: '#059669',
+        website: 'https://autopartner.com',
+        country: 'PL',
+        hasApi: false,
+        features: ['WEBterminal', 'VIN-Suche', 'Katalog'],
+        credentialFields: [
+            { key: 'username', label: 'Benutzername', type: 'text', required: true },
+            { key: 'password', label: 'Passwort', type: 'password', required: true }
+        ],
+        settingFields: [
+            { key: 'margin_percent', label: 'Marge (%)', type: 'number', defaultValue: 15, min: 0, max: 100 }
+        ]
+    },
+    {
+        key: 'gordon',
+        name: 'Gordon',
+        description: 'Hurtownia Motoryzacyjna',
+        icon: '⚙️',
+        color: '#7c3aed',
+        website: 'https://gordon.com.pl',
+        country: 'PL',
+        hasApi: false,
+        features: ['Web-Katalog', 'TecDoc', 'VIN-Lookup'],
+        credentialFields: [
+            { key: 'username', label: 'Benutzername', type: 'text', required: true },
+            { key: 'password', label: 'Passwort', type: 'password', required: true }
+        ],
+        settingFields: [
+            { key: 'margin_percent', label: 'Marge (%)', type: 'number', defaultValue: 15, min: 0, max: 100 }
+        ]
+    }
+];
 
-    // Pricing (before margin)
-    purchasePrice: number;
-    currency: string;
-
-    // Availability
-    inStock: boolean;
-    quantity: number;
-    deliveryDays: number;
-
-    // Additional info
-    imageUrl?: string;
-    productUrl?: string;
-    description?: string;
+// Helper functions
+export function getSupplier(key: string): SupplierDefinition | undefined {
+    return SUPPLIERS.find(s => s.key === key);
 }
 
-export interface B2BPartOffer extends B2BPartSearchResult {
-    // Pricing (after margin)
-    sellingPrice: number;
-    marginAmount: number;
-    marginPercent: number;
-}
-
-export interface B2BOrderRequest {
-    partNumber: string;
-    oemNumber: string;
-    quantity: number;
-    customerOrderId: string;
-}
-
-export interface B2BOrderResponse {
-    success: boolean;
-    orderId?: string;
-    supplierOrderId?: string;
-    estimatedDelivery?: string;
-    error?: string;
-}
-
-export interface B2BSupplierAdapter {
-    name: B2BSupplierName;
-    displayName: string;
-
-    // Check if properly configured
-    isConfigured(): boolean;
-
-    // Search for parts
-    searchParts(oem: string): Promise<B2BPartSearchResult[]>;
-
-    // Check stock for specific part
-    checkStock(partNumber: string): Promise<{ inStock: boolean; quantity: number; deliveryDays: number }>;
-
-    // Get current price (may vary by tier)
-    getPrice(partNumber: string): Promise<{ price: number; currency: string }>;
-
-    // Place order
-    placeOrder(order: B2BOrderRequest): Promise<B2BOrderResponse>;
-
-    // Check order status
-    getOrderStatus(orderId: string): Promise<{ status: string; trackingNumber?: string }>;
+export function getAllSuppliers(): SupplierDefinition[] {
+    return SUPPLIERS;
 }

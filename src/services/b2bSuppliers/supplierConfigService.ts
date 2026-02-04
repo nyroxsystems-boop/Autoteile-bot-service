@@ -1,216 +1,136 @@
-// B2B Supplier Configuration Service
-// Manages supplier settings per tenant
+// B2B Supplier Service
+// Manages supplier configurations per tenant
 
 import { db } from '@core/database';
 import { randomUUID } from 'crypto';
-import type { B2BSupplierConfig, B2BSupplierName, PriceTier } from './types';
+import { getSupplier, getAllSuppliers, type SupplierConfig, type SupplierDefinition } from './types';
 
 /**
  * Get all supplier configs for a tenant
  */
-export async function getSupplierConfigs(tenantId: string): Promise<B2BSupplierConfig[]> {
-    const configs = await db.all<B2BSupplierConfig>(
-        `SELECT * FROM b2b_supplier_configs 
-     WHERE tenant_id = ? OR tenant_id = 'default'
-     ORDER BY priority ASC`,
+export async function getSupplierConfigs(tenantId: string): Promise<SupplierConfig[]> {
+    const configs = await db.all<SupplierConfig>(
+        `SELECT * FROM b2b_supplier_configs WHERE tenant_id = ? ORDER BY supplier_key`,
         [tenantId]
     );
-
-    // Convert SQLite integers to booleans
-    return (configs || []).map(c => ({
-        ...c,
-        enabled: Boolean(c.enabled)
-    }));
-}
-
-/**
- * Get enabled supplier configs for a tenant (in priority order)
- */
-export async function getEnabledSuppliers(tenantId: string): Promise<B2BSupplierConfig[]> {
-    const configs = await db.all<B2BSupplierConfig>(
-        `SELECT * FROM b2b_supplier_configs 
-     WHERE (tenant_id = ? OR tenant_id = 'default') AND enabled = 1
-     ORDER BY priority ASC`,
-        [tenantId]
-    );
-
-    return (configs || []).map(c => ({
-        ...c,
-        enabled: true
-    }));
+    return (configs || []).map(parseConfig);
 }
 
 /**
  * Get a specific supplier config
  */
-export async function getSupplierConfig(
-    tenantId: string,
-    supplierName: B2BSupplierName
-): Promise<B2BSupplierConfig | null> {
-    // First try tenant-specific config
-    let config = await db.get<B2BSupplierConfig>(
-        `SELECT * FROM b2b_supplier_configs 
-     WHERE tenant_id = ? AND supplier_name = ?`,
-        [tenantId, supplierName]
+export async function getSupplierConfig(tenantId: string, supplierKey: string): Promise<SupplierConfig | null> {
+    const config = await db.get<SupplierConfig>(
+        `SELECT * FROM b2b_supplier_configs WHERE tenant_id = ? AND supplier_key = ?`,
+        [tenantId, supplierKey]
     );
-
-    // Fallback to default
-    if (!config) {
-        config = await db.get<B2BSupplierConfig>(
-            `SELECT * FROM b2b_supplier_configs 
-       WHERE tenant_id = 'default' AND supplier_name = ?`,
-            [supplierName]
-        );
-    }
-
-    if (!config) return null;
-
-    return {
-        ...config,
-        enabled: Boolean(config.enabled)
-    };
+    return config ? parseConfig(config) : null;
 }
 
 /**
- * Create or update supplier config for a tenant
+ * Create or update supplier config
  */
 export async function upsertSupplierConfig(
     tenantId: string,
-    supplierName: B2BSupplierName,
-    data: Partial<B2BSupplierConfig>
-): Promise<B2BSupplierConfig> {
-    const existing = await db.get<B2BSupplierConfig>(
-        `SELECT * FROM b2b_supplier_configs WHERE tenant_id = ? AND supplier_name = ?`,
-        [tenantId, supplierName]
-    );
+    supplierKey: string,
+    data: { enabled?: boolean; credentials?: Record<string, string>; settings?: Record<string, any> }
+): Promise<SupplierConfig> {
+    const definition = getSupplier(supplierKey);
+    if (!definition) throw new Error(`Unknown supplier: ${supplierKey}`);
 
+    const existing = await getSupplierConfig(tenantId, supplierKey);
     const now = new Date().toISOString();
 
     if (existing) {
-        // Update
+        // Merge credentials (keep existing if not provided)
+        const newCreds = { ...existing.credentials };
+        if (data.credentials) {
+            Object.entries(data.credentials).forEach(([k, v]) => {
+                if (v && v.trim() !== '') newCreds[k] = v;
+            });
+        }
+
+        const newSettings = { ...existing.settings, ...(data.settings || {}) };
+
         await db.run(
             `UPDATE b2b_supplier_configs SET
         enabled = COALESCE(?, enabled),
-        api_key = COALESCE(?, api_key),
-        api_secret = COALESCE(?, api_secret),
-        account_number = COALESCE(?, account_number),
-        username = COALESCE(?, username),
-        price_tier = COALESCE(?, price_tier),
-        margin_type = COALESCE(?, margin_type),
-        margin_value = COALESCE(?, margin_value),
-        minimum_margin = COALESCE(?, minimum_margin),
-        rounding_strategy = COALESCE(?, rounding_strategy),
-        round_to = COALESCE(?, round_to),
-        priority = COALESCE(?, priority),
+        credentials = ?,
+        settings = ?,
         updated_at = ?
-       WHERE tenant_id = ? AND supplier_name = ?`,
+       WHERE tenant_id = ? AND supplier_key = ?`,
             [
                 data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
-                data.api_key,
-                data.api_secret,
-                data.account_number,
-                data.username,
-                data.price_tier,
-                data.margin_type,
-                data.margin_value,
-                data.minimum_margin,
-                data.rounding_strategy,
-                data.round_to,
-                data.priority,
+                JSON.stringify(newCreds),
+                JSON.stringify(newSettings),
                 now,
                 tenantId,
-                supplierName
+                supplierKey
             ]
         );
     } else {
-        // Insert new
-        const id = randomUUID();
         await db.run(
-            `INSERT INTO b2b_supplier_configs (
-        id, tenant_id, supplier_name, enabled,
-        api_key, api_secret, account_number, username,
-        price_tier, margin_type, margin_value, minimum_margin,
-        rounding_strategy, round_to, priority,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO b2b_supplier_configs (id, tenant_id, supplier_key, enabled, credentials, settings, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                id,
+                randomUUID(),
                 tenantId,
-                supplierName,
+                supplierKey,
                 data.enabled ? 1 : 0,
-                data.api_key || null,
-                data.api_secret || null,
-                data.account_number || null,
-                data.username || null,
-                data.price_tier || 'basic',
-                data.margin_type || 'percentage',
-                data.margin_value ?? 15,
-                data.minimum_margin ?? 5,
-                data.rounding_strategy || 'up',
-                data.round_to ?? 0.99,
-                data.priority ?? 100,
+                JSON.stringify(data.credentials || {}),
+                JSON.stringify(data.settings || {}),
+                'disconnected',
                 now,
                 now
             ]
         );
     }
 
-    const result = await getSupplierConfig(tenantId, supplierName);
-    if (!result) throw new Error('Failed to save supplier config');
+    const result = await getSupplierConfig(tenantId, supplierKey);
+    if (!result) throw new Error('Failed to save config');
     return result;
 }
 
 /**
- * Delete supplier config (resets to default)
+ * Delete supplier config
  */
-export async function deleteSupplierConfig(
-    tenantId: string,
-    supplierName: B2BSupplierName
-): Promise<void> {
+export async function deleteSupplierConfig(tenantId: string, supplierKey: string): Promise<void> {
     await db.run(
-        `DELETE FROM b2b_supplier_configs WHERE tenant_id = ? AND supplier_name = ?`,
-        [tenantId, supplierName]
+        `DELETE FROM b2b_supplier_configs WHERE tenant_id = ? AND supplier_key = ?`,
+        [tenantId, supplierKey]
     );
 }
 
 /**
- * Get all available suppliers with their display info
+ * Get all suppliers with their configs (for UI)
  */
-export function getAvailableSuppliers(): Array<{
-    name: B2BSupplierName;
-    displayName: string;
-    description: string;
-    hasApi: boolean;
-    website: string;
-}> {
-    return [
-        {
-            name: 'inter_cars',
-            displayName: 'Inter Cars',
-            description: 'Größter Autoteile-Großhändler in Mitteleuropa mit vollständiger REST API',
-            hasApi: true,
-            website: 'https://intercars.eu'
-        },
-        {
-            name: 'moto_profil',
-            displayName: 'Moto-Profil (ProfiAuto)',
-            description: 'Polnischer Großhändler mit ProfiAuto Katalog und ProfiBiznes Software',
-            hasApi: false,
-            website: 'https://moto-profil.pl'
-        },
-        {
-            name: 'auto_partner',
-            displayName: 'Auto Partner',
-            description: 'B2B-Plattform mit WEBterminal Integration',
-            hasApi: false,
-            website: 'https://autopartner.com'
-        },
-        {
-            name: 'gordon',
-            displayName: 'Gordon',
-            description: 'Hurtownia Motoryzacyjna mit Web-Katalog',
-            hasApi: false,
-            website: 'https://gordon.com.pl'
-        }
-    ];
+export async function getSuppliersWithConfigs(tenantId: string): Promise<Array<SupplierDefinition & { config: SupplierConfig | null; isEnabled: boolean }>> {
+    const configs = await getSupplierConfigs(tenantId);
+    const configMap = new Map(configs.map(c => [c.supplier_key, c]));
+
+    return getAllSuppliers().map(supplier => ({
+        ...supplier,
+        config: configMap.get(supplier.key) || null,
+        isEnabled: configMap.get(supplier.key)?.enabled || false
+    }));
+}
+
+/**
+ * Get enabled suppliers for ordering
+ */
+export async function getEnabledSuppliers(tenantId: string): Promise<SupplierConfig[]> {
+    const configs = await db.all<SupplierConfig>(
+        `SELECT * FROM b2b_supplier_configs WHERE tenant_id = ? AND enabled = 1`,
+        [tenantId]
+    );
+    return (configs || []).map(parseConfig);
+}
+
+function parseConfig(config: any): SupplierConfig {
+    return {
+        ...config,
+        enabled: Boolean(config.enabled),
+        credentials: typeof config.credentials === 'string' ? JSON.parse(config.credentials) : (config.credentials || {}),
+        settings: typeof config.settings === 'string' ? JSON.parse(config.settings) : (config.settings || {})
+    };
 }
