@@ -21,6 +21,7 @@ import { resolveByPRCode, detectPartCategory, suggestPRCodes } from "./prCodeRes
 import { resolveByMotorcode, detectEnginePartCategory, findMotorcodesForModel } from "./motorcodeResolver";
 import { detectFacelift, isFaceliftSensitivePart } from "./faceliftDetector";
 import { checkSupersession, resolveToCurrentOEM } from "./supersessionTracker";
+import { lookupBMWOEM, isBMWVehicle } from "./bmwOemDatabase";
 
 // ============================================================================
 // Deep Resolution Result
@@ -109,6 +110,43 @@ export async function performDeepResolution(
             ...enrichedRequest.partQuery,
             partCategory,
         };
+    }
+
+    // =========================================================================
+    // Step 2.5: BMW OEM Database Lookup (Premium Feature)
+    // =========================================================================
+    const isBMW = enrichedRequest.vehicle.make &&
+        isBMWVehicle(enrichedRequest.vehicle.make);
+
+    if (isBMW && enrichedRequest.vehicle.model) {
+        const bmwResult = lookupBMWOEM(
+            enrichedRequest.vehicle.model,
+            partQuery,
+            enrichedRequest.vehicle.year
+        );
+
+        if (bmwResult.found && bmwResult.candidates.length > 0) {
+            for (const bmwCandidate of bmwResult.candidates) {
+                candidates.push({
+                    oem: bmwCandidate.oem,
+                    brand: "BMW",
+                    source: bmwCandidate.source,
+                    confidence: bmwCandidate.confidence,
+                    meta: {
+                        description: bmwCandidate.description,
+                        position: bmwCandidate.position,
+                        chassisCodes: bmwResult.chassisDetected,
+                        partType: bmwResult.partTypeDetected,
+                    },
+                });
+            }
+
+            logger.info("[Deep OEM] BMW Database OEM found", {
+                count: bmwResult.candidates.length,
+                topOEM: bmwResult.candidates[0]?.oem,
+                chassis: bmwResult.chassisDetected,
+            });
+        }
     }
 
     // =========================================================================

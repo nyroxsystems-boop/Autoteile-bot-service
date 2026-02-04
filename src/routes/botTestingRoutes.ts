@@ -63,11 +63,9 @@ router.post("/chat", async (req: Request, res: Response) => {
         let orderDetails = null;
         if (result.orderId) {
             try {
+                // Simplified query - vehicle data is stored in order_data JSON
                 orderDetails = await db.get<any>(
-                    `SELECT o.*, v.brand, v.model, v.year, v.license_plate, v.vin
-                     FROM orders o
-                     LEFT JOIN vehicles v ON o.vehicle_id = v.id
-                     WHERE o.id = ?`,
+                    `SELECT * FROM orders WHERE id = ?`,
                     [result.orderId]
                 );
             } catch (e) {
@@ -175,11 +173,9 @@ router.get("/session/:from", async (req: Request, res: Response) => {
     let orderDetails = null;
     if (session.orderId) {
         try {
+            // Simplified query - vehicle data is stored in order_data JSON
             orderDetails = await db.get<any>(
-                `SELECT o.*, v.brand, v.model, v.year, v.license_plate, v.vin
-                 FROM orders o
-                 LEFT JOIN vehicles v ON o.vehicle_id = v.id
-                 WHERE o.id = ?`,
+                `SELECT * FROM orders WHERE id = ?`,
                 [session.orderId]
             );
         } catch (e) {
