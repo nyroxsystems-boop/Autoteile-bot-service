@@ -28,6 +28,7 @@ import { COLLECT_PART_BRAIN_PROMPT } from '../../prompts/collectPartBrainPrompt'
 import { fetchWithTimeoutAndRetry } from '../../utils/httpClient';
 import { ORCHESTRATOR_PROMPT } from '../../prompts/orchestratorPrompt';
 import { generateChatCompletion, generateVisionCompletion } from '../intelligence/geminiService';
+import { getConversationDecision, type ConversationContext } from '../intelligence/conversationIntelligence';
 import * as fs from "fs/promises";
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
@@ -1609,8 +1610,85 @@ export async function handleIncomingBotMessage(
             }
           }
 
+
           if (orch.action === "ask_slot") {
             if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
+              // 🧠 CONVERSATION INTELLIGENCE: Check if we should actually run scraping
+              const intelligenceContext: ConversationContext = {
+                userMessage: userText,
+                lastBotMessage: orderData?.lastBotMessage || null,
+                orderData: {
+                  make: vehicleCandidate.make,
+                  model: vehicleCandidate.model,
+                  year: vehicleCandidate.year,
+                  requestedPart: partCandidate,
+                  oem: orderData?.oem || null,
+                  scrapeStatus: orderData?.scrapeStatus || 'idle',
+                  offersCount: orderData?.offersCount || 0
+                }
+              };
+
+              const decision = await getConversationDecision(intelligenceContext);
+              logger.info("[BotLogic] Conversation intelligence decision", {
+                decision: decision.decision,
+                reason: decision.reason,
+                confidence: decision.confidence,
+                orderId: order.id
+              });
+
+              // Handle different decisions
+              if (decision.decision === 'continue_flow') {
+                // User confirmed something, don't re-scrape
+                const reply = orch.reply || decision.suggestedReply ||
+                  (language === "de" ? "Alles klar! Wie kann ich weiterhelfen?" : "Got it! How can I help further?");
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'reset_part') {
+                // User wants different part, clear part slots
+                await updateOrderData(order.id, { requestedPart: null, oem: null, scrapeStatus: null });
+                const reply = decision.suggestedReply ||
+                  (language === "de" ? "Natürlich! Welches andere Teil brauchst du?" : "Of course! What other part do you need?");
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'reset_all') {
+                // User wants to start over completely
+                await updateOrder(order.id, { status: "collect_vehicle" as ConversationStatus });
+                await updateOrderData(order.id, { requestedPart: null, oem: null, scrapeStatus: null, make: null, model: null, year: null });
+                const reply = language === "de"
+                  ? "Alles klar, fangen wir von vorne an! Schick mir am besten ein Foto deines Fahrzeugscheins oder nenne mir Marke und Modell."
+                  : "Okay, let's start over! Please send me a photo of your vehicle registration or tell me the make and model.";
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'skip_scraping') {
+                // OEM already known, don't re-scrape
+                const reply = orch.reply || decision.suggestedReply ||
+                  (language === "de" ? "Ich habe deine Anfrage. Wie kann ich weiterhelfen?" : "I have your request. How can I help?");
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'wait') {
+                const reply = decision.suggestedReply ||
+                  (language === "de" ? "Kein Problem, ich warte! Melde dich, wenn du so weit bist." : "No problem, I'll wait! Let me know when you're ready.");
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'escalate') {
+                await updateOrder(order.id, { status: "needs_human" as ConversationStatus });
+                const reply = language === "de"
+                  ? "Ich verbinde dich mit einem Mitarbeiter. Jemand meldet sich in Kürze bei dir!"
+                  : "I'm connecting you with a team member. Someone will reach out shortly!";
+                return { reply, orderId: order.id };
+              }
+
+              if (decision.decision === 'answer_question') {
+                // Just answer the question without scraping
+                return { reply: orch.reply || "", orderId: order.id };
+              }
+
+              // decision === 'proceed_scraping' - actually run OEM lookup
               const oemFlow = await runOemLookupAndScraping(
                 order.id,
                 language ?? "de",
@@ -1631,7 +1709,44 @@ export async function handleIncomingBotMessage(
           }
 
           if (orch.action === "oem_lookup") {
-            // build parsed minimal object and vehicleOverride
+            // 🧠 CONVERSATION INTELLIGENCE: Check before oem_lookup too
+            const intelligenceContext: ConversationContext = {
+              userMessage: userText,
+              lastBotMessage: orderData?.lastBotMessage || null,
+              orderData: {
+                make: orch.slots.make || orderData?.make,
+                model: orch.slots.model || orderData?.model,
+                year: orch.slots.year || orderData?.year,
+                requestedPart: orch.slots.requestedPart || orderData?.requestedPart,
+                oem: orderData?.oem || null,
+                scrapeStatus: orderData?.scrapeStatus || 'idle',
+                offersCount: orderData?.offersCount || 0
+              }
+            };
+
+            const decision = await getConversationDecision(intelligenceContext);
+            logger.info("[BotLogic] OEM lookup intelligence decision", {
+              decision: decision.decision,
+              reason: decision.reason,
+              orderId: order.id
+            });
+
+            // Short-circuit for non-scraping decisions
+            if (decision.decision === 'continue_flow' || decision.decision === 'skip_scraping') {
+              return { reply: orch.reply || decision.suggestedReply || "", orderId: order.id };
+            }
+            if (decision.decision === 'reset_part') {
+              await updateOrderData(order.id, { requestedPart: null, oem: null, scrapeStatus: null });
+              return {
+                reply: decision.suggestedReply || (language === "de" ? "Welches andere Teil brauchst du?" : "What other part do you need?"),
+                orderId: order.id
+              };
+            }
+            if (decision.decision === 'wait' || decision.decision === 'escalate' || decision.decision === 'answer_question') {
+              return { reply: orch.reply || decision.suggestedReply || "", orderId: order.id };
+            }
+
+            // Proceed with actual OEM lookup
             const vehicleOverride = {
               make: orch.slots.make ?? orch.slots.brand ?? undefined,
               model: orch.slots.model ?? undefined,
