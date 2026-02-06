@@ -1,5 +1,5 @@
-// Ensure OpenAI client initialization doesn't throw in tests
-process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key';
+// Ensure Gemini client initialization doesn't throw in tests
+process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
 // Provide dummy Twilio creds so downloadFromTwilio doesn't throw before we mock network
 process.env.TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || 'AC_TEST';
 process.env.TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || 'AUTH_TEST';
@@ -38,15 +38,16 @@ jest.mock('../utils/httpClient', () => ({
     arrayBuffer: async () => Buffer.from('img').buffer
   }))
 }));
-// Mock OpenAI wrapper to avoid real API calls and to make orchestrator return noop
-jest.mock('./openAiService', () => ({
-  generateChatCompletion: jest.fn(async () => JSON.stringify({ action: 'noop', reply: '', slots: {}, required_slots: [], confidence: 1 }))
+// Mock Gemini wrapper to avoid real API calls and to make orchestrator return noop
+jest.mock('./intelligence/geminiService', () => ({
+  generateChatCompletion: jest.fn(async () => JSON.stringify({ action: 'noop', reply: '', slots: {}, required_slots: [], confidence: 1 })),
+  generateVisionCompletion: jest.fn()
 }));
 import { handleIncomingBotMessage } from './core/botLogicService';
 import * as botLogic from './core/botLogicService';
 
 // Mock supabase service functions
-jest.mock('./supabaseService', () => ({
+jest.mock('./adapters/supabaseService', () => ({
   insertMessage: jest.fn(() => Promise.resolve()),
   findOrCreateOrder: jest.fn(() => Promise.resolve({ id: 'order-ocr-1', status: 'collect_vehicle', language: 'de' })),
   getOrderById: jest.fn(() => Promise.resolve({ orderData: { requestedPart: 'Bremsscheiben' } })),
@@ -54,15 +55,17 @@ jest.mock('./supabaseService', () => ({
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => { throw new Error('DB column missing'); }),
   getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
-  updateOrderScrapeTask: jest.fn(() => Promise.resolve())
+  updateOrderScrapeTask: jest.fn(() => Promise.resolve()),
+  getMerchantSettings: jest.fn(() => Promise.resolve({ supportedLanguages: ['de', 'en'] })),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([]))
 }));
 
 // Mock OEM resolver and scrapers
-jest.mock('./oemService', () => ({
-  resolveOEM: jest.fn(() => Promise.resolve({ success: true, oemNumber: 'OEM-1111' }))
+jest.mock('./intelligence/oemResolver', () => ({
+  resolveOEM: jest.fn(() => Promise.resolve({ primaryOEM: 'OEM-1111', candidates: [], overallConfidence: 0.95 }))
 }));
 
-jest.mock('./scrapingService', () => ({
+jest.mock('./scraping/scrapingService', () => ({
   scrapeOffersForOrder: jest.fn(() => Promise.resolve({ ok: true }))
 }));
 
@@ -100,10 +103,10 @@ describe('OCR upsert fallback', () => {
     expect(typeof res.reply).toBe('string');
     expect(res.orderId).toBe('order-ocr-1');
 
-  // upsertVehicleForOrderFromPartial should have been attempted and thrown
-  expect((supa.upsertVehicleForOrderFromPartial as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+    // upsertVehicleForOrderFromPartial should have been attempted and thrown
+    expect((supa.upsertVehicleForOrderFromPartial as jest.Mock).mock.calls.length).toBeGreaterThan(0);
 
-  // Handler should not crash and should return a user-facing reply (flow continued using OCR)
-  expect(res.reply.length).toBeGreaterThan(0);
+    // Handler should not crash and should return a user-facing reply (flow continued using OCR)
+    expect(res.reply.length).toBeGreaterThan(0);
   }, 10000);
 });

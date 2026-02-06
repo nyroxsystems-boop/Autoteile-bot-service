@@ -10,6 +10,7 @@
  */
 
 import { GoogleGenerativeAI, GenerativeModel, Content, Part } from "@google/generative-ai";
+import { logger } from "../../utils/logger";
 
 // ============================================================================
 // Configuration
@@ -17,10 +18,11 @@ import { GoogleGenerativeAI, GenerativeModel, Content, Part } from "@google/gene
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const REQUEST_TIMEOUT_MS = 10000; // 10 second timeout for all Gemini calls
 
 // Verify API key
 if (!GEMINI_API_KEY) {
-    console.warn("⚠️ GEMINI_API_KEY is not set. AI features will fail.");
+    logger.warn("GEMINI_API_KEY is not set. AI features will fail.");
 }
 
 // Initialize client
@@ -93,7 +95,7 @@ export async function generateChatCompletion(params: {
     const startTime = Date.now();
 
     // LOG: Request details
-    console.log("🔵 Gemini Request:", {
+    logger.info("Gemini Request", {
         model,
         messageCount: messages.length,
         responseFormat,
@@ -125,16 +127,22 @@ export async function generateChatCompletion(params: {
                 generationConfig,
             });
 
-            console.log(`🟡 Gemini API call attempt ${attempt}/${maxAttempts}...`);
+            logger.debug("Gemini API call", { attempt, maxAttempts });
 
-            // For single turn, use generateContent with contents wrapper
-            const result = await genModel.generateContent({ contents });
+            // Set up timeout to prevent hanging
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error(`Gemini request timed out after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
+            });
+
+            // For single turn, use generateContent with contents wrapper (with timeout)
+            const apiPromise = genModel.generateContent({ contents });
+            const result = await Promise.race([apiPromise, timeoutPromise]);
             const response = result.response;
             const content = response.text();
 
             const elapsed = Date.now() - startTime;
 
-            console.log("✅ Gemini Success:", {
+            logger.info("Gemini Success", {
                 elapsed,
                 model,
                 responseLength: content.length,
@@ -147,7 +155,9 @@ export async function generateChatCompletion(params: {
             lastErr = err;
             const elapsed = Date.now() - startTime;
 
-            console.error(`❌ Gemini Error (attempt ${attempt}/${maxAttempts}):`, {
+            logger.error("Gemini Error", {
+                attempt,
+                maxAttempts,
                 elapsed,
                 error: err?.message,
                 errorType: err?.constructor?.name,
@@ -162,7 +172,7 @@ export async function generateChatCompletion(params: {
         }
     }
 
-    console.error("❌ Gemini FAILED after all attempts:", {
+    logger.error("Gemini FAILED after all attempts", {
         finalError: lastErr?.message,
     });
 
@@ -190,7 +200,7 @@ export async function generateVisionCompletion(params: {
 
     const startTime = Date.now();
 
-    console.log("🔵 Gemini Vision Request:", {
+    logger.info("Gemini Vision Request", {
         model,
         promptLength: prompt.length,
         imageSize: imageBase64.length,
@@ -220,15 +230,21 @@ export async function generateVisionCompletion(params: {
 
             const textPart: Part = { text: prompt };
 
-            console.log(`🟡 Gemini Vision call attempt ${attempt}/${maxAttempts}...`);
+            logger.debug("Gemini Vision call", { attempt, maxAttempts });
 
-            const result = await genModel.generateContent([textPart, imagePart]);
+            // Set up timeout to prevent hanging
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error(`Gemini Vision request timed out after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
+            });
+
+            const apiPromise = genModel.generateContent([textPart, imagePart]);
+            const result = await Promise.race([apiPromise, timeoutPromise]);
             const response = result.response;
             const content = response.text();
 
             const elapsed = Date.now() - startTime;
 
-            console.log("✅ Gemini Vision Success:", {
+            logger.info("Gemini Vision Success", {
                 elapsed,
                 responseLength: content.length,
             });
@@ -239,7 +255,9 @@ export async function generateVisionCompletion(params: {
             lastErr = err;
             const elapsed = Date.now() - startTime;
 
-            console.error(`❌ Gemini Vision Error (attempt ${attempt}/${maxAttempts}):`, {
+            logger.error("Gemini Vision Error", {
+                attempt,
+                maxAttempts,
                 elapsed,
                 error: err?.message,
             });

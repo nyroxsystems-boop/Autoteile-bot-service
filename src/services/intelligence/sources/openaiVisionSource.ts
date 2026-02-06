@@ -1,56 +1,19 @@
 /**
- * OpenAI Vision Scraper
- * Uses GPT-4 Vision to extract OEM numbers from screenshots
- * Useful for sites with heavy anti-bot protection
+ * Gemini Vision Scraper (migrated from OpenAI)
+ * Uses Gemini Vision to extract OEM numbers from website content
+ * Useful for sites with complex layouts
+ * 
+ * MIGRATION: OpenAI -> Gemini (Feb 2026)
  */
 import { OEMSource, OEMCandidate } from "./baseSource";
 import { normalizeOem } from "../oemScraper";
 import { logger } from "@utils/logger";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
-
-interface ScreenshotResult {
-    url: string;
-    base64: string;
-}
+import { generateChatCompletion } from "../geminiService";
 
 /**
- * Takes a screenshot of a URL using a headless browser
- * This would typically use Puppeteer or Playwright
+ * Extracts OEM numbers from HTML using Gemini
  */
-async function captureScreenshot(url: string): Promise<ScreenshotResult | null> {
-    try {
-        // For now, we'll use a simple fetch and convert to base64
-        // In production, you'd use Puppeteer/Playwright for real screenshots
-        const response = await fetch(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            }
-        });
-
-        if (!response.ok) return null;
-
-        const html = await response.text();
-
-        // For now, we'll pass the HTML directly to Vision API
-        // In production, you'd convert actual screenshot to base64
-        return {
-            url,
-            base64: Buffer.from(html).toString('base64')
-        };
-    } catch (error) {
-        logger.error(`[OpenAI Vision] Screenshot failed: ${error}`);
-        return null;
-    }
-}
-
-/**
- * Extracts OEM numbers from HTML using OpenAI Vision
- */
-async function extractOemsWithVision(html: string, context: string): Promise<string[]> {
+async function extractOemsWithGemini(html: string, context: string): Promise<string[]> {
     try {
         const prompt = `You are analyzing a car parts website page.
     
@@ -64,61 +27,58 @@ OEM numbers typically:
 - May include hyphens or dots
 - Examples: 1K0615301AA, 8V0-615-301, A2034211012
 
-Return ONLY a JSON array of OEM numbers found, nothing else.
-Format: ["OEM1", "OEM2", "OEM3"]
+Return ONLY a JSON object with an array of OEM numbers found.
+Format: {"oems": ["OEM1", "OEM2", "OEM3"]}
 
-If no OEM numbers are found, return: []
+If no OEM numbers are found, return: {"oems": []}
 
 HTML Content (first 8000 chars):
 ${html.substring(0, 8000)}`;
 
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini", // Using mini for cost efficiency
+        const response = await generateChatCompletion({
             messages: [
                 {
                     role: "system",
-                    content: "You are an expert at extracting OEM part numbers from automotive websites. You return only valid JSON arrays."
+                    content: "You are an expert at extracting OEM part numbers from automotive websites. You return only valid JSON."
                 },
                 {
                     role: "user",
                     content: prompt
                 }
             ],
-            temperature: 0,
-            max_tokens: 500
+            responseFormat: "json_object",
+            temperature: 0
         });
 
-        const content = response.choices[0]?.message?.content || "[]";
+        if (!response) return [];
 
-        // Extract JSON array from response
-        const jsonMatch = content.match(/\[[\s\S]*?\]/);
-        if (!jsonMatch) return [];
+        // Parse JSON response
+        const parsed = JSON.parse(response);
+        const oems = parsed.oems || parsed.candidates || [];
 
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (!Array.isArray(parsed)) return [];
+        if (!Array.isArray(oems)) return [];
 
         // Normalize and validate all OEMs
-        return parsed
+        return oems
             .map(oem => normalizeOem(String(oem)))
             .filter((oem): oem is string => oem !== null);
 
     } catch (error: any) {
-        logger.error(`[OpenAI Vision] Extraction failed: ${error.message}`);
+        logger.error(`[Gemini Vision] Extraction failed: ${error.message}`);
         return [];
     }
 }
 
 export const openaiVisionSource: OEMSource = {
-    name: "OpenAI-Vision",
+    name: "Gemini-Vision", // Renamed but export kept for backwards compatibility
 
     async resolveCandidates(req: any): Promise<OEMCandidate[]> {
-        if (!process.env.OPENAI_API_KEY) {
-            logger.warn("[OpenAI Vision] API key not configured");
+        if (!process.env.GEMINI_API_KEY) {
+            logger.warn("[Gemini Vision] API key not configured");
             return [];
         }
 
         try {
-            // FIXED: Use correct schema from OEMResolverRequest
             const vehicle = req.vehicle || {};
             const partDescription = req.partQuery?.rawText || "";
             const suspectedOEM = req.partQuery?.suspectedNumber;
@@ -128,7 +88,7 @@ export const openaiVisionSource: OEMSource = {
 Part: ${partDescription}
 ${suspectedOEM ? `Suspected OEM: ${suspectedOEM}` : ''}`;
 
-            // Try multiple sources with Vision API
+            // Try multiple sources with Gemini API
             const sources = [
                 `https://www.autodoc.de/search?keyword=${encodeURIComponent(`${vehicle.make} ${vehicle.model} ${partDescription}`)}`,
                 `https://www.kfzteile24.de/search?q=${encodeURIComponent(`${vehicle.make} ${vehicle.model} ${partDescription}`)}`
@@ -138,7 +98,7 @@ ${suspectedOEM ? `Suspected OEM: ${suspectedOEM}` : ''}`;
 
             for (const url of sources) {
                 try {
-                    logger.info(`[OpenAI Vision] Analyzing: ${url}`);
+                    logger.info(`[Gemini Vision] Analyzing: ${url}`);
 
                     const response = await fetch(url, {
                         headers: {
@@ -149,14 +109,14 @@ ${suspectedOEM ? `Suspected OEM: ${suspectedOEM}` : ''}`;
                     if (!response.ok) continue;
 
                     const html = await response.text();
-                    const oems = await extractOemsWithVision(html, context);
+                    const oems = await extractOemsWithGemini(html, context);
 
                     allOems.push(...oems);
 
-                    logger.info(`[OpenAI Vision] Found ${oems.length} OEMs from ${url}`);
+                    logger.info(`[Gemini Vision] Found ${oems.length} OEMs from ${url}`);
 
                 } catch (error: any) {
-                    logger.error(`[OpenAI Vision] Error processing ${url}: ${error.message}`);
+                    logger.error(`[Gemini Vision] Error processing ${url}: ${error.message}`);
                 }
             }
 
@@ -164,16 +124,16 @@ ${suspectedOEM ? `Suspected OEM: ${suspectedOEM}` : ''}`;
 
             return uniqueOems.map(oem => ({
                 oem,
-                source: "OpenAI-Vision",
+                source: "Gemini-Vision",
                 confidence: 0.88, // High confidence - AI-powered extraction
                 metadata: {
-                    method: "gpt-4-vision",
+                    method: "gemini-2.0-flash",
                     context
                 }
             }));
 
         } catch (error: any) {
-            logger.error(`[OpenAI Vision] Error: ${error.message}`);
+            logger.error(`[Gemini Vision] Error: ${error.message}`);
             return [];
         }
     }

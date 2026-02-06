@@ -1,12 +1,14 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { logger } from "@utils/logger";
-import { client } from "../openAiService";
+import { generateChatCompletion } from "../geminiService";
 
 /**
  * STRATEGY: "Reverse-Aftermarket-Lookup"
  * 1. Ask LLM for the specific Aftermarket Number (e.g. MANN CUK 2939).
  * 2. Search for that Aftermarket Number to finding the linked OEM.
  * 3. Return the linked OEM as a high-confidence candidate.
+ * 
+ * MIGRATED: OpenAI → Gemini (Feb 2026)
  */
 export async function resolveAftermarketToOEM(req: OEMResolverRequest): Promise<OEMCandidate[]> {
   const prompt = `
@@ -27,13 +29,12 @@ export async function resolveAftermarketToOEM(req: OEMResolverRequest): Promise<
     `;
 
   try {
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    const content = await generateChatCompletion({
       messages: [{ role: "user", content: prompt }],
-      temperature: 0,
-      response_format: { type: "json_object" }
+      responseFormat: "json_object",
+      temperature: 0
     });
-    const json = JSON.parse(completion.choices[0].message.content || "{}");
+    const json = JSON.parse(content || "{}");
     return (json.candidates || []).map((c: any) => ({
       oem: c.oem,
       source: "aftermarket_reverse_lookup",
@@ -64,18 +65,16 @@ export async function filterByPartMatch(candidates: OEMCandidate[], req: any): P
     Search engines often return nearby parts (e.g., if user asks for "Air Filter", ignore "Oil Filter", "Brake Pad", or "Spark Plug" results).
     Only return numbers where you are 95% certain they represent the correct part category.
     
-    Response format: ["OEM1", "OEM2"]
+    Response format: {"valid_oems": ["OEM1", "OEM2"]}
   `;
 
   try {
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    const content = await generateChatCompletion({
       messages: [{ role: "user", content: prompt }],
-      temperature: 0,
-      response_format: { type: "json_object" }
+      responseFormat: "json_object",
+      temperature: 0
     });
 
-    const content = completion.choices[0].message.content;
     if (!content) return candidates;
 
     const parsed = JSON.parse(content);

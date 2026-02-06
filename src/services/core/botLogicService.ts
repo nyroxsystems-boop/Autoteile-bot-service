@@ -30,6 +30,8 @@ import { ORCHESTRATOR_PROMPT } from '../../prompts/orchestratorPrompt';
 import { generateChatCompletion, generateVisionCompletion } from '../intelligence/geminiService';
 import { getConversationDecision, type ConversationContext } from '../intelligence/conversationIntelligence';
 import * as fs from "fs/promises";
+import { isEnabled, FF } from './featureFlags';
+import { langchainCallOrchestrator } from '../intelligence/langchainAgent';
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
@@ -94,7 +96,7 @@ async function answerGeneralQuestion(params: {
 
     return (text?.trim() || "") + missingInfoSentence;
   } catch (err: any) {
-    console.error("General QA failed:", err?.message);
+    logger.error("General QA failed", { error: err?.message });
     return language === "de"
       ? "Gute Frage! Leider kann ich sie gerade nicht beantworten. Versuch es bitte später erneut."
       : "Good question! I can’t answer it right now, please try again later.";
@@ -309,7 +311,19 @@ function detectAbusive(text: string): boolean {
   return abusive.some((w) => t.includes(w));
 }
 
-type OrchestratorAction = "ask_slot" | "confirm" | "oem_lookup" | "smalltalk" | "abusive" | "noop";
+type OrchestratorAction =
+  | "ask_slot"
+  | "confirm"
+  | "oem_lookup"
+  | "order_status"
+  | "stock_check"
+  | "price_quote"
+  | "abort_order"
+  | "new_order"
+  | "escalate_human"
+  | "smalltalk"
+  | "abusive"
+  | "noop";
 
 interface CollectPartBrainResult {
   replyText: string;
@@ -330,20 +344,36 @@ interface OrchestratorResult {
 async function callOrchestrator(payload: any): Promise<OrchestratorResult | null> {
   const startTime = Date.now();
 
-  // 🚀 LANGCHAIN AGENT FEATURE FLAG
-  // When enabled, use the new LangChain-based orchestrator
-  if (process.env.USE_LANGCHAIN_AGENT === "true") {
+  // 🚀 LANGCHAIN AGENT FEATURE FLAG (with percentage rollout)
+  const userId = payload.from || payload.phoneNumber || payload.sender;
+  if (isEnabled(FF.USE_AI_ORCHESTRATOR, { userId })) {
     try {
-      const { langchainCallOrchestrator } = require("../intelligence/langchainAgent");
-      const sessionId = payload.from || payload.phoneNumber || "default";
+      const sessionId = userId || "default";
       const result = await langchainCallOrchestrator({
         ...payload,
         sessionId,
       });
-      return result;
+      if (result && result.action && result.reply) {
+        logger.info("Langchain orchestrator succeeded", {
+          sessionId,
+          action: result.action,
+          confidence: result.confidence,
+          elapsed: Date.now() - startTime
+        });
+        // Cast to OrchestratorResult (langchain returns compatible structure)
+        return {
+          action: result.action as OrchestratorAction,
+          reply: result.reply,
+          slots: result.slots || {},
+          required_slots: result.required_slots,
+          confidence: result.confidence
+        };
+      }
     } catch (langchainError: any) {
-      logger.warn("🔄 LangChain agent failed, falling back to legacy orchestrator", {
+      logger.warn("Langchain agent failed, falling back to legacy", {
         error: langchainError?.message,
+        userId,
+        elapsed: Date.now() - startTime
       });
       // Fall through to legacy implementation
     }
@@ -430,22 +460,15 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
   } catch (err: any) {
     const elapsed = Date.now() - startTime;
 
-    // IMMEDIATE DETAILED ERROR LOG
-    console.error("❌❌❌ ORCHESTRATOR FAILED ❌❌❌");
-    console.error("Error message:", err?.message);
-    console.error("Error type:", err?.constructor?.name);
-    console.error("Error code:", err?.code);
-    console.error("Status code:", err?.status || err?.statusCode);
-    console.error("Full error:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
-
-    logger.error("❌ Orchestrator call FAILED", {
+    // Structured error logging - no console.error
+    logger.error("Orchestrator call FAILED", {
       error: err?.message,
       errorType: err?.constructor?.name,
       errorCode: err?.code,
       statusCode: err?.status || err?.statusCode,
       elapsed,
       stack: err?.stack?.split('\n').slice(0, 5).join('\n'),
-      isOpenAIError: err?.constructor?.name?.includes('OpenAI') || err?.message?.includes('OpenAI'),
+      isGeminiError: err?.constructor?.name?.includes('Gemini') || err?.message?.includes('Gemini'),
       isNetworkError: err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND'
     });
 
@@ -1236,28 +1259,12 @@ export interface BotMessagePayload {
   text: string;
   orderId?: string | null;
   mediaUrls?: string[];
+  channel?: 'whatsapp' | 'web' | 'test';
 }
 
-// In-memory per-sender lock to reduce race conditions on concurrent messages.
-const conversationLocks = new Map<string, Promise<void>>();
-
-async function withConversationLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const prev = conversationLocks.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((res) => {
-    release = res;
-  });
-  conversationLocks.set(key, prev.then(() => current));
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (conversationLocks.get(key) === current) {
-      conversationLocks.delete(key);
-    }
-  }
-}
+// Distributed locking: use lockService instead of in-memory Map
+// Supports Redis in production, in-memory for development
+import { withConversationLock } from './lockService';
 
 // Helper: detect explicit language choice in the language selection step
 function pickLanguageFromChoice(text: string): string | null {
@@ -1861,849 +1868,906 @@ export async function handleIncomingBotMessage(
 
     let replyText = "";
 
-    switch (nextStatus) {
-      case "choose_language": {
-        // Wenn bereits Sprache gesetzt ist, nicht erneut fragen
-        if (language && supportedLangs.includes(language)) {
-          nextStatus = "collect_vehicle";
-          // We will generate the greeting below
-          break;
-        }
+    // 🚀 STATE MACHINE INTEGRATION (Feature Flag controlled)
+    // When enabled, use new state machine handlers instead of legacy switch
+    const stateMachineStates: ConversationStatus[] = ['choose_language', 'collect_vehicle', 'collect_part'];
+    if (isEnabled(FF.USE_STATE_MACHINE, { userId: payload.from }) && stateMachineStates.includes(nextStatus)) {
+      try {
+        // Dynamic import to avoid circular dependencies
+        const { executeState, getHandler } = await import('./stateMachine');
+        await import('./stateMachine/index'); // Ensure handlers are registered
 
-        const chosen = pickLanguageFromChoice(userText); // require explicit choice
-        if (chosen) {
-          language = chosen;
-          languageChanged = true;
-          try {
-            await updateOrder(order.id, { language });
-          } catch (err: any) {
-            logger.error("Failed to persist chosen language", { error: err?.message, orderId: order.id });
+        const handler = getHandler(nextStatus);
+        if (handler) {
+          const stateCtx = {
+            orderId: order.id,
+            order,
+            orderData,
+            language: (language || 'de') as 'de' | 'en' | 'tr' | 'ku' | 'pl',
+            userText,
+            parsed,
+            mediaUrls: payload.mediaUrls,
+            currentStatus: nextStatus
+          };
+
+          const stateResult = await executeState(nextStatus, stateCtx);
+
+          if (stateResult.updatedOrderData) {
+            await updateOrderData(order.id, stateResult.updatedOrderData);
+            orderData = { ...orderData, ...stateResult.updatedOrderData };
           }
-          nextStatus = "collect_vehicle";
-          // Generate greeting after language selection
-          if (language === "en") {
-            replyText = "Great! 🎉 Please send me a photo of your vehicle registration document, or tell me: brand, model, year.";
-          } else if (language === "tr") {
-            replyText = "Harika! 🎉 Lütfen araç ruhsatınızın fotoğrafını gönderin veya marka, model, yıl bilgilerini yazın.";
-          } else if (language === "ku") {
-            replyText = "Baş e! 🎉 Ji kerema xwe wêneya belgeya qeydkirina wesayîta xwe bişînin, an jî marka, model, sal binivîsin.";
-          } else if (language === "pl") {
-            replyText = "Świetnie! 🎉 Wyślij mi zdjęcie dowodu rejestracyjnego pojazdu lub podaj: markę, model, rok.";
-          } else {
-            replyText = "Super! 🎉 Schick mir bitte ein Foto deines Fahrzeugscheins, oder nenne mir: Marke, Modell, Baujahr.";
-          }
+
+          replyText = stateResult.reply;
+          nextStatus = stateResult.nextStatus;
+
+          logger.info("State machine handled request", {
+            orderId: order.id,
+            handler: handler.name,
+            nextStatus,
+            replyLength: replyText.length
+          });
+
+          // Skip legacy switch if state machine handled it
+          // We'll jump to the persist section
         } else {
-          replyText =
-            "Hallo! Bitte wähle deine Sprache:\n" +
-            "1. Deutsch 🇩🇪\n" +
-            "2. English 🇬🇧\n" +
-            "3. Türkçe 🇹🇷\n" +
-            "4. Kurdî ☀️\n" +
-            "5. Polski 🇵🇱\n\n" +
-            "Antworte einfach mit der Nummer (1, 2, 3, 4 oder 5).";
+          logger.debug("No state machine handler for status, falling back to legacy", { status: nextStatus });
         }
-        break;
+      } catch (smError: any) {
+        logger.warn("State machine failed, falling back to legacy switch", {
+          error: smError?.message,
+          status: nextStatus,
+          orderId: order.id
+        });
+        // Fall through to legacy switch
       }
+    }
 
-
-      case "collect_vehicle": {
-        // Bild zählt als Fahrzeugschein
-        if (hasVehicleImage) {
-          const note = vehicleImageNote || "";
-          vehicleDescription = vehicleDescription ? `${vehicleDescription}\n${note}` : note;
-          let anyBufferDownloaded = false;
-          let ocrSucceeded = false;
-          try {
-            const buffers: Buffer[] = [];
-            for (const url of payload.mediaUrls ?? []) {
-              try {
-                const buf = await downloadFromTwilio(url);
-                buffers.push(buf);
-                anyBufferDownloaded = true;
-              } catch (err: any) {
-                logger.error("Failed to download vehicle image", { error: err?.message, orderId: order.id });
-              }
-            }
-
-            if (buffers.length > 0) {
-              const ocr = await extractVehicleDataFromImage(buffers[0]);
-              logger.info("Vehicle OCR result", { orderId: order.id, ocr });
-              ocrSucceeded = true;
-
-              // Read current DB vehicle so we can continue even if upsert fails
-              let dbVehicle: any = null;
-              try {
-                dbVehicle = await getSupa().getVehicleForOrder(order.id);
-              } catch (err: any) {
-                logger.warn("Failed to read existing vehicle before upsert", { error: err?.message, orderId: order.id });
-              }
-
-              try {
-                await getSupa().upsertVehicleForOrderFromPartial(order.id, {
-                  make: ocr.make ?? null,
-                  model: ocr.model ?? null,
-                  year: ocr.year ?? null,
-                  engineCode: null,
-                  engineKw: ocr.engineKw ?? null,
-                  fuelType: ocr.fuelType ?? null,
-                  emissionClass: ocr.emissionClass ?? null,
-                  vin: ocr.vin ?? null,
-                  hsn: ocr.hsn ?? null,
-                  tsn: ocr.tsn ?? null
-                });
-              } catch (upsertErr: any) {
-                // If DB schema doesn't contain some columns, don't fail the whole flow — we'll continue using OCR result
-                logger.error("Vehicle OCR failed to persist (but will continue using OCR data)", {
-                  error: upsertErr?.message,
-                  orderId: order.id
-                });
-              }
-
-              try {
-                await updateOrderData(order.id, {
-                  vehicleOcrRawText: ocr.rawText ?? "",
-                  vehicleEngineKw: ocr.engineKw ?? null,
-                  vehicleFuelType: ocr.fuelType ?? null,
-                  vehicleEmissionClass: ocr.emissionClass ?? null
-                });
-              } catch (err: any) {
-                logger.error("Failed to store vehicle OCR raw text", { error: err?.message, orderId: order.id });
-              }
-
-              // Build a combined vehicle from DB + OCR so we can proceed even if DB upsert failed
-              const combinedVehicle = {
-                make: ocr.make ?? dbVehicle?.make ?? null,
-                model: ocr.model ?? dbVehicle?.model ?? null,
-                year: ocr.year ?? dbVehicle?.year ?? null,
-                engineCode: null,
-                vin: ocr.vin ?? dbVehicle?.vin ?? null,
-                hsn: ocr.hsn ?? dbVehicle?.hsn ?? null,
-                tsn: ocr.tsn ?? dbVehicle?.tsn ?? null
-              };
-
-              // After OCR prüfen, ob genug Daten für OEM vorhanden sind
-              const missingFieldsAfterOcr = determineMissingVehicleFields(combinedVehicle);
-              const partTextFromOrderAfterOcr =
-                orderData?.partText || orderData?.requestedPart || partDescription || parsed.part || null;
-
-              if (missingFieldsAfterOcr.length === 0 && partTextFromOrderAfterOcr) {
-                const oemFlow = await runOemLookupAndScraping(
-                  order.id,
-                  language ?? "de",
-                  { ...parsed, part: partTextFromOrderAfterOcr },
-                  orderData,
-                  partDescription ?? null,
-                  // pass combined vehicle so resolveOEM can continue even if DB was not updated
-                  combinedVehicle
-                );
-                replyText = oemFlow.replyText;
-                nextStatus = oemFlow.nextStatus;
-
-                // Persist immediate state change and return early so the response uses OCR-driven decision
-                try {
-                  await updateOrder(order.id, {
-                    status: nextStatus,
-                    language,
-                    vehicle_description: vehicleDescription || null,
-                    part_description: partDescription ?? null
-                  });
-                } catch (uErr: any) {
-                  logger.warn("Failed to persist order state after OCR-driven OEM flow", {
-                    orderId: order.id,
-                    error: uErr?.message ?? uErr
-                  });
-                }
-
-                return { reply: replyText, orderId: order.id };
-              } else if (missingFieldsAfterOcr.length === 0) {
-                nextStatus = "collect_part";
-                replyText =
-                  language === "en"
-                    ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                    : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
-              } else {
-                // gezielte Rückfrage
-                const field = missingFieldsAfterOcr[0];
-                if (field === "vin_or_hsn_tsn") {
-                  replyText =
-                    language === "en"
-                      ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                      : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
-                } else if (field === "make") {
-                  replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
-                } else if (field === "model") {
-                  replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
-                } else {
-                  replyText =
-                    language === "en"
-                      ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                      : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
-                }
-                nextStatus = "collect_vehicle";
-              }
-            }
-          } catch (err: any) {
-            logger.error("Vehicle OCR failed", { error: err?.message, orderId: order.id });
-          }
-
-          if (!anyBufferDownloaded) {
-            replyText =
-              language === "en"
-                ? "I couldn’t load your registration photo. Please type your make, model, year, and VIN/HSN/TSN."
-                : "Ich konnte dein Fahrzeugschein-Foto nicht laden. Bitte schreib mir Marke, Modell, Baujahr und VIN/HSN/TSN.";
+    // Legacy switch (will be removed after 100% rollout)
+    if (!replyText) {
+      switch (nextStatus) {
+        case "choose_language": {
+          // Wenn bereits Sprache gesetzt ist, nicht erneut fragen
+          if (language && supportedLangs.includes(language)) {
             nextStatus = "collect_vehicle";
+            // We will generate the greeting below
             break;
           }
 
-          // Nach OCR prüfen, ob genug Daten für OEM vorhanden sind
-          const vehicle = await getVehicleForOrder(order.id);
-          const missingFields = determineMissingVehicleFields(vehicle);
-          const partTextFromOrder =
-            orderData?.partText ||
-            orderData?.requestedPart ||
-            partDescription ||
-            parsed.part ||
-            null;
+          const chosen = pickLanguageFromChoice(userText); // require explicit choice
+          if (chosen) {
+            language = chosen;
+            languageChanged = true;
+            try {
+              await updateOrder(order.id, { language });
+            } catch (err: any) {
+              logger.error("Failed to persist chosen language", { error: err?.message, orderId: order.id });
+            }
+            nextStatus = "collect_vehicle";
+            // Generate greeting after language selection
+            if (language === "en") {
+              replyText = "Great! 🎉 Please send me a photo of your vehicle registration document, or tell me: brand, model, year.";
+            } else if (language === "tr") {
+              replyText = "Harika! 🎉 Lütfen araç ruhsatınızın fotoğrafını gönderin veya marka, model, yıl bilgilerini yazın.";
+            } else if (language === "ku") {
+              replyText = "Baş e! 🎉 Ji kerema xwe wêneya belgeya qeydkirina wesayîta xwe bişînin, an jî marka, model, sal binivîsin.";
+            } else if (language === "pl") {
+              replyText = "Świetnie! 🎉 Wyślij mi zdjęcie dowodu rejestracyjnego pojazdu lub podaj: markę, model, rok.";
+            } else {
+              replyText = "Super! 🎉 Schick mir bitte ein Foto deines Fahrzeugscheins, oder nenne mir: Marke, Modell, Baujahr.";
+            }
+          } else {
+            replyText =
+              "Hallo! Bitte wähle deine Sprache:\n" +
+              "1. Deutsch 🇩🇪\n" +
+              "2. English 🇬🇧\n" +
+              "3. Türkçe 🇹🇷\n" +
+              "4. Kurdî ☀️\n" +
+              "5. Polski 🇵🇱\n\n" +
+              "Antworte einfach mit der Nummer (1, 2, 3, 4 oder 5).";
+          }
+          break;
+        }
 
-          if (missingFields.length === 0 && partTextFromOrder) {
+
+        case "collect_vehicle": {
+          // Bild zählt als Fahrzeugschein
+          if (hasVehicleImage) {
+            const note = vehicleImageNote || "";
+            vehicleDescription = vehicleDescription ? `${vehicleDescription}\n${note}` : note;
+            let anyBufferDownloaded = false;
+            let ocrSucceeded = false;
+            try {
+              const buffers: Buffer[] = [];
+              for (const url of payload.mediaUrls ?? []) {
+                try {
+                  const buf = await downloadFromTwilio(url);
+                  buffers.push(buf);
+                  anyBufferDownloaded = true;
+                } catch (err: any) {
+                  logger.error("Failed to download vehicle image", { error: err?.message, orderId: order.id });
+                }
+              }
+
+              if (buffers.length > 0) {
+                const ocr = await extractVehicleDataFromImage(buffers[0]);
+                logger.info("Vehicle OCR result", { orderId: order.id, ocr });
+                ocrSucceeded = true;
+
+                // Read current DB vehicle so we can continue even if upsert fails
+                let dbVehicle: any = null;
+                try {
+                  dbVehicle = await getSupa().getVehicleForOrder(order.id);
+                } catch (err: any) {
+                  logger.warn("Failed to read existing vehicle before upsert", { error: err?.message, orderId: order.id });
+                }
+
+                try {
+                  await getSupa().upsertVehicleForOrderFromPartial(order.id, {
+                    make: ocr.make ?? null,
+                    model: ocr.model ?? null,
+                    year: ocr.year ?? null,
+                    engineCode: null,
+                    engineKw: ocr.engineKw ?? null,
+                    fuelType: ocr.fuelType ?? null,
+                    emissionClass: ocr.emissionClass ?? null,
+                    vin: ocr.vin ?? null,
+                    hsn: ocr.hsn ?? null,
+                    tsn: ocr.tsn ?? null
+                  });
+                } catch (upsertErr: any) {
+                  // If DB schema doesn't contain some columns, don't fail the whole flow — we'll continue using OCR result
+                  logger.error("Vehicle OCR failed to persist (but will continue using OCR data)", {
+                    error: upsertErr?.message,
+                    orderId: order.id
+                  });
+                }
+
+                try {
+                  await updateOrderData(order.id, {
+                    vehicleOcrRawText: ocr.rawText ?? "",
+                    vehicleEngineKw: ocr.engineKw ?? null,
+                    vehicleFuelType: ocr.fuelType ?? null,
+                    vehicleEmissionClass: ocr.emissionClass ?? null
+                  });
+                } catch (err: any) {
+                  logger.error("Failed to store vehicle OCR raw text", { error: err?.message, orderId: order.id });
+                }
+
+                // Build a combined vehicle from DB + OCR so we can proceed even if DB upsert failed
+                const combinedVehicle = {
+                  make: ocr.make ?? dbVehicle?.make ?? null,
+                  model: ocr.model ?? dbVehicle?.model ?? null,
+                  year: ocr.year ?? dbVehicle?.year ?? null,
+                  engineCode: null,
+                  vin: ocr.vin ?? dbVehicle?.vin ?? null,
+                  hsn: ocr.hsn ?? dbVehicle?.hsn ?? null,
+                  tsn: ocr.tsn ?? dbVehicle?.tsn ?? null
+                };
+
+                // After OCR prüfen, ob genug Daten für OEM vorhanden sind
+                const missingFieldsAfterOcr = determineMissingVehicleFields(combinedVehicle);
+                const partTextFromOrderAfterOcr =
+                  orderData?.partText || orderData?.requestedPart || partDescription || parsed.part || null;
+
+                if (missingFieldsAfterOcr.length === 0 && partTextFromOrderAfterOcr) {
+                  const oemFlow = await runOemLookupAndScraping(
+                    order.id,
+                    language ?? "de",
+                    { ...parsed, part: partTextFromOrderAfterOcr },
+                    orderData,
+                    partDescription ?? null,
+                    // pass combined vehicle so resolveOEM can continue even if DB was not updated
+                    combinedVehicle
+                  );
+                  replyText = oemFlow.replyText;
+                  nextStatus = oemFlow.nextStatus;
+
+                  // Persist immediate state change and return early so the response uses OCR-driven decision
+                  try {
+                    await updateOrder(order.id, {
+                      status: nextStatus,
+                      language,
+                      vehicle_description: vehicleDescription || null,
+                      part_description: partDescription ?? null
+                    });
+                  } catch (uErr: any) {
+                    logger.warn("Failed to persist order state after OCR-driven OEM flow", {
+                      orderId: order.id,
+                      error: uErr?.message ?? uErr
+                    });
+                  }
+
+                  return { reply: replyText, orderId: order.id };
+                } else if (missingFieldsAfterOcr.length === 0) {
+                  nextStatus = "collect_part";
+                  replyText =
+                    language === "en"
+                      ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
+                      : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
+                } else {
+                  // gezielte Rückfrage
+                  const field = missingFieldsAfterOcr[0];
+                  if (field === "vin_or_hsn_tsn") {
+                    replyText =
+                      language === "en"
+                        ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
+                        : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
+                  } else if (field === "make") {
+                    replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
+                  } else if (field === "model") {
+                    replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
+                  } else {
+                    replyText =
+                      language === "en"
+                        ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
+                        : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
+                  }
+                  nextStatus = "collect_vehicle";
+                }
+              }
+            } catch (err: any) {
+              logger.error("Vehicle OCR failed", { error: err?.message, orderId: order.id });
+            }
+
+            if (!anyBufferDownloaded) {
+              replyText =
+                language === "en"
+                  ? "I couldn’t load your registration photo. Please type your make, model, year, and VIN/HSN/TSN."
+                  : "Ich konnte dein Fahrzeugschein-Foto nicht laden. Bitte schreib mir Marke, Modell, Baujahr und VIN/HSN/TSN.";
+              nextStatus = "collect_vehicle";
+              break;
+            }
+
+            // Nach OCR prüfen, ob genug Daten für OEM vorhanden sind
+            const vehicle = await getVehicleForOrder(order.id);
+            const missingFields = determineMissingVehicleFields(vehicle);
+            const partTextFromOrder =
+              orderData?.partText ||
+              orderData?.requestedPart ||
+              partDescription ||
+              parsed.part ||
+              null;
+
+            if (missingFields.length === 0 && partTextFromOrder) {
+              const oemFlow = await runOemLookupAndScraping(
+                order.id,
+                language ?? "de",
+                { ...parsed, part: partTextFromOrder },
+                orderData,
+                partDescription ?? null
+              );
+              replyText = oemFlow.replyText;
+              nextStatus = oemFlow.nextStatus;
+            } else if (missingFields.length === 0) {
+              nextStatus = "collect_part";
+              replyText =
+                language === "en"
+                  ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
+                  : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
+            } else {
+              // gezielte Rückfrage
+              const field = missingFields[0];
+              if (field === "vin_or_hsn_tsn") {
+                replyText =
+                  language === "en"
+                    ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
+                    : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
+              } else if (field === "make") {
+                replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
+              } else if (field === "model") {
+                replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
+              } else {
+                replyText =
+                  language === "en"
+                    ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
+                    : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
+              }
+              nextStatus = "collect_vehicle";
+            }
+
+            break;
+          }
+
+          // Fahrzeugdaten speichern (kumulativ)
+          logger.info("Vehicle partial from parsed message", {
+            orderId: order.id,
+            partial: {
+              make: parsed.make ?? null,
+              model: parsed.model ?? null,
+              year: parsed.year ?? null,
+              engineCode: parsed.engine ?? null,
+              vin: parsed.vin ?? null,
+              hsn: parsed.hsn ?? null,
+              tsn: parsed.tsn ?? null
+            }
+          });
+          await getSupa().upsertVehicleForOrderFromPartial(order.id, {
+            make: parsed.make ?? null,
+            model: parsed.model ?? null,
+            year: parsed.year ?? null,
+            engineCode: parsed.engine ?? null,
+            engineKw: parsed.engineKw ?? null,
+            fuelType: parsed.fuelType ?? null,
+            emissionClass: parsed.emissionClass ?? null,
+            vin: parsed.vin ?? null,
+            hsn: parsed.hsn ?? null,
+            tsn: parsed.tsn ?? null
+          });
+
+          // Kumuliertes Fahrzeug aus DB holen und Pflichtfelder prüfen
+          const vehicle = await getVehicleForOrder(order.id);
+          logger.info("Vehicle after upsert", { orderId: order.id, vehicle });
+          const missingVehicleFields = determineRequiredFields({
+            make: vehicle?.make,
+            model: vehicle?.model,
+            year: vehicle?.year,
+            engine: (vehicle as any)?.engineCode ?? (vehicle as any)?.engine ?? (vehicle as any)?.engineKw,
+            vin: vehicle?.vin,
+            hsn: vehicle?.hsn,
+            tsn: vehicle?.tsn
+          });
+
+          if (missingVehicleFields.length > 0) {
+            const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
+            replyText =
+              q ||
+              (language === "en"
+                ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
+                : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.");
+            nextStatus = "collect_vehicle";
+          } else {
+            const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
+            replyText = language === "en"
+              ? `I've identified your vehicle as ${summary}. Is this correct?`
+              : `Ich habe dein Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
+            nextStatus = "confirm_vehicle";
+          }
+          break;
+        }
+
+        case "confirm_vehicle": {
+          const isYes = userText.toLowerCase().match(/^(ja|yes|jo|jup|correct|korrekt|stimmt|y)$/);
+          if (isYes) {
+            try {
+              await updateOrderData(order.id, { vehicleConfirmed: true });
+              orderData = { ...orderData, vehicleConfirmed: true };
+            } catch (err) {
+              logger.error("Failed to store vehicle confirmation", { orderId: order.id });
+            }
+
+            const partName = orderData?.requestedPart || orderData?.partText;
+            if (partName) {
+              const vehicleForBrain = await getVehicleForOrder(order.id);
+              const oemFlow = await runOemLookupAndScraping(
+                order.id,
+                language ?? "de",
+                { intent: "request_part", normalizedPartName: partName, userPartText: partName } as any,
+                orderData,
+                partName,
+                vehicleForBrain
+              );
+              replyText = oemFlow.replyText;
+              nextStatus = oemFlow.nextStatus;
+            } else {
+              replyText = language === "en"
+                ? "Great! Which part do you need? Please include position and symptoms."
+                : "Super! Welches Teil brauchst du? Bitte nenne mir auch die Position und eventuelle Symptome.";
+              nextStatus = "collect_part";
+            }
+          } else {
+            // User says no or provided different info
+            replyText = language === "en"
+              ? "Oh, I'm sorry. Please send me a photo of your registration or the correct VIN so I can identify the right car."
+              : "Oh, das tut mir leid. Bitte schick mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Auto finde.";
+            nextStatus = "collect_vehicle";
+            // Option: Clear vehicle data? User might just want to correct it.
+          }
+          break;
+        }
+
+        case "collect_part": {
+          // Teileinfos kumulativ aus order_data + neuer Nachricht mergen
+          const existingPartInfo = {
+            partCategory: orderData?.partCategory ?? null,
+            partPosition: orderData?.partPosition ?? null,
+            partDetails: orderData?.partDetails ?? {},
+            partText: orderData?.partText ?? null
+          };
+
+          const mergedPartInfo = mergePartInfo(existingPartInfo, parsed);
+          partDescription = partDescription ? `${partDescription}\n${userText}` : userText;
+
+          // persistierte order_data aktualisieren
+          try {
+            await updateOrderData(order.id, {
+              partCategory: mergedPartInfo.partCategory ?? null,
+              partPosition: mergedPartInfo.partPosition ?? null,
+              partDetails: mergedPartInfo.partDetails ?? {},
+              partText: mergedPartInfo.partText ?? null,
+              requestedPart: mergedPartInfo.partText ?? orderData?.requestedPart ?? null
+            });
+            orderData = { ...orderData, ...mergedPartInfo };
+          } catch (err: any) {
+            logger.error("Failed to update order_data with part info", { error: err?.message, orderId: order.id });
+          }
+
+          const vehicleForBrain = await getVehicleForOrder(order.id);
+          const brain = await runCollectPartBrain({
+            userText,
+            parsed,
+            order,
+            orderData: { ...orderData, vehicle: vehicleForBrain ?? undefined },
+            language: language ?? "de",
+            lastQuestionType: orderData?.lastQuestionType ?? null
+          });
+
+          replyText = brain.replyText;
+          nextStatus = brain.nextStatus as ConversationStatus;
+
+          // track last question type for simple repeat-avoidance
+          let lastQuestionType: string | null = null;
+          if (brain.slotsToAsk?.includes("part_name")) lastQuestionType = "ask_part_name";
+          else if (brain.slotsToAsk?.includes("position")) lastQuestionType = "ask_position";
+          else lastQuestionType = null;
+
+          try {
+            await updateOrderData(order.id, {
+              lastQuestionType
+            });
+            orderData = { ...orderData, lastQuestionType };
+          } catch (err: any) {
+            logger.error("Failed to store lastQuestionType", { error: err?.message, orderId: order.id });
+          }
+
+          // Wenn wir genug haben, OEM-Flow starten
+          if (brain.nextStatus === "oem_lookup") {
+            const partText =
+              parsed.normalizedPartName ||
+              mergedPartInfo.partText ||
+              orderData?.requestedPart ||
+              (partDescription || "").trim() ||
+              (language === "en" ? "the part you mentioned" : "das genannte Teil");
+
+            logger.info("Conversation state", {
+              orderId: order.id,
+              prevStatus: order.status,
+              nextStatus: "oem_lookup",
+              language
+            });
             const oemFlow = await runOemLookupAndScraping(
               order.id,
               language ?? "de",
-              { ...parsed, part: partTextFromOrder },
+              { ...parsed, part: partText },
               orderData,
               partDescription ?? null
             );
             replyText = oemFlow.replyText;
             nextStatus = oemFlow.nextStatus;
-          } else if (missingFields.length === 0) {
-            nextStatus = "collect_part";
-            replyText =
-              language === "en"
-                ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
-          } else {
-            // gezielte Rückfrage
-            const field = missingFields[0];
-            if (field === "vin_or_hsn_tsn") {
-              replyText =
-                language === "en"
-                  ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                  : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
-            } else if (field === "make") {
-              replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
-            } else if (field === "model") {
-              replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
-            } else {
-              replyText =
-                language === "en"
-                  ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                  : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
-            }
-            nextStatus = "collect_vehicle";
           }
-
           break;
         }
 
-        // Fahrzeugdaten speichern (kumulativ)
-        logger.info("Vehicle partial from parsed message", {
-          orderId: order.id,
-          partial: {
-            make: parsed.make ?? null,
-            model: parsed.model ?? null,
-            year: parsed.year ?? null,
-            engineCode: parsed.engine ?? null,
-            vin: parsed.vin ?? null,
-            hsn: parsed.hsn ?? null,
-            tsn: parsed.tsn ?? null
-          }
-        });
-        await getSupa().upsertVehicleForOrderFromPartial(order.id, {
-          make: parsed.make ?? null,
-          model: parsed.model ?? null,
-          year: parsed.year ?? null,
-          engineCode: parsed.engine ?? null,
-          engineKw: parsed.engineKw ?? null,
-          fuelType: parsed.fuelType ?? null,
-          emissionClass: parsed.emissionClass ?? null,
-          vin: parsed.vin ?? null,
-          hsn: parsed.hsn ?? null,
-          tsn: parsed.tsn ?? null
-        });
-
-        // Kumuliertes Fahrzeug aus DB holen und Pflichtfelder prüfen
-        const vehicle = await getVehicleForOrder(order.id);
-        logger.info("Vehicle after upsert", { orderId: order.id, vehicle });
-        const missingVehicleFields = determineRequiredFields({
-          make: vehicle?.make,
-          model: vehicle?.model,
-          year: vehicle?.year,
-          engine: (vehicle as any)?.engineCode ?? (vehicle as any)?.engine ?? (vehicle as any)?.engineKw,
-          vin: vehicle?.vin,
-          hsn: vehicle?.hsn,
-          tsn: vehicle?.tsn
-        });
-
-        if (missingVehicleFields.length > 0) {
-          const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
-          replyText =
-            q ||
-            (language === "en"
-              ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-              : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.");
-          nextStatus = "collect_vehicle";
-        } else {
-          const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
-          replyText = language === "en"
-            ? `I've identified your vehicle as ${summary}. Is this correct?`
-            : `Ich habe dein Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
-          nextStatus = "confirm_vehicle";
-        }
-        break;
-      }
-
-      case "confirm_vehicle": {
-        const isYes = userText.toLowerCase().match(/^(ja|yes|jo|jup|correct|korrekt|stimmt|y)$/);
-        if (isYes) {
-          try {
-            await updateOrderData(order.id, { vehicleConfirmed: true });
-            orderData = { ...orderData, vehicleConfirmed: true };
-          } catch (err) {
-            logger.error("Failed to store vehicle confirmation", { orderId: order.id });
-          }
-
-          const partName = orderData?.requestedPart || orderData?.partText;
-          if (partName) {
-            const vehicleForBrain = await getVehicleForOrder(order.id);
-            const oemFlow = await runOemLookupAndScraping(
-              order.id,
-              language ?? "de",
-              { intent: "request_part", normalizedPartName: partName, userPartText: partName } as any,
-              orderData,
-              partName,
-              vehicleForBrain
-            );
-            replyText = oemFlow.replyText;
-            nextStatus = oemFlow.nextStatus;
-          } else {
-            replyText = language === "en"
-              ? "Great! Which part do you need? Please include position and symptoms."
-              : "Super! Welches Teil brauchst du? Bitte nenne mir auch die Position und eventuelle Symptome.";
-            nextStatus = "collect_part";
-          }
-        } else {
-          // User says no or provided different info
-          replyText = language === "en"
-            ? "Oh, I'm sorry. Please send me a photo of your registration or the correct VIN so I can identify the right car."
-            : "Oh, das tut mir leid. Bitte schick mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Auto finde.";
-          nextStatus = "collect_vehicle";
-          // Option: Clear vehicle data? User might just want to correct it.
-        }
-        break;
-      }
-
-      case "collect_part": {
-        // Teileinfos kumulativ aus order_data + neuer Nachricht mergen
-        const existingPartInfo = {
-          partCategory: orderData?.partCategory ?? null,
-          partPosition: orderData?.partPosition ?? null,
-          partDetails: orderData?.partDetails ?? {},
-          partText: orderData?.partText ?? null
-        };
-
-        const mergedPartInfo = mergePartInfo(existingPartInfo, parsed);
-        partDescription = partDescription ? `${partDescription}\n${userText}` : userText;
-
-        // persistierte order_data aktualisieren
-        try {
-          await updateOrderData(order.id, {
-            partCategory: mergedPartInfo.partCategory ?? null,
-            partPosition: mergedPartInfo.partPosition ?? null,
-            partDetails: mergedPartInfo.partDetails ?? {},
-            partText: mergedPartInfo.partText ?? null,
-            requestedPart: mergedPartInfo.partText ?? orderData?.requestedPart ?? null
-          });
-          orderData = { ...orderData, ...mergedPartInfo };
-        } catch (err: any) {
-          logger.error("Failed to update order_data with part info", { error: err?.message, orderId: order.id });
-        }
-
-        const vehicleForBrain = await getVehicleForOrder(order.id);
-        const brain = await runCollectPartBrain({
-          userText,
-          parsed,
-          order,
-          orderData: { ...orderData, vehicle: vehicleForBrain ?? undefined },
-          language: language ?? "de",
-          lastQuestionType: orderData?.lastQuestionType ?? null
-        });
-
-        replyText = brain.replyText;
-        nextStatus = brain.nextStatus as ConversationStatus;
-
-        // track last question type for simple repeat-avoidance
-        let lastQuestionType: string | null = null;
-        if (brain.slotsToAsk?.includes("part_name")) lastQuestionType = "ask_part_name";
-        else if (brain.slotsToAsk?.includes("position")) lastQuestionType = "ask_position";
-        else lastQuestionType = null;
-
-        try {
-          await updateOrderData(order.id, {
-            lastQuestionType
-          });
-          orderData = { ...orderData, lastQuestionType };
-        } catch (err: any) {
-          logger.error("Failed to store lastQuestionType", { error: err?.message, orderId: order.id });
-        }
-
-        // Wenn wir genug haben, OEM-Flow starten
-        if (brain.nextStatus === "oem_lookup") {
-          const partText =
-            parsed.normalizedPartName ||
-            mergedPartInfo.partText ||
-            orderData?.requestedPart ||
-            (partDescription || "").trim() ||
-            (language === "en" ? "the part you mentioned" : "das genannte Teil");
-
-          logger.info("Conversation state", {
-            orderId: order.id,
-            prevStatus: order.status,
-            nextStatus: "oem_lookup",
-            language
-          });
+        case "oem_lookup": {
           const oemFlow = await runOemLookupAndScraping(
             order.id,
             language ?? "de",
-            { ...parsed, part: partText },
+            parsed,
             orderData,
             partDescription ?? null
           );
           replyText = oemFlow.replyText;
           nextStatus = oemFlow.nextStatus;
+          break;
         }
-        break;
-      }
 
-      case "oem_lookup": {
-        const oemFlow = await runOemLookupAndScraping(
-          order.id,
-          language ?? "de",
-          parsed,
-          orderData,
-          partDescription ?? null
-        );
-        replyText = oemFlow.replyText;
-        nextStatus = oemFlow.nextStatus;
-        break;
-      }
+        case "show_offers": {
+          try {
+            const offers = await listShopOffersByOrderId(order.id);
+            const sorted = (offers ?? []).slice().sort((a: any, b: any) => {
+              const pa = a.price ?? Number.POSITIVE_INFINITY;
+              const pb = b.price ?? Number.POSITIVE_INFINITY;
+              return pa - pb;
+            });
 
-      case "show_offers": {
-        try {
-          const offers = await listShopOffersByOrderId(order.id);
-          const sorted = (offers ?? []).slice().sort((a: any, b: any) => {
-            const pa = a.price ?? Number.POSITIVE_INFINITY;
-            const pb = b.price ?? Number.POSITIVE_INFINITY;
-            return pa - pb;
-          });
+            logger.info("Show offers", { orderId: order.id, offersCount: sorted.length });
+            if (!sorted || sorted.length === 0) {
+              replyText =
+                language === "en"
+                  ? "I’m still collecting offers for you. You’ll get a selection shortly."
+                  : "Ich suche noch passende Angebote. Du bekommst gleich eine Auswahl.";
+              nextStatus = "show_offers";
+              break;
+            }
 
-          logger.info("Show offers", { orderId: order.id, offersCount: sorted.length });
-          if (!sorted || sorted.length === 0) {
+            if (sorted.length === 1) {
+              const offer = sorted[0] as any;
+              const endPrice = calculateEndPrice(offer.price);
+              const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
+
+              const bindingNote = language === "en"
+                ? "\n\n⚠️ NOTE: This offer is a binding purchase agreement."
+                : "\n\n⚠️ HINWEIS: Mit deiner Bestätigung gibst du ein verbindliches Kaufangebot bei deinem Händler ab.";
+
+              // Beautiful offer formatting for WhatsApp (NO LINK, NO SHOP NAME for customer)
+              const isInStock = offer.shopName === "Händler-Lager" || offer.shopName === "Eigener Bestand";
+              const stockInfo = isInStock
+                ? (language === "en" ? "📦 *Available for immediate pickup!*" : "📦 *Sofort abholbereit!*")
+                : (language === "en" ? `🚚 *Delivery:* ${delivery} days` : `🚚 *Lieferzeit:* ${delivery} Tage`);
+
+              replyText =
+                language === "en"
+                  ? `✅ *Perfect Match Found!*\n\n` +
+                  `🏷️ *Brand:* ${offer.brand ?? "n/a"}\n` +
+                  `💰 *Price:* ${endPrice} ${offer.currency}\n` +
+                  `${stockInfo}\n` +
+                  `${offer.availability && !isInStock ? `📦 *Stock:* ${offer.availability}\n` : ''}` +
+                  `${bindingNote}\n\n` +
+                  `Do you want to order this now?`
+                  : `✅ *Perfektes Angebot gefunden!*\n\n` +
+                  `🏷️ *Marke:* ${offer.brand ?? "unbekannt"}\n` +
+                  `💰 *Preis:* ${endPrice} ${offer.currency}\n` +
+                  `${stockInfo}\n` +
+                  `${offer.availability && !isInStock ? `📦 *Verfügbarkeit:* ${offer.availability}\n` : ''}` +
+                  `${bindingNote}\n\n` +
+                  `Jetzt verbindlich bestellen?`;
+
+              try {
+                await updateOrderData(order.id, {
+                  selectedOfferCandidateId: offer.id
+                });
+                orderData = { ...orderData, selectedOfferCandidateId: offer.id };
+              } catch (err: any) {
+                logger.error("Failed to store selectedOfferCandidateId", { error: err?.message, orderId: order.id });
+              }
+
+              nextStatus = "await_offer_confirmation";
+              return {
+                reply: replyText,
+                orderId: order.id,
+                mediaUrl: offer.imageUrl ?? undefined, // Product image for customer
+                buttons: language === "en" ? ["Yes, order now", "No, show others"] : ["Ja, jetzt bestellen", "Nein, andere suchen"]
+              };
+            }
+
+            const top = sorted.slice(0, 3);
+            const lines =
+              language === "en"
+                ? top.map(
+                  (o: any, idx: number) => {
+                    const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
+                    const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "n/a"} days`;
+                    return `*${idx + 1}.* 🏷️ ${o.brand ?? "n/a"}\n` +
+                      `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+                  }
+                )
+                : top.map(
+                  (o: any, idx: number) => {
+                    const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
+                    const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "k.A."} Tage`;
+                    return `*${idx + 1}.* 🏷️ ${o.brand ?? "k.A."}\n` +
+                      `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+                  }
+                );
+
+            const multiBindingNote = language === "en"
+              ? "\n\n⚠️ Selecting an option constitutes a binding purchase agreement."
+              : "\n\n⚠️ Die Auswahl einer Option gilt als verbindliches Kaufangebot.";
+
             replyText =
               language === "en"
-                ? "I’m still collecting offers for you. You’ll get a selection shortly."
-                : "Ich suche noch passende Angebote. Du bekommst gleich eine Auswahl.";
+                ? "✅ *I found multiple offers!*\n\nPlease choose one:\n\n" +
+                lines.join("\n\n") +
+                multiBindingNote +
+                "\n\n👉 Reply with *1*, *2* or *3*."
+                : "✅ *Ich habe mehrere Angebote gefunden!*\n\nBitte wähle eines:\n\n" +
+                lines.join("\n\n") +
+                multiBindingNote +
+                "\n\n👉 Antworte mit *1*, *2* oder *3*.";
+
+            try {
+              await updateOrderData(order.id, {
+                offerChoiceIds: top.map((o: any) => o.id)
+              });
+              orderData = { ...orderData, offerChoiceIds: top.map((o: any) => o.id) };
+            } catch (err: any) {
+              logger.error("Failed to store offerChoiceIds", { error: err?.message, orderId: order.id });
+            }
+
+            nextStatus = "await_offer_choice";
+            return {
+              reply: replyText,
+              orderId: order.id,
+              mediaUrl: top[0]?.imageUrl ?? undefined
+            };
+          } catch (err: any) {
+            logger.error("Fetching offers failed", { error: err?.message, orderId: order.id });
+            replyText =
+              language === "en"
+                ? "I couldn't retrieve offers right now. I'll update you soon."
+                : "Ich konnte gerade keine Angebote abrufen. Ich melde mich bald erneut.";
+            nextStatus = "show_offers";
+            return { reply: replyText, orderId: order.id };
+          }
+          break;
+        }
+
+        case "await_offer_choice": {
+          const t = (userText || "").trim().toLowerCase();
+          let choiceIndex: number | null = null;
+          if (t.includes("1")) choiceIndex = 0;
+          else if (t.includes("2")) choiceIndex = 1;
+          else if (t.includes("3")) choiceIndex = 2;
+          logger.info("User offer choice message", { orderId: order.id, text: userText });
+
+          const choiceIds: string[] | undefined = orderData?.offerChoiceIds;
+          if (choiceIndex === null || !choiceIds || choiceIndex < 0 || choiceIndex >= choiceIds.length) {
+            replyText =
+              language === "en"
+                ? 'Please reply with 1, 2 or 3 to pick one of the offers.'
+                : 'Bitte antworte mit 1, 2 oder 3, um ein Angebot auszuwählen.';
+            nextStatus = "await_offer_choice";
+            break;
+          }
+
+          const chosenOfferId = choiceIds[choiceIndex];
+          const offers = await listShopOffersByOrderId(order.id);
+          const chosen = offers.find((o: any) => o.id === chosenOfferId);
+          if (!chosen) {
+            replyText =
+              language === "en"
+                ? "I couldn’t match your choice. I’ll show the offers again."
+                : "Ich konnte deine Auswahl nicht zuordnen. Ich zeige dir die Angebote gleich erneut.";
             nextStatus = "show_offers";
             break;
           }
 
-          if (sorted.length === 1) {
-            const offer = sorted[0] as any;
-            const endPrice = calculateEndPrice(offer.price);
-            const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
-
-            const bindingNote = language === "en"
-              ? "\n\n⚠️ NOTE: This offer is a binding purchase agreement."
-              : "\n\n⚠️ HINWEIS: Mit deiner Bestätigung gibst du ein verbindliches Kaufangebot bei deinem Händler ab.";
-
-            // Beautiful offer formatting for WhatsApp (NO LINK, NO SHOP NAME for customer)
-            const isInStock = offer.shopName === "Händler-Lager" || offer.shopName === "Eigener Bestand";
-            const stockInfo = isInStock
-              ? (language === "en" ? "📦 *Available for immediate pickup!*" : "📦 *Sofort abholbereit!*")
-              : (language === "en" ? `🚚 *Delivery:* ${delivery} days` : `🚚 *Lieferzeit:* ${delivery} Tage`);
-
-            replyText =
-              language === "en"
-                ? `✅ *Perfect Match Found!*\n\n` +
-                `🏷️ *Brand:* ${offer.brand ?? "n/a"}\n` +
-                `💰 *Price:* ${endPrice} ${offer.currency}\n` +
-                `${stockInfo}\n` +
-                `${offer.availability && !isInStock ? `📦 *Stock:* ${offer.availability}\n` : ''}` +
-                `${bindingNote}\n\n` +
-                `Do you want to order this now?`
-                : `✅ *Perfektes Angebot gefunden!*\n\n` +
-                `🏷️ *Marke:* ${offer.brand ?? "unbekannt"}\n` +
-                `💰 *Preis:* ${endPrice} ${offer.currency}\n` +
-                `${stockInfo}\n` +
-                `${offer.availability && !isInStock ? `📦 *Verfügbarkeit:* ${offer.availability}\n` : ''}` +
-                `${bindingNote}\n\n` +
-                `Jetzt verbindlich bestellen?`;
-
-            try {
-              await updateOrderData(order.id, {
-                selectedOfferCandidateId: offer.id
-              });
-              orderData = { ...orderData, selectedOfferCandidateId: offer.id };
-            } catch (err: any) {
-              logger.error("Failed to store selectedOfferCandidateId", { error: err?.message, orderId: order.id });
-            }
-
-            nextStatus = "await_offer_confirmation";
-            return {
-              reply: replyText,
-              orderId: order.id,
-              mediaUrl: offer.imageUrl ?? undefined, // Product image for customer
-              buttons: language === "en" ? ["Yes, order now", "No, show others"] : ["Ja, jetzt bestellen", "Nein, andere suchen"]
-            };
+          try {
+            await updateOrderData(order.id, {
+              selectedOfferId: chosen.id,
+              selectedOfferSummary: {
+                shopName: chosen.shopName,
+                brand: chosen.brand,
+                price: calculateEndPrice(chosen.price),
+                currency: chosen.currency,
+                deliveryTimeDays: chosen.deliveryTimeDays
+              }
+            });
+            await updateOrderStatus(order.id, "ready");
+          } catch (err: any) {
+            logger.error("Failed to store selected offer", { error: err?.message, orderId: order.id, chosenOfferId });
           }
 
-          const top = sorted.slice(0, 3);
-          const lines =
-            language === "en"
-              ? top.map(
-                (o: any, idx: number) => {
-                  const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
-                  const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "n/a"} days`;
-                  return `*${idx + 1}.* 🏷️ ${o.brand ?? "n/a"}\n` +
-                    `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
-                }
-              )
-              : top.map(
-                (o: any, idx: number) => {
-                  const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
-                  const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "k.A."} Tage`;
-                  return `*${idx + 1}.* 🏷️ ${o.brand ?? "k.A."}\n` +
-                    `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
-                }
-              );
-
-          const multiBindingNote = language === "en"
-            ? "\n\n⚠️ Selecting an option constitutes a binding purchase agreement."
-            : "\n\n⚠️ Die Auswahl einer Option gilt als verbindliches Kaufangebot.";
-
+          logger.info("User selected offer", {
+            orderId: order.id,
+            choiceIndex,
+            chosenOfferId: chosen.id,
+            chosenShop: chosen.shopName,
+            price: chosen.price
+          });
           replyText =
             language === "en"
-              ? "✅ *I found multiple offers!*\n\nPlease choose one:\n\n" +
-              lines.join("\n\n") +
-              multiBindingNote +
-              "\n\n👉 Reply with *1*, *2* or *3*."
-              : "✅ *Ich habe mehrere Angebote gefunden!*\n\nBitte wähle eines:\n\n" +
-              lines.join("\n\n") +
-              multiBindingNote +
-              "\n\n👉 Antworte mit *1*, *2* oder *3*.";
+              ? `Thank you! Your order (${order.id}) has been saved with the offer from ${chosen.shopName} (${chosen.brand ?? "n/a"}, ${calculateEndPrice(chosen.price)} ${chosen.currency}). This is now a binding agreement. Your dealer will contact you soon.`
+              : `Vielen Dank! Deine Bestellung (${order.id}) wurde mit dem Angebot von ${chosen.shopName} (${chosen.brand ?? "k.A."}, ${calculateEndPrice(chosen.price)} ${chosen.currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Dein Händler wird dich bald kontaktieren.`;
+          nextStatus = "done";
+          break;
+        }
+
+        case "await_offer_confirmation": {
+          const t = (userText || "").trim().toLowerCase();
+          const isYes = ["ja", "okay", "ok", "passt", "yes", "yep", "okey"].some((w) => t.includes(w));
+          const isNo = ["nein", "no", "nicht", "anders"].some((w) => t.includes(w));
+          const candidateId = orderData?.selectedOfferCandidateId as string | undefined;
+          logger.info("User offer confirmation", {
+            orderId: order.id,
+            text: userText,
+            isYes,
+            isNo,
+            candidateOfferId: candidateId
+          });
+
+          if (!isYes && !isNo) {
+            replyText =
+              language === "en"
+                ? 'If this offer works for you, please reply with "Yes" or "OK". If not, tell me what matters most (price, brand, delivery time).'
+                : 'Wenn das Angebot für dich passt, antworte bitte mit "Ja" oder "OK". Wenn nicht, sag mir kurz, was dir wichtig ist (z.B. Preis, Marke oder Lieferzeit).';
+            nextStatus = "await_offer_confirmation";
+            break;
+          }
+
+          if (isNo) {
+            replyText =
+              language === "en"
+                ? "Got it, I’ll see if I can find alternative offers. Tell me what matters most: price, brand or delivery time."
+                : "Alles klar, ich schaue, ob ich dir noch andere Angebote finden kann. Sag mir gerne, was dir wichtiger ist: Preis, Marke oder Lieferzeit.";
+            nextStatus = "show_offers";
+            break;
+          }
+
+          if (!candidateId) {
+            replyText =
+              language === "en"
+                ? "I lost track of the offer. I’ll fetch the options again."
+                : "Ich habe das Angebot nicht mehr parat. Ich hole die Optionen nochmal.";
+            nextStatus = "show_offers";
+            break;
+          }
+
+          const offers = await listShopOffersByOrderId(order.id);
+          const chosen = offers.find((o: any) => o.id === candidateId);
+          if (!chosen) {
+            replyText =
+              language === "en"
+                ? "I couldn’t find that offer anymore. I’ll show available offers again."
+                : "Ich konnte dieses Angebot nicht mehr finden. Ich zeige dir die verfügbaren Angebote erneut.";
+            nextStatus = "show_offers";
+            break;
+          }
 
           try {
             await updateOrderData(order.id, {
-              offerChoiceIds: top.map((o: any) => o.id)
+              selectedOfferId: chosen.id,
+              selectedOfferSummary: {
+                shopName: chosen.shopName,
+                brand: chosen.brand,
+                price: calculateEndPrice(chosen.price, merchantSettings?.marginPercent),
+                currency: chosen.currency,
+                deliveryTimeDays: chosen.deliveryTimeDays
+              }
             });
-            orderData = { ...orderData, offerChoiceIds: top.map((o: any) => o.id) };
+            await updateOrderStatus(order.id, "ready");
+
+            if (merchantSettings?.allowDirectDelivery) {
+              replyText = language === "en"
+                ? "Great! Do you want the part delivered to your home (D) or do you want to pick it up at the dealer (P)?"
+                : "Super! Möchtest du das Teil nach Hause geliefert bekommen (D) oder holst du es beim Händler ab (P)?";
+              nextStatus = "collect_delivery_preference";
+            } else {
+              const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
+              replyText = language === "en"
+                ? `Perfect! I've reserved the part. You can pick it up at: ${dealerLoc}.`
+                : `Perfekt! Ich habe das Teil reserviert. Du kannst es hier abholen: ${dealerLoc}.`;
+              nextStatus = "done";
+            }
           } catch (err: any) {
-            logger.error("Failed to store offerChoiceIds", { error: err?.message, orderId: order.id });
+            logger.error("Failed to store confirmed offer", { error: err?.message, orderId: order.id, candidateId });
           }
 
-          nextStatus = "await_offer_choice";
-          return {
-            reply: replyText,
+          logger.info("Offer selection stored", {
             orderId: order.id,
-            mediaUrl: top[0]?.imageUrl ?? undefined
-          };
-        } catch (err: any) {
-          logger.error("Fetching offers failed", { error: err?.message, orderId: order.id });
-          replyText =
-            language === "en"
-              ? "I couldn't retrieve offers right now. I'll update you soon."
-              : "Ich konnte gerade keine Angebote abrufen. Ich melde mich bald erneut.";
-          nextStatus = "show_offers";
-          return { reply: replyText, orderId: order.id };
-        }
-        break;
-      }
-
-      case "await_offer_choice": {
-        const t = (userText || "").trim().toLowerCase();
-        let choiceIndex: number | null = null;
-        if (t.includes("1")) choiceIndex = 0;
-        else if (t.includes("2")) choiceIndex = 1;
-        else if (t.includes("3")) choiceIndex = 2;
-        logger.info("User offer choice message", { orderId: order.id, text: userText });
-
-        const choiceIds: string[] | undefined = orderData?.offerChoiceIds;
-        if (choiceIndex === null || !choiceIds || choiceIndex < 0 || choiceIndex >= choiceIds.length) {
-          replyText =
-            language === "en"
-              ? 'Please reply with 1, 2 or 3 to pick one of the offers.'
-              : 'Bitte antworte mit 1, 2 oder 3, um ein Angebot auszuwählen.';
-          nextStatus = "await_offer_choice";
-          break;
-        }
-
-        const chosenOfferId = choiceIds[choiceIndex];
-        const offers = await listShopOffersByOrderId(order.id);
-        const chosen = offers.find((o: any) => o.id === chosenOfferId);
-        if (!chosen) {
-          replyText =
-            language === "en"
-              ? "I couldn’t match your choice. I’ll show the offers again."
-              : "Ich konnte deine Auswahl nicht zuordnen. Ich zeige dir die Angebote gleich erneut.";
-          nextStatus = "show_offers";
-          break;
-        }
-
-        try {
-          await updateOrderData(order.id, {
             selectedOfferId: chosen.id,
-            selectedOfferSummary: {
-              shopName: chosen.shopName,
-              brand: chosen.brand,
-              price: calculateEndPrice(chosen.price),
-              currency: chosen.currency,
-              deliveryTimeDays: chosen.deliveryTimeDays
-            }
+            statusUpdatedTo: "ready"
           });
-          await updateOrderStatus(order.id, "ready");
-        } catch (err: any) {
-          logger.error("Failed to store selected offer", { error: err?.message, orderId: order.id, chosenOfferId });
-        }
-
-        logger.info("User selected offer", {
-          orderId: order.id,
-          choiceIndex,
-          chosenOfferId: chosen.id,
-          chosenShop: chosen.shopName,
-          price: chosen.price
-        });
-        replyText =
-          language === "en"
-            ? `Thank you! Your order (${order.id}) has been saved with the offer from ${chosen.shopName} (${chosen.brand ?? "n/a"}, ${calculateEndPrice(chosen.price)} ${chosen.currency}). This is now a binding agreement. Your dealer will contact you soon.`
-            : `Vielen Dank! Deine Bestellung (${order.id}) wurde mit dem Angebot von ${chosen.shopName} (${chosen.brand ?? "k.A."}, ${calculateEndPrice(chosen.price)} ${chosen.currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Dein Händler wird dich bald kontaktieren.`;
-        nextStatus = "done";
-        break;
-      }
-
-      case "await_offer_confirmation": {
-        const t = (userText || "").trim().toLowerCase();
-        const isYes = ["ja", "okay", "ok", "passt", "yes", "yep", "okey"].some((w) => t.includes(w));
-        const isNo = ["nein", "no", "nicht", "anders"].some((w) => t.includes(w));
-        const candidateId = orderData?.selectedOfferCandidateId as string | undefined;
-        logger.info("User offer confirmation", {
-          orderId: order.id,
-          text: userText,
-          isYes,
-          isNo,
-          candidateOfferId: candidateId
-        });
-
-        if (!isYes && !isNo) {
           replyText =
             language === "en"
-              ? 'If this offer works for you, please reply with "Yes" or "OK". If not, tell me what matters most (price, brand, delivery time).'
-              : 'Wenn das Angebot für dich passt, antworte bitte mit "Ja" oder "OK". Wenn nicht, sag mir kurz, was dir wichtig ist (z.B. Preis, Marke oder Lieferzeit).';
-          nextStatus = "await_offer_confirmation";
+              ? `Perfect, I’ve saved this offer for you. Your order (${order.id}) is now binding. Your dealer will contact you soon.`
+              : `Perfekt, ich habe dieses Angebot für dich gespeichert. Deine Bestellung (${order.id}) ist nun verbindlich. Dein Händler wird dich bald kontaktieren.`;
+          nextStatus = "done";
           break;
         }
 
-        if (isNo) {
-          replyText =
-            language === "en"
-              ? "Got it, I’ll see if I can find alternative offers. Tell me what matters most: price, brand or delivery time."
-              : "Alles klar, ich schaue, ob ich dir noch andere Angebote finden kann. Sag mir gerne, was dir wichtiger ist: Preis, Marke oder Lieferzeit.";
-          nextStatus = "show_offers";
-          break;
-        }
 
-        if (!candidateId) {
-          replyText =
-            language === "en"
-              ? "I lost track of the offer. I’ll fetch the options again."
-              : "Ich habe das Angebot nicht mehr parat. Ich hole die Optionen nochmal.";
-          nextStatus = "show_offers";
-          break;
-        }
-
-        const offers = await listShopOffersByOrderId(order.id);
-        const chosen = offers.find((o: any) => o.id === candidateId);
-        if (!chosen) {
-          replyText =
-            language === "en"
-              ? "I couldn’t find that offer anymore. I’ll show available offers again."
-              : "Ich konnte dieses Angebot nicht mehr finden. Ich zeige dir die verfügbaren Angebote erneut.";
-          nextStatus = "show_offers";
-          break;
-        }
-
-        try {
-          await updateOrderData(order.id, {
-            selectedOfferId: chosen.id,
-            selectedOfferSummary: {
-              shopName: chosen.shopName,
-              brand: chosen.brand,
-              price: calculateEndPrice(chosen.price, merchantSettings?.marginPercent),
-              currency: chosen.currency,
-              deliveryTimeDays: chosen.deliveryTimeDays
-            }
-          });
-          await updateOrderStatus(order.id, "ready");
-
-          if (merchantSettings?.allowDirectDelivery) {
+        case "collect_delivery_preference": {
+          const choice = userText.toLowerCase();
+          if (choice.includes("d") || choice.includes("liefer")) {
             replyText = language === "en"
-              ? "Great! Do you want the part delivered to your home (D) or do you want to pick it up at the dealer (P)?"
-              : "Super! Möchtest du das Teil nach Hause geliefert bekommen (D) oder holst du es beim Händler ab (P)?";
-            nextStatus = "collect_delivery_preference";
-          } else {
+              ? "Excellent choice. Please send me your full delivery address."
+              : "Sehr gute Wahl. Bitte sende mir nun deine vollständige Lieferadresse.";
+            nextStatus = "collect_address";
+          } else if (choice.includes("p") || choice.includes("abhol")) {
             const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
             replyText = language === "en"
-              ? `Perfect! I've reserved the part. You can pick it up at: ${dealerLoc}.`
-              : `Perfekt! Ich habe das Teil reserviert. Du kannst es hier abholen: ${dealerLoc}.`;
+              ? `Perfect! You can pick up the part at: ${dealerLoc}. See you soon!`
+              : `Perfekt! Du kannst das Teil hier abholen: ${dealerLoc}. Bis bald!`;
             nextStatus = "done";
+          } else {
+            replyText = language === "en"
+              ? "Please decide: Delivery (D) or Pickup (P)?"
+              : "Bitte entscheide dich: Lieferung (D) oder Abholung (P)?";
+            nextStatus = "collect_delivery_preference";
           }
-        } catch (err: any) {
-          logger.error("Failed to store confirmed offer", { error: err?.message, orderId: order.id, candidateId });
+          break;
         }
 
-        logger.info("Offer selection stored", {
-          orderId: order.id,
-          selectedOfferId: chosen.id,
-          statusUpdatedTo: "ready"
-        });
-        replyText =
-          language === "en"
-            ? `Perfect, I’ve saved this offer for you. Your order (${order.id}) is now binding. Your dealer will contact you soon.`
-            : `Perfekt, ich habe dieses Angebot für dich gespeichert. Deine Bestellung (${order.id}) ist nun verbindlich. Dein Händler wird dich bald kontaktieren.`;
-        nextStatus = "done";
-        break;
-      }
-
-
-      case "collect_delivery_preference": {
-        const choice = userText.toLowerCase();
-        if (choice.includes("d") || choice.includes("liefer")) {
-          replyText = language === "en"
-            ? "Excellent choice. Please send me your full delivery address."
-            : "Sehr gute Wahl. Bitte sende mir nun deine vollständige Lieferadresse.";
-          nextStatus = "collect_address";
-        } else if (choice.includes("p") || choice.includes("abhol")) {
-          const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
-          replyText = language === "en"
-            ? `Perfect! You can pick up the part at: ${dealerLoc}. See you soon!`
-            : `Perfekt! Du kannst das Teil hier abholen: ${dealerLoc}. Bis bald!`;
-          nextStatus = "done";
-        } else {
-          replyText = language === "en"
-            ? "Please decide: Delivery (D) or Pickup (P)?"
-            : "Bitte entscheide dich: Lieferung (D) oder Abholung (P)?";
-          nextStatus = "collect_delivery_preference";
-        }
-        break;
-      }
-
-      case "collect_address": {
-        if (userText.length > 10) {
-          try {
-            await getSupa().saveDeliveryAddress(order.id, userText);
-          } catch (err) {
-            logger.error("Failed to save delivery address", { orderId: order.id, error: err });
-          }
-          replyText = language === "en"
-            ? "Thank you! Your delivery address has been saved. We will ship the part shortly."
-            : "Vielen Dank! Deine Lieferadresse wurde gespeichert. Wir versenden das Teil in Kürze.";
-          nextStatus = "done";
-        } else {
-          replyText = language === "en"
-            ? "Please provide a valid delivery address."
-            : "Bitte gib eine gültige Lieferadresse an.";
-          nextStatus = "collect_address";
-        }
-        break;
-      }
-
-      case "done": {
-        // Context-aware handling: detect what user wants to do next
-        const t = userText.toLowerCase();
-
-        // Check if user wants another part for the same vehicle
-        const newPartKeywords = ["brauche auch", "noch ein", "außerdem", "dazu noch", "zusätzlich",
-          "another", "also need", "bremsbeläge", "scheiben", "filter", "zündkerzen", "kupplung"];
-        const wantsNewPart = newPartKeywords.some(k => t.includes(k)) ||
-          (t.length > 5 && !t.includes("?") && !t.includes("danke") && !t.includes("thanks"));
-
-        // Check if user wants to start completely fresh
-        const freshStartKeywords = ["neues auto", "anderes auto", "new car", "different vehicle", "von vorn"];
-        const wantsFreshStart = freshStartKeywords.some(k => t.includes(k));
-
-        // Check if it's just a thank you / goodbye
-        const goodbyeKeywords = ["danke", "thanks", "tschüss", "bye", "super", "perfekt", "ok"];
-        const isGoodbye = goodbyeKeywords.some(k => t.includes(k));
-
-        if (wantsFreshStart) {
-          // User wants different vehicle
-          nextStatus = "collect_vehicle";
-          replyText = language === "en"
-            ? "Sure! Send me a photo of the vehicle registration document for the new car."
-            : "Klar! Schick mir ein Foto vom Fahrzeugschein des neuen Autos.";
-        } else if (wantsNewPart && order.vehicle_description) {
-          // User wants another part for same vehicle - create new order with copied vehicle
-          try {
-            const newOrder = await getSupa().findOrCreateOrder(payload.from, null, { forceNew: true });
-            await updateOrder(newOrder.id, {
-              vehicle_description: order.vehicle_description,
-              status: "collect_part" as ConversationStatus,
-              language
-            });
-            if (orderData?.vehicle) {
-              await getSupa().updateOrderData(newOrder.id, { vehicle: orderData.vehicle });
+        case "collect_address": {
+          if (userText.length > 10) {
+            try {
+              await getSupa().saveDeliveryAddress(order.id, userText);
+            } catch (err) {
+              logger.error("Failed to save delivery address", { orderId: order.id, error: err });
             }
             replyText = language === "en"
-              ? `Great! I'm using your ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "vehicle"}. What part do you need?`
-              : `Super! Ich nutze dein ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil brauchst du?`;
-            return { reply: replyText, orderId: newOrder.id };
-          } catch (err) {
-            logger.error("Failed to create follow-up order", { error: (err as any)?.message });
+              ? "Thank you! Your delivery address has been saved. We will ship the part shortly."
+              : "Vielen Dank! Deine Lieferadresse wurde gespeichert. Wir versenden das Teil in Kürze.";
+            nextStatus = "done";
+          } else {
             replyText = language === "en"
-              ? "What part do you need for your vehicle?"
-              : "Welches Teil brauchst du für dein Fahrzeug?";
-            nextStatus = "collect_part";
+              ? "Please provide a valid delivery address."
+              : "Bitte gib eine gültige Lieferadresse an.";
+            nextStatus = "collect_address";
           }
-        } else if (isGoodbye) {
-          // User is saying goodbye
-          replyText = language === "en"
-            ? "Thank you! If you need anything else, just write me anytime. 👋"
-            : "Vielen Dank! Wenn du noch etwas brauchst, schreib mir jederzeit. 👋";
-        } else {
-          // Default: order complete message
-          replyText = language === "en"
-            ? "Your order is complete. If you have further questions, just ask!"
-            : "Deine Bestellung ist abgeschlossen. Wenn du weitere Fragen hast, frag einfach!";
+          break;
         }
 
-        // Only use Content API for actual goodbye, not for follow-up parts
-        if (isGoodbye) {
-          return {
-            reply: replyText,
-            orderId: order.id,
-            contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
-            contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
-          };
-        }
-        break;
-      }
+        case "done": {
+          // Context-aware handling: detect what user wants to do next
+          const t = userText.toLowerCase();
 
-      default: {
-        // Unerwarteter Zustand: sauber neustarten
-        nextStatus = "choose_language";
-        language = null;
-        replyText =
-          "Es ist ein interner Fehler im Status aufgetreten. Lass uns neu starten: Bitte wähle deine Sprache (1-5).\nThere was an internal state error. Let’s restart: please choose your language (1-5).";
-      }
-    }
+          // Check if user wants another part for the same vehicle
+          const newPartKeywords = ["brauche auch", "noch ein", "außerdem", "dazu noch", "zusätzlich",
+            "another", "also need", "bremsbeläge", "scheiben", "filter", "zündkerzen", "kupplung"];
+          const wantsNewPart = newPartKeywords.some(k => t.includes(k)) ||
+            (t.length > 5 && !t.includes("?") && !t.includes("danke") && !t.includes("thanks"));
+
+          // Check if user wants to start completely fresh
+          const freshStartKeywords = ["neues auto", "anderes auto", "new car", "different vehicle", "von vorn"];
+          const wantsFreshStart = freshStartKeywords.some(k => t.includes(k));
+
+          // Check if it's just a thank you / goodbye
+          const goodbyeKeywords = ["danke", "thanks", "tschüss", "bye", "super", "perfekt", "ok"];
+          const isGoodbye = goodbyeKeywords.some(k => t.includes(k));
+
+          if (wantsFreshStart) {
+            // User wants different vehicle
+            nextStatus = "collect_vehicle";
+            replyText = language === "en"
+              ? "Sure! Send me a photo of the vehicle registration document for the new car."
+              : "Klar! Schick mir ein Foto vom Fahrzeugschein des neuen Autos.";
+          } else if (wantsNewPart && order.vehicle_description) {
+            // User wants another part for same vehicle - create new order with copied vehicle
+            try {
+              const newOrder = await getSupa().findOrCreateOrder(payload.from, null, { forceNew: true });
+              await updateOrder(newOrder.id, {
+                vehicle_description: order.vehicle_description,
+                status: "collect_part" as ConversationStatus,
+                language
+              });
+              if (orderData?.vehicle) {
+                await getSupa().updateOrderData(newOrder.id, { vehicle: orderData.vehicle });
+              }
+              replyText = language === "en"
+                ? `Great! I'm using your ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "vehicle"}. What part do you need?`
+                : `Super! Ich nutze dein ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil brauchst du?`;
+              return { reply: replyText, orderId: newOrder.id };
+            } catch (err) {
+              logger.error("Failed to create follow-up order", { error: (err as any)?.message });
+              replyText = language === "en"
+                ? "What part do you need for your vehicle?"
+                : "Welches Teil brauchst du für dein Fahrzeug?";
+              nextStatus = "collect_part";
+            }
+          } else if (isGoodbye) {
+            // User is saying goodbye
+            replyText = language === "en"
+              ? "Thank you! If you need anything else, just write me anytime. 👋"
+              : "Vielen Dank! Wenn du noch etwas brauchst, schreib mir jederzeit. 👋";
+          } else {
+            // Default: order complete message
+            replyText = language === "en"
+              ? "Your order is complete. If you have further questions, just ask!"
+              : "Deine Bestellung ist abgeschlossen. Wenn du weitere Fragen hast, frag einfach!";
+          }
+
+          // Only use Content API for actual goodbye, not for follow-up parts
+          if (isGoodbye) {
+            return {
+              reply: replyText,
+              orderId: order.id,
+              contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
+              contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
+            };
+          }
+          break;
+        }
+
+        default: {
+          // Unerwarteter Zustand: sauber neustarten
+          nextStatus = "choose_language";
+          language = null;
+          replyText =
+            "Es ist ein interner Fehler im Status aufgetreten. Lass uns neu starten: Bitte wähle deine Sprache (1-5).\nThere was an internal state error. Let’s restart: please choose your language (1-5).";
+        }
+      } // END switch
+    } // END if (!replyText) - state machine fallback wrapper
 
     // Fallback, falls keine Antwort gesetzt wurde
     if (!replyText) {

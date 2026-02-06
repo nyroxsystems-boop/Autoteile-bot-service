@@ -1,11 +1,11 @@
 // Integration-style unit test for orchestrator -> OEM -> scrape flow
 // Mocks orchestrator (openAiService), oemService and scrapingService and asserts handler triggers them.
 
-// Ensure OpenAI client initialization doesn't throw in tests
-process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key';
+// Ensure Gemini client initialization doesn't throw in tests
+process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
 
-// Mock openAiService to return an oem_lookup action with slots
-jest.mock('./openAiService', () => ({
+// Mock geminiService to return an oem_lookup action with slots
+jest.mock('./intelligence/geminiService', () => ({
   generateChatCompletion: jest.fn(async () =>
     JSON.stringify({
       action: 'oem_lookup',
@@ -22,11 +22,12 @@ jest.mock('./openAiService', () => ({
       required_slots: [],
       confidence: 0.99
     })
-  )
+  ),
+  generateVisionCompletion: jest.fn()
 }));
 
 // Mock supabase service
-jest.mock('./supabaseService', () => ({
+jest.mock('./adapters/supabaseService', () => ({
   insertMessage: jest.fn(() => Promise.resolve()),
   findOrCreateOrder: jest.fn(() => Promise.resolve({ id: 'order-int-1', status: 'collect_part', language: 'de' })),
   getOrderById: jest.fn(() => Promise.resolve({ orderData: {} })),
@@ -34,16 +35,18 @@ jest.mock('./supabaseService', () => ({
   updateOrder: jest.fn(() => Promise.resolve()),
   upsertVehicleForOrderFromPartial: jest.fn(() => Promise.resolve()),
   getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
-  updateOrderScrapeTask: jest.fn(() => Promise.resolve())
+  updateOrderScrapeTask: jest.fn(() => Promise.resolve()),
+  getMerchantSettings: jest.fn(() => Promise.resolve({ supportedLanguages: ['de', 'en'] })),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([]))
 }));
 
 // Mock OEM resolver to return success
-jest.mock('./oemService', () => ({
-  resolveOEM: jest.fn(async () => ({ success: true, oemNumber: 'OEM-INT-123' }))
+jest.mock('./intelligence/oemResolver', () => ({
+  resolveOEM: jest.fn(async () => ({ primaryOEM: 'OEM-INT-123', candidates: [], overallConfidence: 0.95 }))
 }));
 
 // Mock scraping service to simulate synchronous scrape result
-jest.mock('./scrapingService', () => ({
+jest.mock('./scraping/scrapingService', () => ({
   scrapeOffersForOrder: jest.fn(async (orderId: string, oemNumber: string) => ({ ok: true, offersInserted: 3 }))
 }));
 
@@ -53,11 +56,11 @@ jest.mock('../utils/httpClient', () => ({
 }));
 
 import { handleIncomingBotMessage } from './core/botLogicService';
-import { generateChatCompletion } from '../intelligence/openAiService';
-import { resolveOEM } from './oemService';
+import { generateChatCompletion } from './intelligence/geminiService';
+import { resolveOEM } from './intelligence/oemResolver';
 import { scrapeOffersForOrder } from './scraping/scrapingService';
 
-const supa = require('./supabaseService');
+const supa = require('./adapters/supabaseService');
 
 describe('integration: orchestrator -> OEM -> scrape', () => {
   beforeEach(() => {

@@ -1,20 +1,23 @@
 import { handleIncomingBotMessage } from './core/botLogicService';
 
-// Mock the OpenAI wrapper and supabase service functions used by the handler
-jest.mock('./openAiService', () => ({
-  generateChatCompletion: jest.fn()
+// Mock the Gemini wrapper and supabase service functions used by the handler
+jest.mock('./intelligence/geminiService', () => ({
+  generateChatCompletion: jest.fn(),
+  generateVisionCompletion: jest.fn()
 }));
 
-jest.mock('./supabaseService', () => ({
+jest.mock('./adapters/supabaseService', () => ({
   insertMessage: jest.fn(() => Promise.resolve()),
   findOrCreateOrder: jest.fn(() => Promise.resolve({ id: 'order-1', status: 'collect_vehicle', language: null })),
   getOrderById: jest.fn(() => Promise.resolve({ orderData: {} })),
   updateOrderData: jest.fn(() => Promise.resolve()),
   updateOrder: jest.fn(() => Promise.resolve()),
-  getVehicleForOrder: jest.fn(() => Promise.resolve(null))
+  getVehicleForOrder: jest.fn(() => Promise.resolve(null)),
+  getMerchantSettings: jest.fn(() => Promise.resolve({ supportedLanguages: ['de', 'en'] })),
+  listActiveOrdersByContact: jest.fn(() => Promise.resolve([]))
 }));
 
-import { generateChatCompletion } from '../intelligence/openAiService';
+import { generateChatCompletion } from './intelligence/geminiService';
 import * as supa from './adapters/supabaseService';
 
 describe('orchestrator-first handler', () => {
@@ -40,7 +43,7 @@ describe('orchestrator-first handler', () => {
     expect(res).toBeDefined();
     expect(res.reply).toBe('Welche Automarke ist es?');
 
-  // generateChatCompletion (orchestrator) should have been invoked
-  expect(generateChatCompletion).toHaveBeenCalled();
+    // generateChatCompletion (orchestrator) should have been invoked
+    expect(generateChatCompletion).toHaveBeenCalled();
   });
 });

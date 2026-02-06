@@ -26,7 +26,7 @@ jest.mock("@langchain/openai", () => ({
 }));
 
 // Mock the tools
-jest.mock("../langchainTools", () => ({
+jest.mock("./langchainTools", () => ({
     allTools: [],
     oemLookupTool: { name: "oem_lookup" },
     stockCheckTool: { name: "stock_check" },
@@ -48,13 +48,13 @@ describe("LangChain Agent", () => {
 
     describe("isLangChainEnabled", () => {
         it("returns true when USE_LANGCHAIN_AGENT is true", async () => {
-            const { isLangChainEnabled } = await import("../langchainAgent");
+            const { isLangChainEnabled } = await import("./langchainAgent");
             process.env.USE_LANGCHAIN_AGENT = "true";
             expect(isLangChainEnabled()).toBe(true);
         });
 
         it("returns false when USE_LANGCHAIN_AGENT is not set", async () => {
-            const { isLangChainEnabled } = await import("../langchainAgent");
+            const { isLangChainEnabled } = await import("./langchainAgent");
             delete process.env.USE_LANGCHAIN_AGENT;
             expect(isLangChainEnabled()).toBe(false);
         });
@@ -76,7 +76,7 @@ describe("LangChain Agent", () => {
 describe("LangChain Memory", () => {
     describe("getMemoryStats", () => {
         it("returns memory statistics", async () => {
-            const { getMemoryStats } = await import("../langchainMemory");
+            const { getMemoryStats } = await import("./langchainMemory");
             const stats = getMemoryStats();
 
             expect(stats).toHaveProperty("activeSessions");
@@ -88,7 +88,7 @@ describe("LangChain Memory", () => {
 
     describe("createMemoryForSession", () => {
         it("creates a BufferMemory instance", async () => {
-            const { createMemoryForSession } = await import("../langchainMemory");
+            const { createMemoryForSession } = await import("./langchainMemory");
             const memory = createMemoryForSession("test-session-123");
 
             expect(memory).toBeDefined();
@@ -98,7 +98,7 @@ describe("LangChain Memory", () => {
 
     describe("clearSessionMemory", () => {
         it("clears session without error", async () => {
-            const { clearSessionMemory } = await import("../langchainMemory");
+            const { clearSessionMemory } = await import("./langchainMemory");
 
             // Should not throw
             expect(() => clearSessionMemory("non-existent-session")).not.toThrow();
@@ -110,7 +110,7 @@ describe("LangChain Tools", () => {
     describe("Tool definitions", () => {
         it("exports all required tools", async () => {
             // Note: We use the mocked version here
-            const tools = await import("../langchainTools");
+            const tools = await import("./langchainTools");
 
             expect(tools.oemLookupTool).toBeDefined();
             expect(tools.stockCheckTool).toBeDefined();

@@ -1,7 +1,7 @@
 // Mocked end-to-end test: WhatsApp -> Orchestrator -> OEM -> Scrape -> shop_offers -> dashboard list
-process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key';
+process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
 
-jest.mock('./openAiService', () => ({
+jest.mock('./intelligence/geminiService', () => ({
   generateChatCompletion: jest.fn(async () =>
     JSON.stringify({
       action: 'oem_lookup',
@@ -16,12 +16,12 @@ jest.mock('./openAiService', () => ({
         position: 'front'
       },
       required_slots: [],
-      confidence: 0.99
     })
-  )
+  ),
+  generateVisionCompletion: jest.fn()
 }));
 
-jest.mock('./oemService', () => ({
+jest.mock('./intelligence/oemService', () => ({
   resolveOEM: jest.fn(async () => ({ success: true, oemNumber: 'OEM-E2E-1' }))
 }));
 
@@ -49,8 +49,8 @@ jest.mock('./supabaseService', () => ({
 }));
 
 import { handleIncomingBotMessage } from './core/botLogicService';
-import { generateChatCompletion } from '../intelligence/openAiService';
-import { resolveOEM } from './oemService';
+import { generateChatCompletion } from './intelligence/geminiService';
+import { resolveOEM } from './intelligence/oemService';
 import { scrapeOffersForOrder } from './scraping/scrapingService';
 import { insertShopOffers, listShopOffersByOrderId } from './adapters/supabaseService';
 
@@ -64,11 +64,11 @@ describe('E2E mocked: WhatsApp -> Orchestrator -> OEM -> Scrape -> Dashboard', (
     const payload = { from: 'whatsapp:+49123456789', text: 'Bremsscheiben vorne', mediaUrls: [] } as any;
     const res = await handleIncomingBotMessage(payload);
 
-  expect(generateChatCompletion).toHaveBeenCalled();
-  expect(resolveOEM).toHaveBeenCalled();
+    expect(generateChatCompletion).toHaveBeenCalled();
+    expect(resolveOEM).toHaveBeenCalled();
 
-  // insertShopOffers should have been invoked by scrapingService (the real scrapingService calls adapters then insertShopOffers)
-  expect(insertShopOffers).toHaveBeenCalled();
+    // insertShopOffers should have been invoked by scrapingService (the real scrapingService calls adapters then insertShopOffers)
+    expect(insertShopOffers).toHaveBeenCalled();
 
     // listShopOffersByOrderId should return the inserted offers
     const offers = await listShopOffersByOrderId('order-e2e');

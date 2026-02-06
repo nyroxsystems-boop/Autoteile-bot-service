@@ -153,14 +153,37 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
   }
 
   // =========================================================================
-  // Standard Scraper Sources
+  // Standard Scraper Sources (with health monitoring)
   // =========================================================================
+  const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./sourceHealthMonitor');
+
   const results = await Promise.all(
     SOURCES.map(async (source) => {
+      const sourceName = (source as any).name || "unknown";
+
+      // Skip disabled sources
+      if (isSourceDisabled(sourceName)) {
+        logger.debug("OEM source skipped (disabled)", { source: sourceName });
+        return [];
+      }
+
       try {
         const res = await source.resolveCandidates(req);
+        recordSuccess(sourceName);
+
+        // Apply confidence weight based on source health
+        const weight = getConfidenceWeight(sourceName);
+        if (weight < 1.0) {
+          res.forEach((c: any) => { c.confidence *= weight; });
+        }
+
         return res;
       } catch (err: any) {
+        recordFailure(sourceName, err?.message || "Unknown error");
+        logger.warn("OEM source failed", {
+          source: sourceName,
+          error: err?.message
+        });
         return [];
       }
     })
@@ -174,7 +197,9 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     if (aftermarketCandidates.length > 0) {
       allCandidates.push(...aftermarketCandidates);
     }
-  } catch (e) { /* ignore */ }
+  } catch (err: any) {
+    logger.warn("Aftermarket reverse lookup failed", { error: err?.message });
+  }
 
   // REMOVED: oemWebFinder duplicate call
   // oemWebFinder is already called via webScrapeSource (line 25)
