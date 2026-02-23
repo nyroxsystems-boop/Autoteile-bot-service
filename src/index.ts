@@ -50,6 +50,7 @@ const alwaysAllowedOrigins = [
   'https://admin.partsunion.de',
   'https://app.partsunion.de',
   'https://partsunion.de',
+  'https://www.partsunion.de',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174'

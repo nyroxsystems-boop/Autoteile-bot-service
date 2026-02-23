@@ -32,6 +32,7 @@ import { getConversationDecision, type ConversationContext } from '../intelligen
 import * as fs from "fs/promises";
 import { isEnabled, FF } from './featureFlags';
 import { langchainCallOrchestrator } from '../intelligence/langchainAgent';
+import { getMerchantByPhone } from '../adapters/phoneMerchantMapper';
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
@@ -1449,8 +1450,9 @@ export async function handleIncomingBotMessage(
 
     // Order laden oder erstellen
     const order = await getSupa().findOrCreateOrder(payload.from, orderForFlowId ?? null, { forceNew: forceNewOrder });
-    // Load Merchant Settings
-    const merchantId = process.env.MERCHANT_ID || "merchant-1";
+    // Multi-tenant: Get merchant for this phone number
+    const merchantMapping = await getMerchantByPhone(payload.from);
+    const merchantId = merchantMapping?.merchantId || process.env.DEFAULT_MERCHANT_ID || 'admin';
     const merchantSettings = await getSupa().getMerchantSettings(merchantId);
     const supportedLangs = merchantSettings?.supportedLanguages || ["de", "en"];
 
