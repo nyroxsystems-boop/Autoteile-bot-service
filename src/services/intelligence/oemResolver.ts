@@ -140,8 +140,11 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
   // =========================================================================
   const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./sourceHealthMonitor');
 
+  // #6 FIX: Filter sources by current health mode (degraded → skip web scrapers)
+  const activeSources = filterSourcesByMode(SOURCES as any[]);
+
   const results = await Promise.all(
-    SOURCES.map(async (source) => {
+    activeSources.map(async (source) => {
       const sourceName = (source as any).name || "unknown";
 
       // Skip disabled sources
@@ -153,6 +156,8 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
       try {
         const res = await source.resolveCandidates(req);
         recordSuccess(sourceName);
+        // #14 FIX: Feed source health to scraperFallback strategy
+        reportSourceHealth(sourceName, true);
 
         // Apply confidence weight based on source health
         const weight = getConfidenceWeight(sourceName);
@@ -163,6 +168,8 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
         return res;
       } catch (err: any) {
         recordFailure(sourceName, err?.message || "Unknown error");
+        // #14 FIX: Feed source health to scraperFallback strategy
+        reportSourceHealth(sourceName, false);
         logger.warn("OEM source failed", {
           source: sourceName,
           error: err?.message

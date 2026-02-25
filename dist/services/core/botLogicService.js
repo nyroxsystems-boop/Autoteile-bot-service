@@ -40,6 +40,7 @@ exports.downloadFromTwilio = downloadFromTwilio;
 exports.extractVehicleDataFromImage = extractVehicleDataFromImage;
 exports.understandUserText = understandUserText;
 exports.parseUserMessage = parseUserMessage;
+exports.getLastExtractedOem = getLastExtractedOem;
 exports.handleIncomingBotMessage = handleIncomingBotMessage;
 // Gemini AI Service (replaces OpenAI)
 const node_fetch_1 = __importDefault(require("node-fetch"));
@@ -54,14 +55,10 @@ const collectPartBrainPrompt_1 = require("../../prompts/collectPartBrainPrompt")
 const httpClient_1 = require("../../utils/httpClient");
 const orchestratorPrompt_1 = require("../../prompts/orchestratorPrompt");
 const geminiService_1 = require("../intelligence/geminiService");
-const conversationIntelligence_1 = require("../intelligence/conversationIntelligence");
 const vehicleGuard_1 = require("../intelligence/vehicleGuard");
 const botResponses_1 = require("./botResponses");
 const fs = __importStar(require("fs/promises"));
 const featureFlags_1 = require("./featureFlags");
-// REMOVED: LangChain agent — dead code, fallback path always used
-// import { langchainCallOrchestrator } from '../intelligence/langchainAgent';
-const langchainCallOrchestrator = async (_payload) => null;
 const phoneMerchantMapper_1 = require("../adapters/phoneMerchantMapper");
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
@@ -265,41 +262,8 @@ function detectAbusive(text) {
 }
 async function callOrchestrator(payload) {
     const startTime = Date.now();
-    // 🚀 LANGCHAIN AGENT FEATURE FLAG (with percentage rollout)
-    const userId = payload.from || payload.phoneNumber || payload.sender;
-    if ((0, featureFlags_1.isEnabled)(featureFlags_1.FF.USE_AI_ORCHESTRATOR, { userId })) {
-        try {
-            const sessionId = userId || "default";
-            const result = await langchainCallOrchestrator({
-                ...payload,
-                sessionId,
-            });
-            if (result && result.action && result.reply) {
-                logger_1.logger.info("Langchain orchestrator succeeded", {
-                    sessionId,
-                    action: result.action,
-                    confidence: result.confidence,
-                    elapsed: Date.now() - startTime
-                });
-                // Cast to OrchestratorResult (langchain returns compatible structure)
-                return {
-                    action: result.action,
-                    reply: result.reply,
-                    slots: result.slots || {},
-                    required_slots: result.required_slots,
-                    confidence: result.confidence
-                };
-            }
-        }
-        catch (langchainError) {
-            logger_1.logger.warn("Langchain agent failed, falling back to legacy", {
-                error: langchainError?.message,
-                userId,
-                elapsed: Date.now() - startTime
-            });
-            // Fall through to legacy implementation
-        }
-    }
+    // NOTE: LangChain agent path removed — was dead code (stub returned null).
+    // Orchestrator now goes directly to Gemini.
     try {
         const userContent = JSON.stringify(payload);
         // LOG: What we're sending to OpenAI
@@ -310,18 +274,14 @@ async function callOrchestrator(payload) {
             hasOCR: !!payload.ocr,
             messagePreview: payload.latestMessage?.substring(0, 100)
         });
-        // Use dynamic require so tests that mock `./openAiService` after this module
-        // was loaded (compiled dist tests) still influence the invoked function.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const gen = require("../intelligence/openAiService").generateChatCompletion;
-        const raw = await gen({
+        // #5 FIX: Use Gemini instead of OpenAI for orchestrator (single provider, lower cost)
+        const raw = await (0, geminiService_1.generateChatCompletion)({
             messages: [
                 { role: "system", content: orchestratorPrompt_1.ORCHESTRATOR_PROMPT },
                 { role: "user", content: userContent }
             ],
-            model: "gpt-4.1-mini",
-            responseFormat: "json_object",
-            temperature: 0
+            temperature: 0,
+            responseFormat: 'json_object'
         });
         const elapsed = Date.now() - startTime;
         // LOG: Raw OpenAI response
@@ -1085,7 +1045,11 @@ function sanitizeText(input, maxLen = 500) {
     const trimmed = input.trim().slice(0, maxLen);
     return trimmed.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
+// Store extracted OEM for oem_direct intent
+let _lastExtractedOem = null;
+function getLastExtractedOem() { return _lastExtractedOem; }
 function detectIntent(text, hasVehicleImage) {
+    _lastExtractedOem = null; // Reset
     if (hasVehicleImage)
         return "new_order";
     const t = text.toLowerCase();
@@ -1116,17 +1080,23 @@ function detectIntent(text, hasVehicleImage) {
     ];
     if (statusKeywords.some((k) => t.includes(k)))
         return "status_question";
-    // P1 #7: OEM Direct Input Detection — pro users send OEM numbers directly
+    // #7 FIX: OEM Direct Input Detection — pro users send OEM numbers directly
     // VAG (1K0615301AC), BMW (34116792219), Mercedes (A0044206920), generic
     const oemPatterns = [
-        /\b[0-9]{1,2}[A-Z][0-9]{3,6}[A-Z]{0,3}\b/i, // VAG: 1K0615301AC
-        /\b[0-9]{11}\b/, // BMW: 34116792219
-        /\bA[0-9]{10,12}\b/i, // Mercedes: A0044206920
-        /\b[A-Z]{1,3}[-\s]?[0-9]{3,8}[-\s]?[A-Z0-9]{0,4}\b/i, // Generic: XX-12345-AB
+        /\b([0-9]{1,2}[A-Z][0-9]{3,6}[A-Z]{0,3})\b/i, // VAG: 1K0615301AC
+        /\b([0-9]{11})\b/, // BMW: 34116792219
+        /\b(A[0-9]{10,12})\b/i, // Mercedes: A0044206920
+        /\b([A-Z]{1,3}[-]?[0-9]{3,8}[-]?[A-Z0-9]{0,4})\b/i, // Generic: XX-12345-AB
     ];
     const stripped = text.replace(/\s+/g, '');
-    if (stripped.length >= 7 && stripped.length <= 15 && oemPatterns.some(p => p.test(text))) {
-        return "new_order"; // Treat as part request with known OEM
+    if (stripped.length >= 7 && stripped.length <= 15) {
+        for (const p of oemPatterns) {
+            const match = text.match(p);
+            if (match && match[1]) {
+                _lastExtractedOem = match[1].toUpperCase().replace(/[-\s]/g, '');
+                return "oem_direct"; // #7 FIX: Return oem_direct instead of new_order
+            }
+        }
     }
     return "unknown";
 }
@@ -1167,6 +1137,44 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     options,
                 orderId: activeOrders[0].id
             };
+        }
+        // #7 FIX: Handle oem_direct intent — pro users paste OEM numbers directly
+        if (intent === "oem_direct") {
+            const extractedOem = getLastExtractedOem();
+            if (extractedOem) {
+                const order = await getSupa().findOrCreateOrder(payload.from);
+                const language = order.language || 'de';
+                logger_1.logger.info("[BotLogic] OEM direct input detected", { oem: extractedOem, orderId: order.id });
+                // Send interim "searching..." message
+                if (sendInterimReply) {
+                    await sendInterimReply((0, botResponses_1.t)('oem_searching', language));
+                }
+                // Store OEM on order and skip to scraping
+                await (0, supabaseService_1.updateOrderData)(order.id, { oem: extractedOem, directOemInput: true });
+                try {
+                    const { scrapeOffersForOrder } = await Promise.resolve().then(() => __importStar(require('../scraping/scrapingService')));
+                    const scrapeResult = await scrapeOffersForOrder(order.id, extractedOem);
+                    if (scrapeResult && scrapeResult.length > 0) {
+                        return {
+                            reply: `✅ OEM ${extractedOem} erkannt! Ich habe ${scrapeResult.length} Angebot(e) gefunden. Soll ich Ihnen die Details zeigen?`,
+                            orderId: order.id
+                        };
+                    }
+                    else {
+                        return {
+                            reply: (0, botResponses_1.t)('no_offers', language),
+                            orderId: order.id
+                        };
+                    }
+                }
+                catch (err) {
+                    logger_1.logger.error("[BotLogic] OEM direct scraping failed", { error: err?.message, oem: extractedOem });
+                    return {
+                        reply: `✅ OEM ${extractedOem} erkannt. Ich leite Ihre Anfrage an einen Experten weiter, da die automatische Suche gerade nicht verfügbar ist.`,
+                        orderId: order.id
+                    };
+                }
+            }
         }
         // NEW: Handle abort_order intent - user wants to cancel current order
         if (intent === "abort_order" && activeOrders.length > 0) {
@@ -1411,49 +1419,13 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     }
                     if (orch.action === "ask_slot") {
                         if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
-                            // 🧠 CONVERSATION INTELLIGENCE: Check if we should actually run scraping
-                            const intelligenceContext = {
-                                userMessage: userText,
-                                lastBotMessage: orderData?.lastBotMessage || null,
-                                orderData: {
-                                    make: vehicleCandidate.make,
-                                    model: vehicleCandidate.model,
-                                    year: vehicleCandidate.year,
-                                    requestedPart: partCandidate,
-                                    oem: orderData?.oem || null,
-                                    scrapeStatus: orderData?.scrapeStatus || 'idle',
-                                    offersCount: orderData?.offersCount || 0
-                                }
-                            };
-                            const decision = await (0, conversationIntelligence_1.getConversationDecision)(intelligenceContext);
-                            logger_1.logger.info("[BotLogic] Conversation intelligence decision", {
-                                decision: decision.decision,
-                                reason: decision.reason,
-                                confidence: decision.confidence,
-                                orderId: order.id
-                            });
-                            // Handle different decisions
-                            if (decision.decision === 'skip') {
-                                // User confirmed, asked question, or waiting — no scraping
-                                const reply = orch.reply || decision.suggestedReply ||
-                                    (language === "de" ? "Alles klar! Wie kann ich weiterhelfen?" : "Got it! How can I help further?");
-                                return { reply, orderId: order.id };
+                            // #3 FIX: REMOVED conv-intelligence doppelcall here.
+                            // The orchestrator already decided ask_slot with sufficient data.
+                            // Proceed directly to OEM lookup — saves ~300ms + AI costs.
+                            // #1 FIX: Send Zwischennachricht before OEM lookup
+                            if (sendInterimReply) {
+                                await sendInterimReply((0, botResponses_1.t)('oem_searching', order.language));
                             }
-                            if (decision.decision === 'reset') {
-                                // User wants different part or different vehicle
-                                await (0, supabaseService_1.updateOrderData)(order.id, { requestedPart: null, oem: null, scrapeStatus: null });
-                                const reply = decision.suggestedReply ||
-                                    (language === "de" ? "Natürlich! Was suchst du als Nächstes?" : "Of course! What are you looking for next?");
-                                return { reply, orderId: order.id };
-                            }
-                            if (decision.decision === 'escalate') {
-                                await (0, supabaseService_1.updateOrder)(order.id, { status: "needs_human" });
-                                const reply = language === "de"
-                                    ? "Ich verbinde dich mit einem Mitarbeiter. Jemand meldet sich in Kürze bei dir!"
-                                    : "I'm connecting you with a team member. Someone will reach out shortly!";
-                                return { reply, orderId: order.id };
-                            }
-                            // decision === 'proceed' - actually run OEM lookup
                             const oemFlow = await runOemLookupAndScraping(order.id, language ?? "de", {
                                 intent: "request_part",
                                 normalizedPartName: partCandidate,
