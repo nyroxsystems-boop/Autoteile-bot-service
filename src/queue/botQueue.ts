@@ -22,4 +22,5 @@ export interface BotJobData {
     text: string;
     orderId?: string | null;
     mediaUrls?: string[];
+    messageSid?: string; // Twilio MessageSid for typing indicator
 }

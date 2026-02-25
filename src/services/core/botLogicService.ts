@@ -1373,6 +1373,7 @@ export async function handleIncomingBotMessage(
           const scrapeResult = await scrapeOffersForOrder(order.id, extractedOem);
 
           if (scrapeResult && scrapeResult.length > 0) {
+            await updateOrder(order.id, { status: "show_offers" as ConversationStatus });
             return {
               reply: tWith('oem_direct_found', language, { oem: extractedOem, count: String(scrapeResult.length) }),
               orderId: order.id

@@ -92,6 +92,37 @@ async function sendTwilioReply(
     }
 }
 
+
+// ============================================================================
+// Typing Indicator — shows "typing..." in WhatsApp before bot responds
+// Uses Twilio REST API (Public Beta, Oct 2025)
+// ============================================================================
+async function sendTypingIndicator(messageSid: string | undefined): Promise<void> {
+    if (!messageSid || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) return;
+    
+    try {
+        const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages/${messageSid}/UserDefinedMessages.json`;
+        const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+        
+        // Send read receipt + typing indicator via Twilio UserDefinedMessages
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'IdempotencyKey=typing-' + messageSid + '&Content=' + encodeURIComponent(JSON.stringify({ type: "typing_started" })),
+        });
+
+        if (response.ok) {
+            logger.info("⌨️ Typing indicator sent", { messageSid: messageSid.substring(0, 12) });
+        }
+    } catch (err: any) {
+        // Non-fatal: typing indicator failure should never block message processing
+        logger.debug("[BotWorker] Typing indicator failed (non-blocking)", { error: err?.message });
+    }
+}
+
 // ============================================================================
 // #2 FIX: Worker with exponential backoff + DLQ + reduced concurrency
 // ============================================================================
@@ -99,7 +130,7 @@ async function sendTwilioReply(
 const worker = new Worker<BotJobData>(
     BOT_QUEUE_NAME,
     async (job: Job<BotJobData>) => {
-        const { from, text, orderId, mediaUrls } = job.data;
+        const { from, text, orderId, mediaUrls, messageSid } = job.data;
 
         logger.info("📥 INCOMING MESSAGE", {
             from,
@@ -112,6 +143,9 @@ const worker = new Worker<BotJobData>(
 
         // P1 #9: Record activity for session timeout tracking
         // recordActivity moved to after handleIncomingBotMessage (see below for language population)
+
+        // Send typing indicator immediately (non-blocking)
+        sendTypingIndicator(messageSid).catch(() => {});
 
         try {
             // ============================================================

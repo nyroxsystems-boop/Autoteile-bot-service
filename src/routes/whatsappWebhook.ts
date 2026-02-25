@@ -60,6 +60,7 @@ router.post("/", async (req, res) => {
   }
 
   const from = (req.body?.From as string) || "";
+  const messageSid = (req.body?.MessageSid as string) || "";
   if (!from) {
     logger.warn("[Twilio Webhook] Empty From field, rejecting");
     return res.status(400).send("<Response></Response>");
@@ -84,7 +85,8 @@ router.post("/", async (req, res) => {
       from,
       text: text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : ""),
       orderId: null, // logic to find orderId is inside handleIncomingBotMessage usually, or we pass null
-      mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined
+      mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
+      messageSid: messageSid || undefined
     });
 
     // Determine if we should send an immediate "typing" or "processing" status?

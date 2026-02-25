@@ -1133,6 +1133,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     const { scrapeOffersForOrder } = await Promise.resolve().then(() => __importStar(require('../scraping/scrapingService')));
                     const scrapeResult = await scrapeOffersForOrder(order.id, extractedOem);
                     if (scrapeResult && scrapeResult.length > 0) {
+                        await (0, supabaseService_1.updateOrder)(order.id, { status: "show_offers" });
                         return {
                             reply: (0, botResponses_1.tWith)('oem_direct_found', language, { oem: extractedOem, count: String(scrapeResult.length) }),
                             orderId: order.id
