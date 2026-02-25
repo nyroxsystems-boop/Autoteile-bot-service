@@ -37,6 +37,7 @@ exports.testDbConnection = testDbConnection;
 exports.upsertConversationState = upsertConversationState;
 exports.insertMessage = insertMessage;
 exports.listMessagesByOrderId = listMessagesByOrderId;
+exports.getRecentMessages = getRecentMessages;
 exports.findOrCreateOrder = findOrCreateOrder;
 exports.insertOrder = insertOrder;
 exports.updateOrder = updateOrder;
@@ -149,6 +150,18 @@ async function listMessagesByOrderId(orderId) {
         content: r.content,
         createdAt: r.created_at,
         isFromCustomer: r.direction === 'IN'
+    }));
+}
+/**
+ * P1 #11: Get recent messages for orchestrator context.
+ * Returns last N messages (default 5) in chronological order.
+ */
+async function getRecentMessages(orderId, limit = 5) {
+    const rows = await db.all(`SELECT direction, content, created_at FROM messages WHERE order_id = ? ORDER BY created_at DESC LIMIT ?`, [String(orderId), limit]);
+    return rows.reverse().map(r => ({
+        role: r.direction === 'IN' ? 'user' : 'bot',
+        content: (r.content || '').substring(0, 300), // Truncate for token efficiency
+        createdAt: r.created_at,
     }));
 }
 async function findOrCreateOrder(from) {

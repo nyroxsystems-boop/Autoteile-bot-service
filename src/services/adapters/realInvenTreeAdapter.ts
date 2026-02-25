@@ -131,6 +131,9 @@ export async function insertMessage(waId: string, content: string, direction: 'I
     return result;
 }
 
+// P1 #11: Re-export getRecentMessages (no sync needed, read-only)
+export const getRecentMessages = localAdapter.getRecentMessages;
+
 export async function upsertVehicleForOrderFromPartial(orderId: string | number, partial: any) {
     await localAdapter.upsertVehicleForOrderFromPartial(orderId, partial);
     await syncToWWS(orderId);

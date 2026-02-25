@@ -103,6 +103,22 @@ export async function listMessagesByOrderId(orderId: string | number): Promise<a
     }));
 }
 
+/**
+ * P1 #11: Get recent messages for orchestrator context.
+ * Returns last N messages (default 5) in chronological order.
+ */
+export async function getRecentMessages(orderId: string | number, limit = 5): Promise<Array<{ role: 'user' | 'bot'; content: string; createdAt: string }>> {
+    const rows = await db.all<any>(
+        `SELECT direction, content, created_at FROM messages WHERE order_id = ? ORDER BY created_at DESC LIMIT ?`,
+        [String(orderId), limit]
+    );
+    return rows.reverse().map(r => ({
+        role: r.direction === 'IN' ? 'user' as const : 'bot' as const,
+        content: (r.content || '').substring(0, 300), // Truncate for token efficiency
+        createdAt: r.created_at,
+    }));
+}
+
 export async function findOrCreateOrder(from: string) {
     // Find most recent active order
     const row = await db.get<any>(

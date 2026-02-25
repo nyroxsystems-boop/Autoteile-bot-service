@@ -3,6 +3,7 @@ import { connection } from "./connection";
 import { BOT_QUEUE_NAME, BotJobData } from "./botQueue";
 import { handleIncomingBotMessage } from "../services/core/botLogicService";
 import { insertMessage } from "../services/adapters/supabaseService";
+import { recordActivity, startSessionTimeoutChecker } from "../services/core/sessionTimeout";
 import twilio from "twilio";
 import { logger } from "@utils/logger";
 
@@ -96,6 +97,9 @@ const worker = new Worker<BotJobData>(
             jobId: job.id
         });
 
+        // P1 #9: Record activity for session timeout tracking
+        recordActivity(from, orderId || '', null);
+
         try {
             // 1. Process Logic
             const result = await handleIncomingBotMessage({
@@ -161,6 +165,11 @@ worker.on("failed", (job: Job | undefined, err: Error) => {
         attemptsMade: job?.attemptsMade,
         maxAttempts: job?.opts?.attempts || 'default'
     });
+});
+
+// P1 #9: Start session timeout checker (sends follow-up after 24h inactivity)
+startSessionTimeoutChecker(async (waId: string, message: string) => {
+    await sendTwilioReply(waId, message);
 });
 
 export { worker };

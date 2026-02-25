@@ -1307,9 +1307,7 @@ async function handleIncomingBotMessage(payload) {
             }
             // M1 FIX: Tell the user when OCR can't read their photo
             if (ocrFailed) {
-                const ocrErrorMsg = language === 'en'
-                    ? '📷 I couldn\'t read your photo clearly. Could you try again with better lighting, or tell me your vehicle details directly? (Make, model, year)'
-                    : '📷 Leider konnte ich das Foto nicht gut lesen. Kannst du es nochmal mit besserer Beleuchtung versuchen, oder mir die Fahrzeugdaten direkt nennen? (Marke, Modell, Baujahr)';
+                const ocrErrorMsg = (0, botResponses_1.t)('ocr_failed', language);
                 // Don't return yet — let orchestrator continue, but prepend the message
                 // so user knows why we're asking for manual input
                 if (!ocrResult?.make && !ocrResult?.vin) {
@@ -1324,6 +1322,14 @@ async function handleIncomingBotMessage(payload) {
             try {
                 // Fix: Load lastBotMessage from orderData instead of null
                 const lastBotMsg = orderData?.lastBotMessage || orderData?.last_bot_reply || null;
+                // P1 #11: Load chat history for orchestrator context
+                let chatHistory = [];
+                try {
+                    chatHistory = await (0, supabaseService_1.getRecentMessages)(order.id, 5);
+                }
+                catch (histErr) {
+                    logger_1.logger.warn('[BotLogic] Failed to load chat history', { error: histErr?.message });
+                }
                 const orchestratorPayload = {
                     sender: payload.from,
                     orderId: order.id,
@@ -1331,7 +1337,8 @@ async function handleIncomingBotMessage(payload) {
                         status: order.status,
                         language: order.language,
                         orderData: orderData,
-                        lastBotMessage: lastBotMsg
+                        lastBotMessage: lastBotMsg,
+                        recentMessages: chatHistory,
                     },
                     latestMessage: userText,
                     ocr: ocrResult
