@@ -32,7 +32,7 @@ export const autodocWebSource = {
                 oem,
                 source: 'autodoc_web',
                 confidence: 0.55, // lower than premium sources
-                meta: { note: 'Autodoc HTML scrape' },
+                meta: { note: 'Autodoc HTML scrape', priority: 3 },
             }));
             return candidates;
         } catch (e) {

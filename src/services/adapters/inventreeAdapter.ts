@@ -212,13 +212,22 @@ export async function updateOrder(orderId: string | number, patch: any) {
 }
 
 export async function updateOrderData(orderId: string | number, data: any): Promise<void> {
-    const order = await getDbOrder(orderId);
-    if (!order) return;
-
-    const existingData = parseJsonField(order.order_data, {});
-    const newData = { ...existingData, ...data };
-
-    await db.run(`UPDATE orders SET order_data = ? WHERE id = ?`, [JSON.stringify(newData), String(orderId)]);
+    // Atomic JSONB merge — avoids Read-Modify-Write race condition
+    try {
+        const { runRaw } = await import('@core/database');
+        await runRaw(
+            `UPDATE orders SET order_data = COALESCE(order_data, '{}')::jsonb || $1::jsonb WHERE id = $2`,
+            [JSON.stringify(data), String(orderId)]
+        );
+    } catch (err: any) {
+        // Fallback for environments without JSONB support (e.g., SQLite in tests)
+        logger.warn('Atomic JSONB merge failed, falling back to read-modify-write', { error: err?.message });
+        const order = await getDbOrder(orderId);
+        if (!order) return;
+        const existingData = parseJsonField(order.order_data, {});
+        const newData = { ...existingData, ...data };
+        await db.run(`UPDATE orders SET order_data = ? WHERE id = ?`, [JSON.stringify(newData), String(orderId)]);
+    }
 }
 
 export async function getVehicleForOrder(orderId: string | number): Promise<any> {

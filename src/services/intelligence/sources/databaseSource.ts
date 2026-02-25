@@ -91,6 +91,7 @@ export const databaseSource: OEMSource = {
                         description: r.description,
                         supersededBy: r.supersededBy,
                         fromDatabase: true,
+                        priority: 8,
                     }
                 }));
             }
@@ -114,6 +115,7 @@ export const databaseSource: OEMSource = {
                         description: r.description,
                         supersededBy: r.supersededBy,
                         fromDatabase: true,
+                        priority: 8,
                     }
                 }));
             }

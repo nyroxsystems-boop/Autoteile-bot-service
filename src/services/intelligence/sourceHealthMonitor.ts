@@ -7,6 +7,8 @@
  */
 
 import { logger } from '@utils/logger';
+import { alertSourceDisabled } from '@core/alertService';
+import { reportSourceHealth } from './scraperFallback';
 
 // ============================================================================
 // Types
@@ -58,6 +60,9 @@ export function recordSuccess(sourceName: string): void {
     health.lastSuccessAt = new Date();
     health.consecutiveFailures = 0;
 
+    // S5 FIX: Feed data to scraperFallback
+    reportSourceHealth(sourceName, true);
+
     // Re-enable if was disabled
     if (health.isDisabled) {
         health.isDisabled = false;
@@ -72,6 +77,9 @@ export function recordFailure(sourceName: string, error: string): void {
     health.lastFailureAt = new Date();
     health.consecutiveFailures++;
 
+    // S5 FIX: Feed data to scraperFallback
+    reportSourceHealth(sourceName, false);
+
     // Check for automatic disable
     if (health.consecutiveFailures >= CONSECUTIVE_FAILURE_THRESHOLD) {
         health.isDisabled = true;
@@ -81,6 +89,8 @@ export function recordFailure(sourceName: string, error: string): void {
             reason: health.disabledReason,
             lastError: error
         });
+        // P0: Send alert when source is disabled
+        alertSourceDisabled(sourceName, `${health.disabledReason} — last error: ${error}`);
         return;
     }
 
@@ -95,6 +105,8 @@ export function recordFailure(sourceName: string, error: string): void {
                 failureRate,
                 reason: health.disabledReason
             });
+            // P0: Send alert when source is disabled
+            alertSourceDisabled(sourceName, health.disabledReason);
         }
     }
 }

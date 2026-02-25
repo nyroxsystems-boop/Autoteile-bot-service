@@ -35,7 +35,7 @@ export const webScrapeSource: OEMSource = {
       brand: undefined,
       source: `${this.name}:${c.source}`,
       confidence: clampConfidence(0.6 + Math.min(c.score ?? 0, 0.2)), // baseline 0.6, add small score if present
-      meta: { confirmationHits: result.confirmationHits, confirmationSources: result.confirmationSources }
+      meta: { confirmationHits: result.confirmationHits, confirmationSources: result.confirmationSources, priority: 3 }
     }));
 
     // Push the best OEM again with a slightly higher confidence if available
@@ -45,7 +45,7 @@ export const webScrapeSource: OEMSource = {
         brand: undefined,
         source: `${this.name}:best`,
         confidence: clampConfidence(0.75 + (result.confirmationHits ? 0.1 : 0)),
-        meta: { confirmationHits: result.confirmationHits, confirmationSources: result.confirmationSources }
+        meta: { confirmationHits: result.confirmationHits, confirmationSources: result.confirmationSources, priority: 3 }
       });
     }
 

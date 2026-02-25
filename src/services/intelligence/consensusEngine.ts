@@ -75,18 +75,22 @@ export function calculateConsensus(
         // Calculate average confidence
         const avgConfidence = group.reduce((sum, c) => sum + c.confidence, 0) / group.length;
 
-        // Calculate average priority (would need to be passed in meta)
+        // Calculate average priority (from source meta, default 5)
+        // Priority tiers: OEM Catalogs = 10, DB/TecDoc = 8, Aftermarket shops = 3, LLM = 1
         const avgPriority = group.reduce((sum, c) => {
             const priority = c.meta?.priority || 5;
             return sum + priority;
         }, 0) / group.length;
 
         // Calculate composite score
-        // Score = (sourceCount * 0.4) + (avgConfidence * 0.3) + (avgPriority * 0.3)
+        // Reweighted: Priority 50%, SourceCount 30%, Confidence 20%
+        // This prevents aftermarket shops from outvoting OEM catalogs by count alone
+        const normalizedSourceCount = sourceCount / Math.max(candidates.length, 1);
+        const normalizedPriority = avgPriority / 10; // Scale to 0-1
         const score =
-            (sourceCount / candidates.length) * (1 - cfg.priorityWeight) +
-            avgConfidence * cfg.priorityWeight * 0.5 +
-            (avgPriority / 10) * cfg.priorityWeight * 0.5;
+            normalizedPriority * 0.50 +
+            normalizedSourceCount * 0.30 +
+            avgConfidence * 0.20;
 
         scoredOems.push({
             oem,
@@ -154,39 +158,14 @@ export function calculateConsensus(
 /**
  * Validates an OEM against brand-specific patterns
  */
+import { validateOemPattern } from './brandPatternRegistry';
+
+/**
+ * Validates an OEM against brand-specific patterns.
+ * Delegates to the consolidated brandPatternRegistry.
+ */
 export function validateBrandPattern(oem: string, brand: string): number {
-    const patterns: Record<string, RegExp[]> = {
-        VW: [/^[0-9][A-Z0-9]{8,11}$/], // e.g., 1K0615301AA
-        AUDI: [/^[0-9][A-Z0-9]{8,11}$/], // Same as VW
-        SKODA: [/^[0-9][A-Z0-9]{8,11}$/], // Same as VW
-        SEAT: [/^[0-9][A-Z0-9]{8,11}$/], // Same as VW
-        BMW: [/^[0-9]{11}$/, /^[0-9]{7}$/], // e.g., 34116858652 or 1234567
-        MERCEDES: [/^[A-Z][0-9]{9,12}$/, /^[0-9]{10,13}$/], // e.g., A2034211012
-        PORSCHE: [/^[0-9]{3}[A-Z0-9]{6,9}$/], // e.g., 95535104310
-        OPEL: [/^[0-9]{8,10}$/], // e.g., 1606417580
-        FORD: [/^[0-9A-Z]{10,13}$/], // e.g., 1848912
-        RENAULT: [/^[0-9]{10,12}$/], // e.g., 7701208228
-        PEUGEOT: [/^[0-9]{10}$/], // e.g., 1606417580
-        CITROEN: [/^[0-9]{10}$/], // e.g., 1606417580
-        TOYOTA: [/^[0-9]{5}-[0-9]{5}$/, /^[0-9]{10}$/], // e.g., 04465-02250
-        HONDA: [/^[0-9]{5}-[A-Z0-9]{3}-[0-9]{3}$/], // e.g., 45022-S84-A00
-        NISSAN: [/^[0-9]{5}-[0-9A-Z]{5}$/], // e.g., 40206-4BA0A
-    };
-
-    const brandUpper = brand.toUpperCase();
-    const brandPatterns = patterns[brandUpper];
-
-    if (!brandPatterns) {
-        return 0.5; // Unknown brand, neutral score
-    }
-
-    for (const pattern of brandPatterns) {
-        if (pattern.test(oem)) {
-            return 1.0; // Perfect match
-        }
-    }
-
-    return 0.2; // Doesn't match expected pattern
+    return validateOemPattern(oem, brand);
 }
 
 /**

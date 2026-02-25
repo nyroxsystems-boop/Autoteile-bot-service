@@ -9,14 +9,36 @@ import { generateChatCompletion } from './geminiService';
 import { logger } from '../../utils/logger';
 
 export type ConversationDecision =
-    | 'proceed_scraping'    // Actually run OEM lookup
-    | 'continue_flow'       // User confirmed, continue without re-scraping
-    | 'reset_part'          // User wants different part, keep vehicle
-    | 'reset_all'           // User wants to start completely over
-    | 'skip_scraping'       // OEM already known, don't re-scrape
-    | 'wait'                // User asked to wait/pause
-    | 'escalate'            // Hand off to human
-    | 'answer_question';    // Just answer a question, no scraping
+    | 'proceed'    // Actually run OEM lookup / scraping
+    | 'skip'       // No scraping needed (confirmation, already have data, general question, wait)
+    | 'reset'      // User wants different part or different vehicle
+    | 'escalate';  // Hand off to human
+
+// Legacy aliases for backward compatibility
+export type LegacyDecision =
+    | 'proceed_scraping'
+    | 'continue_flow'
+    | 'reset_part'
+    | 'reset_all'
+    | 'skip_scraping'
+    | 'wait'
+    | 'escalate'
+    | 'answer_question';
+
+/** Map old 8-type decisions to new 4-type system */
+function normalizeDecision(decision: string): ConversationDecision {
+    switch (decision) {
+        case 'proceed_scraping': return 'proceed';
+        case 'continue_flow': return 'skip';
+        case 'skip_scraping': return 'skip';
+        case 'answer_question': return 'skip';
+        case 'wait': return 'skip';
+        case 'reset_part': return 'reset';
+        case 'reset_all': return 'reset';
+        case 'escalate': return 'escalate';
+        default: return 'proceed';
+    }
+}
 
 export interface ConversationContext {
     userMessage: string;
@@ -54,46 +76,26 @@ KONTEXT:
 
 USER-NACHRICHT: "{userMessage}"
 
-ENTSCHEIDUNGS-REGELN:
+ENTSCHEIDUNGS-REGELN (NUR 4 OPTIONEN):
 
-1. proceed_scraping: NUR wenn User NEUES Teil anfragt UND wir die OEM noch NICHT haben
+1. proceed: User will NEUES Teil suchen und wir haben noch keine OEM dafür
    - "Ich brauche Bremsscheiben" (und wir haben keine OEM)
    - "Kannst du mir XXX suchen?" (neues Teil)
 
-2. continue_flow: User BESTÄTIGT etwas, kein neues Scraping nötig
-   - "Ja", "Genau", "Stimmt", "Ok", "Richtig"
-   - "Das passt", "Korrekt"
-   - Kurze Zustimmung ohne neue Information
+2. skip: KEIN Scraping nötig — Bestätigung, Frage, Warten, oder Daten bereits vorhanden
+   - "Ja", "Genau", "Stimmt", "Ok" (Bestätigung)
+   - "Was kostet das?", "Wie funktioniert das?" (Frage)
+   - "Warte kurz", "Moment" (Pause)
 
-3. reset_part: User will ANDERES Teil, Fahrzeug behalten
-   - "Anderes Teil", "Lass mal ein anderes Teil"
-   - "Alles gut, kann ich was anderes suchen?"
-   - "Neues Teil bitte"
+3. reset: User will VON VORNE anfangen (anderes Teil oder anderes Fahrzeug)
+   - "Anderes Teil", "Neues Fahrzeug", "Nochmal von vorne"
 
-4. reset_all: User will KOMPLETT von vorne anfangen
-   - "Nochmal von vorne", "Neues Fahrzeug"
-   - "Anderes Auto", "Reset"
-
-5. skip_scraping: Wir haben schon OEM/Angebote, User fragt danach
-   - "Was kostet das?", "Preis?"
-   - "Habt ihr das auf Lager?"
-   - "Wann kommt es an?"
-
-6. answer_question: Allgemeine Frage die KEIN Scraping braucht
-   - "Wie funktioniert das?", "Wer seid ihr?"
-   - "Kann ich auch vor Ort kaufen?"
-
-7. escalate: User will Menschen sprechen
-   - "Echten Mitarbeiter", "Mit Menschen reden"
-   - "Das klappt nicht", "Hilfe"
-
-8. wait: User bittet um Pause
-   - "Moment mal", "Warte kurz"
-   - "Ich muss kurz nachschauen"
+4. escalate: User will Menschen sprechen oder ist frustriert
+   - "Echter Mitarbeiter", "Hilfe", "Das klappt nicht"
 
 ANTWORTE NUR MIT JSON:
 {
-  "decision": "proceed_scraping|continue_flow|reset_part|reset_all|skip_scraping|answer_question|escalate|wait",
+  "decision": "proceed|skip|reset|escalate",
   "reason": "Kurze Erklärung warum diese Entscheidung",
   "suggestedReply": "Optional: Vorgeschlagene Bot-Antwort",
   "confidence": 0.0-1.0
@@ -155,7 +157,7 @@ export async function analyzeConversationIntent(
             });
 
             return {
-                decision: parsed.decision || 'proceed_scraping',
+                decision: normalizeDecision(parsed.decision) || 'proceed',
                 reason: parsed.reason || 'Default fallback',
                 suggestedReply: parsed.suggestedReply,
                 confidence: parsed.confidence || 0.5
@@ -165,14 +167,14 @@ export async function analyzeConversationIntent(
         throw new Error('Could not parse JSON response');
 
     } catch (error: any) {
-        logger.error('[ConversationIntelligence] Analysis failed, defaulting to proceed_scraping', {
+        logger.error('[ConversationIntelligence] Analysis failed, defaulting to proceed', {
             error: error?.message,
             userMessage: context.userMessage.substring(0, 50)
         });
 
         // Fallback: proceed with scraping (safe default)
         return {
-            decision: 'proceed_scraping',
+            decision: 'proceed',
             reason: 'Analysis failed, defaulting to proceed',
             confidence: 0.3
         };
@@ -181,32 +183,74 @@ export async function analyzeConversationIntent(
 
 /**
  * Quick heuristic check for common patterns
- * Returns a decision without AI call if pattern is obvious
+ * Returns a decision without AI call if pattern is obvious.
+ * EXPANDED: covers more patterns to reduce unnecessary AI calls.
  */
 export function quickPatternCheck(userMessage: string): IntelligenceResult | null {
     const t = userMessage.toLowerCase().trim();
 
-    // Simple confirmations - no AI needed
-    if (/^(ja|jo|jap|yes|ok|okay|genau|stimmt|richtig|korrekt|passt|gut)\.?!?$/i.test(t)) {
+    // === SKIP patterns (confirmations, questions, greetings) ===
+
+    // Simple confirmations
+    if (/^(ja|jo|jap|yes|ok|okay|genau|stimmt|richtig|korrekt|passt|gut|alles klar|super|perfekt|top|danke|vielen dank|dankeschön)\b.*$/i.test(t)) {
         return {
-            decision: 'continue_flow',
+            decision: 'skip',
             reason: 'Simple confirmation detected',
             confidence: 0.95
         };
     }
 
-    // Reset part patterns
-    if (/anderes teil|neues teil|andere anfrage|was anderes/i.test(t)) {
+    // Price/availability questions (already have data)
+    if (/was kostet|preis|kosten|auf lager|verfügbar|lieferzeit|lieferbar|wann kommt|angebot/i.test(t)) {
         return {
-            decision: 'reset_part',
-            reason: 'Reset part pattern detected',
-            suggestedReply: 'Natürlich! Welches andere Teil brauchst du?',
+            decision: 'skip',
+            reason: 'Price/availability question — no scraping needed',
             confidence: 0.9
         };
     }
 
-    // Escalation patterns
-    if (/echter mitarbeiter|mit menschen|hilfe|support|klappt nicht/i.test(t)) {
+    // General questions
+    if (/wie funktioniert|wer seid ihr|öffnungszeiten|standort|telefon|email|adresse|kontakt/i.test(t)) {
+        return {
+            decision: 'skip',
+            reason: 'General question detected',
+            confidence: 0.9
+        };
+    }
+
+    // Wait/pause patterns
+    if (/^(moment|warte|kurz|gleich|sekunde|bin gleich|eine minute)/i.test(t)) {
+        return {
+            decision: 'skip',
+            reason: 'Wait pattern detected',
+            suggestedReply: 'Kein Problem, ich warte! Melde dich, wenn du so weit bist. 👍',
+            confidence: 0.85
+        };
+    }
+
+    // Greetings (don't scrape on "Hallo")
+    if (/^(hallo|hi|hey|moin|guten (tag|morgen|abend)|servus|grüß gott)\b/i.test(t) && t.length < 30) {
+        return {
+            decision: 'skip',
+            reason: 'Greeting detected',
+            confidence: 0.9
+        };
+    }
+
+    // === RESET patterns ===
+
+    if (/anderes teil|neues teil|andere anfrage|was anderes|nochmal von vorne|neues fahrzeug|anderes auto|reset|von vorne/i.test(t)) {
+        return {
+            decision: 'reset',
+            reason: 'Reset pattern detected',
+            suggestedReply: 'Natürlich! Was suchst du als Nächstes?',
+            confidence: 0.9
+        };
+    }
+
+    // === ESCALATE patterns ===
+
+    if (/echter mitarbeiter|mit menschen|hilfe|support|klappt nicht|funktioniert nicht|beschwerde|reklamation|manager/i.test(t)) {
         return {
             decision: 'escalate',
             reason: 'Escalation pattern detected',
@@ -214,17 +258,7 @@ export function quickPatternCheck(userMessage: string): IntelligenceResult | nul
         };
     }
 
-    // Wait patterns
-    if (/moment|warte|kurz|gleich|sekunde/i.test(t)) {
-        return {
-            decision: 'wait',
-            reason: 'Wait pattern detected',
-            suggestedReply: 'Kein Problem, ich warte! Melde dich, wenn du so weit bist.',
-            confidence: 0.8
-        };
-    }
-
-    // No quick match - needs AI analysis
+    // No quick match — needs AI analysis
     return null;
 }
 
@@ -251,5 +285,7 @@ export async function getConversationDecision(
 export default {
     getConversationDecision,
     analyzeConversationIntent,
-    quickPatternCheck
+    quickPatternCheck,
+    normalizeDecision
 };
+

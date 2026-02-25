@@ -104,6 +104,19 @@ export async function run(sql: string, params: any[] = []): Promise<void> {
 }
 
 /**
+ * Execute raw SQL without placeholder conversion.
+ * Use for queries with PostgreSQL-native syntax (JSONB operators, etc.)
+ */
+export async function runRaw(sql: string, params: any[] = []): Promise<void> {
+    try {
+        await pool.query(sql, params);
+    } catch (error) {
+        console.error("[DB] Error in runRaw():", error);
+        throw error;
+    }
+}
+
+/**
  * Compatibility layer: get() - Execute SELECT and return single row
  */
 export async function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {

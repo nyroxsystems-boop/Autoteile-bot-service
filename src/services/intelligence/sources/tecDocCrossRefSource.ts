@@ -220,6 +220,7 @@ async function findByAftermarketNumber(
                             aftermarketRef: ref.aftermarket,
                             partType: ref.partType,
                             application: ref.application,
+                            priority: 8,
                         }
                     });
                 }
@@ -291,6 +292,7 @@ function findByVehicleAndPart(
                 partType: ref.partType,
                 application: ref.application,
                 aftermarketRef: ref.aftermarket,
+                priority: 8,
             }
         });
     }

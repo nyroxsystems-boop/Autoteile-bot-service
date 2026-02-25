@@ -369,8 +369,11 @@ export async function performEnhancedValidation(
     layers.push(l3);
     totalConfidence += l3.confidence;
 
-    // 4. AI Triple-Lock (Mandatory if key present)
-    if (options.openaiApiKey) {
+    // 4. AI Triple-Lock (Behind feature flag — default OFF)
+    // The AI has no access to OEM databases and introduces ~3s latency + -0.60 penalty risk.
+    // Enable via env: FF_AI_TRIPLE_LOCK=true
+    const aiTripleLockEnabled = process.env.FF_AI_TRIPLE_LOCK === 'true' || process.env.FF_AI_TRIPLE_LOCK === '1';
+    if (options.openaiApiKey && aiTripleLockEnabled) {
         const l4 = await validateLayer5_AIVerification(primaryOEM, brand, model, partDescription, options.openaiApiKey);
         layers.push(l4);
         totalConfidence += l4.confidence;

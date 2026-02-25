@@ -184,6 +184,7 @@ export const realOemSource: OEMSource = {
                                     note: 'RealOEM BMW catalog',
                                     url,
                                     relevanceScore,
+                                    priority: 10,
                                 },
                             });
                         }

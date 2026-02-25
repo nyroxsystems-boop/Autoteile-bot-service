@@ -50,7 +50,7 @@ export interface LockStats {
 }
 
 // ============================================================================
-// In-Memory Implementation
+// In-Memory Implementation (Fallback for development / single-instance)
 // ============================================================================
 
 class InMemoryLockService implements LockService {
@@ -130,20 +130,121 @@ class InMemoryLockService implements LockService {
 }
 
 // ============================================================================
-// Singleton
+// Redis Implementation (Production - Distributed Locking)
+// ============================================================================
+
+class RedisLockService implements LockService {
+    private redis: any; // IORedis instance
+    private stats = {
+        totalAcquired: 0,
+        totalReleased: 0,
+        totalTimeouts: 0
+    };
+    private activeLocks = new Set<string>();
+
+    constructor(redisUrl: string) {
+        const IORedis = require('ioredis');
+        this.redis = new IORedis(redisUrl, {
+            maxRetriesPerRequest: 3,
+            lazyConnect: true,
+            enableReadyCheck: false,
+        });
+        this.redis.connect().catch((err: any) => {
+            logger.error('Redis lock service connection failed', { error: err?.message });
+        });
+    }
+
+    async withLock<T>(key: string, fn: () => Promise<T>, options?: LockOptions): Promise<T> {
+        const lockKey = `lock:${key}`;
+        const timeout = options?.timeout ?? 30000;
+        const ttlSeconds = Math.ceil((options?.ttl ?? 60000) / 1000);
+        const lockValue = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+        const waitStart = Date.now();
+
+        // Spin-wait for lock acquisition with backoff
+        let acquired = false;
+        while (Date.now() - waitStart < timeout) {
+            // SET key value NX EX ttl — atomic acquire
+            const result = await this.redis.set(lockKey, lockValue, 'EX', ttlSeconds, 'NX');
+            if (result === 'OK') {
+                acquired = true;
+                break;
+            }
+            // Exponential backoff: 50ms, 100ms, 200ms... max 500ms
+            const elapsed = Date.now() - waitStart;
+            const delay = Math.min(50 * Math.pow(2, Math.floor(elapsed / 1000)), 500);
+            await new Promise(r => setTimeout(r, delay));
+        }
+
+        if (!acquired) {
+            this.stats.totalTimeouts++;
+            logger.warn('Redis lock acquisition timeout', { key, timeout });
+            throw new Error(`Lock timeout for ${key}`);
+        }
+
+        this.stats.totalAcquired++;
+        this.activeLocks.add(key);
+        const acquireTime = Date.now() - waitStart;
+        if (acquireTime > 1000) {
+            logger.warn('Slow Redis lock acquisition', { key, acquireTime });
+        }
+
+        try {
+            return await fn();
+        } finally {
+            // Release only if WE still own the lock (compare value)
+            // Uses Lua script for atomic check-and-delete
+            const luaScript = `
+                if redis.call("get", KEYS[1]) == ARGV[1] then
+                    return redis.call("del", KEYS[1])
+                else
+                    return 0
+                end
+            `;
+            try {
+                await this.redis.eval(luaScript, 1, lockKey, lockValue);
+            } catch (err: any) {
+                logger.error('Failed to release Redis lock', { key, error: err?.message });
+            }
+            this.activeLocks.delete(key);
+            this.stats.totalReleased++;
+        }
+    }
+
+    isLocked(key: string): boolean {
+        return this.activeLocks.has(key);
+    }
+
+    getStats(): LockStats {
+        return {
+            activeLocks: this.activeLocks.size,
+            ...this.stats
+        };
+    }
+}
+
+// ============================================================================
+// Singleton — Auto-detects Redis, falls back to in-memory
 // ============================================================================
 
 let lockService: LockService | null = null;
 
 export function getLockService(): LockService {
     if (!lockService) {
-        // TODO: Check for Redis configuration and use RedisLockService if available
-        // if (process.env.REDIS_URL) {
-        //   lockService = new RedisLockService(process.env.REDIS_URL);
-        // } else {
-        lockService = new InMemoryLockService();
-        logger.info('Using in-memory lock service (single instance mode)');
-        // }
+        const redisUrl = process.env.REDIS_URL;
+        if (redisUrl) {
+            try {
+                lockService = new RedisLockService(redisUrl);
+                logger.info('Using Redis-based distributed lock service');
+            } catch (err: any) {
+                logger.warn('Failed to initialize Redis lock, falling back to in-memory', { error: err?.message });
+                lockService = new InMemoryLockService();
+            }
+        } else {
+            lockService = new InMemoryLockService();
+            logger.info('Using in-memory lock service (single instance mode)');
+        }
     }
     return lockService;
 }

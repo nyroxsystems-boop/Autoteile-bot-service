@@ -335,6 +335,15 @@ export function detectEnginePartCategory(query: string): string | null {
     if (/luftfilter|air.*filter/i.test(normalized)) return 'AIR_FILTER';
     if (/zündkerze|spark.*plug/i.test(normalized)) return 'SPARK_PLUG';
     if (/motorlager|engine.*mount|getriebelager/i.test(normalized)) return 'ENGINE_MOUNT';
+    // P1: Expanded categories
+    if (/kupplung|clutch|kupplungssatz|kupplungskit/i.test(normalized)) return 'CLUTCH_KIT';
+    if (/lichtmaschine|alternator|generator/i.test(normalized)) return 'ALTERNATOR';
+    if (/anlasser|starter/i.test(normalized)) return 'STARTER';
+    if (/agr.*ventil|egr.*valve|abgasrückführ/i.test(normalized)) return 'EGR_VALVE';
+    if (/einspritzdüse|injektor|injector|einspritzventil/i.test(normalized)) return 'INJECTOR';
+    if (/ölpumpe|oil.*pump/i.test(normalized)) return 'OIL_PUMP';
+    if (/partikelfilter|dpf|rußfilter|dieselpartikelfilter/i.test(normalized)) return 'DPF';
+    if (/ladeluftkühler|intercooler|ladeluft/i.test(normalized)) return 'INTERCOOLER';
 
     return null;
 }

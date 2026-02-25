@@ -28,6 +28,13 @@ import { vagEtkaSource } from "./sources/vagEtkaSource";
 import { databaseSource } from "./sources/databaseSource";
 // 🔥 NEW: TecDoc Cross-Reference (Aftermarket→OEM mapping)
 import { tecDocCrossRefSource } from "./sources/tecDocCrossRefSource";
+// 🛡️ P0: Aftermarket filter — removes known aftermarket numbers before consensus
+import { filterAftermarketCandidates } from './aftermarketFilter';
+import { validateOemPatternInt } from './brandPatternRegistry';
+import { filterSourcesByMode, reportSourceHealth } from './scraperFallback';
+import { recordOemResolution } from './oemMetrics';
+// 🚨 P0: Alert tracking for OEM resolution failures
+import { trackOemResolutionResult } from "@core/alertService";
 
 
 // PRODUCTION SOURCES ONLY - Fake/empty sources removed to prevent
@@ -53,8 +60,8 @@ const SOURCES = [
   oscaroSource            // French platform (schema-fixed)
 ];
 
-const CONFIDENCE_THRESHOLD_VETTED = 0.90; // Lowered from 96% - was unreachable in practice
-const CONFIDENCE_THRESHOLD_RELIABLE = 0.75; // Lowered from 85% - allow more matches with dealer review
+const CONFIDENCE_THRESHOLD_VETTED = 0.90;
+const CONFIDENCE_THRESHOLD_RELIABLE = 0.70; // K2 FIX: Was 0.75, now consistent with resolveOEM accept threshold
 
 function mergeCandidates(candidates: OEMCandidate[]): OEMCandidate[] {
   const map = new Map<string, OEMCandidate & { sources: Set<string> }>();
@@ -112,7 +119,7 @@ function pickPrimary(candidates: any[]): { primaryOEM?: string; note?: string; o
 
   return {
     primaryOEM: undefined,
-    note: "Trefferquote unter Schwellenwert (<85%). Eskalation an Experten.",
+    note: "Trefferquote unter 70%. Eskalation an Experten.",
     overall
   };
 }
@@ -205,44 +212,26 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
   // oemWebFinder is already called via webScrapeSource (line 25)
   // Having it twice inflates Multi-Source confidence incorrectly
 
+  // 🛡️ P0: Remove known aftermarket numbers BEFORE consensus
+  const aftermarketFiltered = filterAftermarketCandidates(allCandidates);
+
   // AI-Filter for semantic match (Part Description vs OEM)
-  const filtered = await filterByPartMatch(allCandidates, req);
+  const filtered = await filterByPartMatch(aftermarketFiltered, req);
 
   const merged = mergeCandidates(filtered);
 
-  // BRAND-SPECIFIC SCHEMA FILTER (The Firewall)
-  // Eliminate junk that doesn't look like an OEM for this brand.
+  // BRAND-SPECIFIC SCHEMA FILTER (The Firewall) — S7 FIX: Uses brandPatternRegistry
   const brand = req.vehicle.make?.toUpperCase() || "";
   const schemaFiltered = merged.filter(c => {
-    // Allow if it's explicitly from a high-trust source (like our reverse lookup)
+    // Allow if it's explicitly from a high-trust source
     if (c.source.includes("aftermarket_reverse_lookup")) return true;
 
-    const oem = c.oem;
+    // Use the consolidated brand pattern registry
+    const patternScore = validateOemPatternInt(c.oem, brand);
+    if (patternScore > 0) return true;
 
-    // VAG Group (VW, Audi, Seat, Skoda)
-    if (["VOLKSWAGEN", "AUDI", "SEAT", "SKODA", "VW"].some(b => brand.includes(b))) {
-      // VAG OEMs are typically 9-11 alphanumeric (e.g. 1K0698151A)
-      // We strictly limit length to avoid CSS artifacts.
-      return oem.length >= 7 && oem.length <= 12 && /\d/.test(oem);
-    }
-
-    // BMW
-    if (brand.includes("BMW")) {
-      // BMW uses 11 digit (mostly numeric) or 7 digit (short) codes
-      // Example: 64 31 9 142 115 (11 digits)
-      const digits = oem.replace(/\D/g, "");
-      return digits.length === 7 || digits.length === 11 || (oem.length >= 7 && oem.length <= 11);
-    }
-
-    // Mercedes
-    if (brand.includes("MERCEDES") || brand.includes("BENZ")) {
-      // A 000 421 ... often starts with A
-      // Standard is roughly 10-12 chars.
-      return (oem.startsWith("A") || (oem.length >= 10)) && oem.length <= 13 && /\d/.test(oem);
-    }
-
-    // Default: Length 5-14, has number
-    return oem.length >= 5 && oem.length <= 14 && /\d/.test(oem);
+    // Default fallback: Length 5-14, has a digit
+    return c.oem.length >= 5 && c.oem.length <= 14 && /\d/.test(c.oem);
   });
 
   // Vehicle matching boost
@@ -267,8 +256,10 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
   let overall = 0;
   let note = "";
 
-  // Try to validate the top 10 candidates to find the best reliable one
-  const topCandidates = sorted.slice(0, 10);
+  // P0: Limit to max 3 candidates (was 10) with 15s global timeout
+  const MAX_VALIDATION_CANDIDATES = 3;
+  const VALIDATION_TIMEOUT_MS = 15000;
+  const topCandidates = sorted.slice(0, MAX_VALIDATION_CANDIDATES);
   let bestResult: { oem?: string, confidence: number, note: string } = { confidence: 0, note: "" };
 
   // If no candidates, fall through
@@ -277,62 +268,107 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     overall = 0;
     note = "Keine Kandidaten.";
   } else {
-    for (const candidate of topCandidates) {
-      let currentConf = candidate.confidence;
-      let currentNote = "";
+    // P0 Early Exit: If consensus has 3+ sources AND >90% confidence, validate only 1 candidate
+    const consensus = calculateConsensus(filtered);
+    const earlyExitMode = consensus.sourceCount >= 3 && consensus.confidence >= 0.90;
+    const candidatesToValidate = earlyExitMode ? topCandidates.slice(0, 1) : topCandidates;
 
-      // MANDATORY BACKSEARCH for Validation
-      try {
-        const confirm = await backsearchOEM(candidate.oem, req);
+    if (earlyExitMode) {
+      logger.info('[OEMResolver] High-confidence early exit: validating only top candidate', {
+        sourceCount: consensus.sourceCount,
+        confidence: consensus.confidence,
+        oem: candidatesToValidate[0]?.oem
+      });
+    }
 
-        // Map to enhanced validation format
-        const backsearchResult = {
-          ...confirm,
-          totalHits: Object.values(confirm).filter(v => v === true).length
-        };
+    // Wrap the entire validation loop in a global timeout
+    const validationPromise = (async () => {
+      for (const candidate of candidatesToValidate) {
+        let currentConf = candidate.confidence;
+        let currentNote = "";
 
-        // NEW: Enhanced 5-Layer Validation
-        const validation = await performEnhancedValidation(
-          candidate.oem,
-          allCandidates,
-          req.vehicle.make || "",
-          req.vehicle.model || "",
-          req.partQuery.rawText,
-          backsearchResult,
-          {
-            enableAIVerification: !!process.env.OPENAI_API_KEY,
-            openaiApiKey: process.env.OPENAI_API_KEY,
-            minConfidence: 0.97
+        // MANDATORY BACKSEARCH for Validation
+        try {
+          const confirm = await backsearchOEM(candidate.oem, req);
+
+          // Map to enhanced validation format
+          const backsearchResult = {
+            ...confirm,
+            totalHits: Object.values(confirm).filter(v => v === true).length
+          };
+
+          // Enhanced Validation (AI layer controlled by feature flag)
+          const validation = await performEnhancedValidation(
+            candidate.oem,
+            aftermarketFiltered,
+            req.vehicle.make || "",
+            req.vehicle.model || "",
+            req.partQuery.rawText,
+            backsearchResult,
+            {
+              enableAIVerification: !!process.env.OPENAI_API_KEY,
+              openaiApiKey: process.env.OPENAI_API_KEY,
+              minConfidence: 0.97
+            }
+          );
+
+          currentConf = validation.finalConfidence;
+          currentNote = validation.reasoning;
+
+          // Update candidate confidence in list
+          candidate.confidence = currentConf;
+          candidate.meta = { ...(candidate.meta || {}), validationNote: currentNote, validationLayers: validation.layers };
+
+          // Check if we found a winner or a better result
+          if (currentConf > bestResult.confidence) {
+            bestResult = { oem: candidate.oem, confidence: currentConf, note: currentNote };
           }
-        );
 
-        currentConf = validation.finalConfidence;
-        currentNote = validation.reasoning;
-
-        // Update candidate confidence in list
-        candidate.confidence = currentConf;
-        candidate.meta = { ...(candidate.meta || {}), validationNote: currentNote, validationLayers: validation.layers };
-
-        // Check if we found a winner or a better result
-        if (currentConf > bestResult.confidence) {
-          bestResult = { oem: candidate.oem, confidence: currentConf, note: currentNote };
+          // Early exit if we have found a vetted Primary
+          if (validation.validated) {
+            break;
+          }
+        } catch (err: any) {
+          logger.warn("OEM validation flow failed", { oem: candidate.oem, error: err?.message });
+          currentConf *= 0.5;
+          currentNote = "Fehler bei der Validierung.";
         }
+      }
+    })();
 
-        // Early exit if we have found a vetted Primary (97%+)
-        if (validation.validated) {
-          break;
-        }
-      } catch (err: any) {
-        logger.warn("OEM validation flow failed", { oem: candidate.oem, error: err?.message });
-        currentConf *= 0.5;
-        currentNote = "Fehler bei der Validierung.";
+    // P0: Global 15s timeout for the entire validation loop
+    try {
+      await Promise.race([
+        validationPromise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Validation timeout')), VALIDATION_TIMEOUT_MS)
+        )
+      ]);
+    } catch (err: any) {
+      if (err.message === 'Validation timeout') {
+        logger.warn('[OEMResolver] Validation timed out after 15s, using best result so far', {
+          bestOem: bestResult.oem,
+          bestConfidence: bestResult.confidence
+        });
       }
     }
 
-    primaryOEM = bestResult.confidence >= 0.85 ? bestResult.oem : undefined; // Lowered from 97% - now matches with dealer review
+    primaryOEM = bestResult.confidence >= CONFIDENCE_THRESHOLD_RELIABLE ? bestResult.oem : undefined; // K2 FIX: was hardcoded 0.85
     overall = bestResult.confidence;
     note = bestResult.note || "Keine ausreichende Validierung aller Kandidaten.";
   }
+
+  // P0: Track OEM resolution success/failure for alerting
+  trackOemResolutionResult(!!primaryOEM);
+
+  // M6: Record metrics for dashboard
+  recordOemResolution({
+    brand: req.vehicle.make || 'UNKNOWN',
+    success: !!primaryOEM,
+    confidence: overall,
+    latencyMs: Date.now() - (req as any)._startTime || 0,
+    sources: merged.map(c => c.source.split('+')[0]),
+  });
 
   return {
     primaryOEM,
@@ -344,127 +380,8 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
 
 /**
  * Assigns a score (0-2) based on how well the OEM matches the brand's typical pattern.
- * Used for sorting candidates.
+ * Delegates to the consolidated brandPatternRegistry.
  */
 function checkBrandSchema(oem: string, brand: string): number {
-  if (!oem || !brand) return 0;
-  oem = oem.replace(/\s+/g, "").toUpperCase();
-  brand = brand.toUpperCase();
-
-  // VAG (VW, Audi, Seat, Skoda)
-  if (["VOLKSWAGEN", "AUDI", "SEAT", "SKODA", "VW"].some(b => brand.includes(b))) {
-    // Pattern: 3 chars + 3 numbers + 3 numbers + (opt A) -> e.g. 1K0698151A
-    if (/^[A-Z0-9]{3}[0-9]{3}[A-Z0-9]{3,6}$/.test(oem)) return 2;
-    if (oem.length >= 9 && oem.length <= 12) return 1;
-  }
-
-  // BMW / Mini
-  if (brand.includes("BMW") || brand.includes("MINI")) {
-    const digits = oem.replace(/\D/g, "");
-    if (digits.length === 11 || digits.length === 7) return 2;
-    if (oem.length >= 7 && oem.length <= 11) return 1;
-  }
-
-  // Mercedes / Smart
-  if (brand.includes("MERCEDES") || brand.includes("BENZ") || brand.includes("SMART")) {
-    // Starts with A, B, W, N ... or just digits
-    if (oem.startsWith("A") && oem.length >= 10 && oem.length <= 13) return 2;
-    if (/^[0-9]{10,12}$/.test(oem)) return 2;
-    if (oem.length >= 10 && oem.length <= 13) return 1;
-  }
-
-  // Additional brands
-  // HONDA – typically 8‑digit numeric or alphanumeric like "1234‑AB12"
-  if (brand.includes("HONDA")) {
-    if (/^[0-9]{8}$/.test(oem)) return 2;
-    if (/^[0-9]{4}-[A-Z0-9]{4}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 12) return 1;
-  }
-
-  // SUBARU – often 7‑8 digit numeric, sometimes with leading "S"
-  if (brand.includes("SUBARU")) {
-    if (/^S?[0-9]{7,8}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 12) return 1;
-  }
-
-  // MITSUBISHI – 7‑9 digit numeric, sometimes prefixed with "M"
-  if (brand.includes("MITSUBISHI")) {
-    if (/^M?[0-9]{7,9}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 12) return 1;
-  }
-
-  // PORSCHE – 7‑10 alphanumeric, often starts with "P" or numeric block
-  if (brand.includes("PORSCHE")) {
-    if (/^[Pp][0-9]{6,9}$/.test(oem)) return 2;
-    if (/^[A-Z0-9]{7,10}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 12) return 1;
-  }
-
-  // DODGE / RAM – 7‑8 digit numeric or pattern like "8V21‑1125‑AB"
-  if (brand.includes("DODGE") || brand.includes("RAM")) {
-    if (/^[0-9]{7,8}$/.test(oem)) return 2;
-    if (/^[A-Z0-9]{4}-[A-Z0-9]{4,6}-[A-Z]{1,2}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 15) return 1;
-  }
-
-  // CHEVROLET / GM (already covered under Opel/GM but add explicit)
-  if (brand.includes("CHEVROLET")) {
-    if (/^[0-9]{7,8}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 12) return 1;
-  }
-
-  // FORD
-  if (brand.includes("FORD")) {
-    // Ford has 7-digit FINIS (e.g. 1234567) or Engineering (e.g. 6G91-2M008-AA)
-    if (/^[0-9]{7}$/.test(oem)) return 2; // FINIS
-    if (/^[A-Z0-9]{4}-[A-Z0-9]{4,6}-[A-Z]{1,2}$/.test(oem)) return 2; // Engineering
-    if (oem.length >= 7 && oem.length <= 15) return 1;
-  }
-
-  // OPEL / GM
-  if (brand.includes("OPEL") || brand.includes("VAUXHALL") || brand.includes("CHEVROLET")) {
-    // Opel uses 7-digit catalog or 8-digit GM numbers
-    if (/^[0-9]{7,8}$/.test(oem)) return 2;
-    if (oem.length >= 6 && oem.length <= 10) return 1;
-  }
-
-  // RENAULT / DACIA / NISSAN
-  if (brand.includes("RENAULT") || brand.includes("DACIA") || brand.includes("NISSAN")) {
-    // Often 10 digits or 5+5 alphanumeric (Nissan)
-    if (/^[0-9R]{10}$/.test(oem)) return 2; // Renault
-    if (/^[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(oem)) return 2; // Nissan
-    if (oem.length >= 8 && oem.length <= 12) return 1;
-  }
-
-  // FIAT / ALFA / LANCIA
-  if (brand.includes("FIAT") || brand.includes("ALFA") || brand.includes("LANCIA") || brand.includes("CHRYSLER")) {
-    // Often 8 digits
-    if (/^[0-9]{8}$/.test(oem)) return 2;
-    if (oem.length >= 7 && oem.length <= 10) return 1;
-  }
-
-  // TOYOTA / LEXUS
-  if (brand.includes("TOYOTA") || brand.includes("LEXUS")) {
-    // Pattern: 5 + 5 digits (e.g. 12345-12345)
-    if (/^[0-9]{5}-[0-9]{5}$/.test(oem.replace(/\s/g, ""))) return 2;
-    if (/^[0-9]{10}$/.test(oem)) return 2;
-    if (oem.length >= 9 && oem.length <= 12) return 1;
-  }
-
-  // HYUNDAI / KIA
-  if (brand.includes("HYUNDAI") || brand.includes("KIA")) {
-    // Pattern: 5 + 5 alphanumeric
-    if (/^[A-Z0-9]{5}[A-Z0-9]{5}$/.test(oem)) return 2;
-    if (oem.length >= 9 && oem.length <= 12) return 1;
-  }
-
-  // PSA (PEUGEOT / CITROEN)
-  if (brand.includes("PEUGEOT") || brand.includes("CITROEN") || brand.includes("PSA")) {
-    // Often 10 digits or 4+6 format
-    if (/^[0-9]{10}$/.test(oem)) return 2;
-    if (/^[A-Z0-9]{4}\.[A-Z0-9]{6}$/.test(oem)) return 2;
-    if (oem.length >= 4 && oem.length <= 12) return 1;
-  }
-
-  return 0;
+  return validateOemPatternInt(oem, brand);
 }

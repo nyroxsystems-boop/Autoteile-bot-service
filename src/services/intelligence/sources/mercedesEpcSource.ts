@@ -175,6 +175,7 @@ export const mercedesEpcSource: OEMSource = {
                                     note: 'Mercedes EPC catalog',
                                     modelCodes,
                                     relevanceScore,
+                                    priority: 10,
                                 },
                             });
                         }

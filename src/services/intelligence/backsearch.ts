@@ -4,9 +4,9 @@
  * Validates found OEM numbers by re-querying multiple independent web sources
  * and checking for explicit vehicle compatibility.
  * 
- * PREMIUM VERSION: No TecDoc - Uses web scrapers only
+ * K1 FIX: Uses fetchText (ScraperAPI-proxied) instead of raw fetch
  */
-import fetch from "node-fetch";
+import { fetchText } from './oemWebFinder';
 import { logger } from "@utils/logger";
 import { OEMResolverRequest } from "./types";
 
@@ -19,7 +19,7 @@ export type BacksearchResult = {
   errors: string[];     // Track errors for observability
 };
 
-const BACKSEARCH_TIMEOUT_MS = 8000;
+const BACKSEARCH_TIMEOUT_MS = 5000;
 
 /**
  * Validate a found OEM by re-querying multiple independent sources 
@@ -63,22 +63,15 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     return keywords.some(k => originalLowerHtml.includes(k));
   };
 
-  // 1. 7zap / Web Check
+  // 1. 7zap / Web Check — via ScraperAPI
   tasks.push((async () => {
     const source = "7zap";
     try {
       const url = `https://7zap.com/en/search/?keyword=${encodeURIComponent(oem)}`;
-      const res = await fetch(url, {
-        method: "GET",
-        timeout: BACKSEARCH_TIMEOUT_MS,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-      });
-      if (res.ok) {
-        const html = await res.text();
-        if (checkCompliance(html)) {
-          result.webHit = true;
-          logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
-        }
+      const html = await fetchText(url);
+      if (checkCompliance(html)) {
+        result.webHit = true;
+        logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
       const errMsg = `${source}: ${err?.message || 'Unknown error'}`;
@@ -87,22 +80,15 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     }
   })());
 
-  // 2. Autodoc
+  // 2. TecDoc Catalog Search — via ScraperAPI
   tasks.push((async () => {
-    const source = "autodoc";
+    const source = "tecdoc";
     try {
-      const url = `https://www.autodoc.de/search?keyword=${encodeURIComponent(oem)}`;
-      const res = await fetch(url, {
-        method: "GET",
-        timeout: BACKSEARCH_TIMEOUT_MS,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-      });
-      if (res.ok) {
-        const html = await res.text();
-        if (checkCompliance(html)) {
-          result.autodocHit = true;
-          logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
-        }
+      const url = `https://www.tecdoc.net/search?q=${encodeURIComponent(oem)}`;
+      const html = await fetchText(url);
+      if (checkCompliance(html)) {
+        result.autodocHit = true;
+        logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
       const errMsg = `${source}: ${err?.message || 'Unknown error'}`;
@@ -111,22 +97,15 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     }
   })());
 
-  // 3. Daparto
+  // 3. PartsGateway — via ScraperAPI
   tasks.push((async () => {
-    const source = "daparto";
+    const source = "partsgateway";
     try {
-      const url = `https://www.daparto.de/Teilenummern-Suche/Teile/Alle-Hersteller/${encodeURIComponent(oem)}`;
-      const res = await fetch(url, {
-        method: "GET",
-        timeout: BACKSEARCH_TIMEOUT_MS,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-      });
-      if (res.ok) {
-        const html = await res.text();
-        if (checkCompliance(html)) {
-          result.dapartoHit = true;
-          logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
-        }
+      const url = `https://www.partsgateway.co.uk/car-parts?q=${encodeURIComponent(oem)}`;
+      const html = await fetchText(url);
+      if (checkCompliance(html)) {
+        result.dapartoHit = true;
+        logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
       const errMsg = `${source}: ${err?.message || 'Unknown error'}`;
@@ -135,22 +114,15 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     }
   })());
 
-  // 4. eBay
+  // 4. eBay — via ScraperAPI (premium for anti-bot)
   tasks.push((async () => {
     const source = "ebay";
     try {
-      const url = `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(oem)}`;
-      const res = await fetch(url, {
-        method: "GET",
-        timeout: BACKSEARCH_TIMEOUT_MS,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-      });
-      if (res.ok) {
-        const html = await res.text();
-        if (checkCompliance(html) && !html.toLowerCase().includes("0 ergebnisse")) {
-          result.ebayHit = true;
-          logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
-        }
+      const url = `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(oem)}&_sacat=6028`;
+      const html = await fetchText(url, true); // premium=true for eBay
+      if (checkCompliance(html) && !html.toLowerCase().includes("0 ergebnisse")) {
+        result.ebayHit = true;
+        logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
       const errMsg = `${source}: ${err?.message || 'Unknown error'}`;

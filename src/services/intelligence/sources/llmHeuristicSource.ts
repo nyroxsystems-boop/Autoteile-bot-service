@@ -267,7 +267,8 @@ WICHTIG:
           description: p.description,
           position: p.position,
           reasoning: p.reasoning,
-          source_type: "ai_inference"
+          source_type: "ai_inference",
+          priority: 1,
         }
       })).filter(c => c.oem.length >= 5);
 

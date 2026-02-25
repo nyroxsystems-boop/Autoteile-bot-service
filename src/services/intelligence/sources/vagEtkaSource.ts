@@ -205,6 +205,7 @@ export const vagEtkaSource: OEMSource = {
                                     note: 'VAG ETKA catalog',
                                     expectedPrefixes,
                                     relevanceScore,
+                                    priority: 10,
                                 },
                             });
                         }

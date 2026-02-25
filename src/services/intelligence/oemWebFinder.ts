@@ -48,7 +48,7 @@ import { ProxyAgent } from "proxy-agent";
 const SCRAPE_TIMEOUT_MS = 30000; // Increased for ScraperAPI
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-async function fetchText(url: string, premium = false): Promise<string> {
+export async function fetchText(url: string, premium = false): Promise<string> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
 

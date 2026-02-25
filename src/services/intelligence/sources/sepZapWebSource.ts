@@ -29,7 +29,7 @@ export const sepZapWebSource = {
                 oem,
                 source: '7zap_web',
                 confidence: 0.55,
-                meta: { note: '7‑Zap HTML scrape' },
+                meta: { note: '7‑Zap HTML scrape', priority: 10 },
             }));
         } catch (e) {
             logger.error('sepZapWebSource failed', { error: e });

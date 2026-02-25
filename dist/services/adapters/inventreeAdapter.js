@@ -238,12 +238,21 @@ async function updateOrder(orderId, patch) {
     return getOrderById(orderId);
 }
 async function updateOrderData(orderId, data) {
-    const order = await getDbOrder(orderId);
-    if (!order)
-        return;
-    const existingData = parseJsonField(order.order_data, {});
-    const newData = { ...existingData, ...data };
-    await db.run(`UPDATE orders SET order_data = ? WHERE id = ?`, [JSON.stringify(newData), String(orderId)]);
+    // Atomic JSONB merge — avoids Read-Modify-Write race condition
+    try {
+        const { runRaw } = await Promise.resolve().then(() => __importStar(require('../core/database')));
+        await runRaw(`UPDATE orders SET order_data = COALESCE(order_data, '{}')::jsonb || $1::jsonb WHERE id = $2`, [JSON.stringify(data), String(orderId)]);
+    }
+    catch (err) {
+        // Fallback for environments without JSONB support (e.g., SQLite in tests)
+        logger_1.logger.warn('Atomic JSONB merge failed, falling back to read-modify-write', { error: err?.message });
+        const order = await getDbOrder(orderId);
+        if (!order)
+            return;
+        const existingData = parseJsonField(order.order_data, {});
+        const newData = { ...existingData, ...data };
+        await db.run(`UPDATE orders SET order_data = ? WHERE id = ?`, [JSON.stringify(newData), String(orderId)]);
+    }
 }
 async function getVehicleForOrder(orderId) {
     const order = await getDbOrder(orderId);

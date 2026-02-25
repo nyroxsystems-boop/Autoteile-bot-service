@@ -24,7 +24,7 @@ export const motointegratorSource = {
                 oem: o,
                 source: 'motointegrator',
                 confidence: 0.6,
-                meta: { note: 'Motointegrator scrape' }
+                meta: { note: 'Motointegrator scrape', priority: 3 }
             }));
         } catch (e) {
             logger.error('Motointegrator source failed', { error: e });

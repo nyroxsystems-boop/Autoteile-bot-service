@@ -10,6 +10,31 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
 
+// ============================================================================
+// K5: Idempotency — Prevent duplicate Twilio replies on BullMQ retry
+// ============================================================================
+const processedJobs = new Map<string, number>(); // jobId → timestamp
+const IDEMPOTENCY_TTL_MS = 60_000; // 60s
+
+function markJobProcessed(jobId: string): boolean {
+    // Clean expired entries
+    const now = Date.now();
+    for (const [id, ts] of processedJobs) {
+        if (now - ts > IDEMPOTENCY_TTL_MS) processedJobs.delete(id);
+    }
+
+    if (processedJobs.has(jobId)) {
+        logger.warn("[BotWorker] Duplicate job detected, skipping Twilio reply", { jobId });
+        return false; // already processed
+    }
+    processedJobs.set(jobId, now);
+    return true; // first time
+}
+
+// ============================================================================
+// Twilio Reply
+// ============================================================================
+
 async function sendTwilioReply(
     to: string,
     body: string,
@@ -40,37 +65,36 @@ async function sendTwilioReply(
 
         await client.messages.create(payload);
 
-        console.log("📤 BOT REPLY SENT:", {
+        // S4 FIX: console.log → logger.info
+        logger.info("📤 BOT REPLY SENT", {
             to,
             message: payload.body?.substring(0, 100) || "[template message]",
             hasMedia: !!options.mediaUrl,
             contentSid: options.contentSid
         });
-
-        logger.info("Sent WhatsApp reply via Twilio", {
-            to,
-            hasMedia: !!options.mediaUrl,
-            contentSid: options.contentSid
-        });
     } catch (error: any) {
-        console.error("❌ FAILED TO SEND WHATSAPP REPLY:", error?.message);
-        logger.error("Failed to send WhatsApp reply", { error: error?.message, to });
+        // S4 FIX: console.error → logger.error
+        logger.error("❌ FAILED TO SEND WHATSAPP REPLY", { error: error?.message, to });
     }
 }
+
+// ============================================================================
+// K3: Worker with exponential backoff + reduced concurrency
+// ============================================================================
 
 const worker = new Worker<BotJobData>(
     BOT_QUEUE_NAME,
     async (job: Job<BotJobData>) => {
         const { from, text, orderId, mediaUrls } = job.data;
 
-        console.log("📥 INCOMING MESSAGE:", {
+        // S4 FIX: console.log → logger.info
+        logger.info("📥 INCOMING MESSAGE", {
             from,
             message: text?.substring(0, 100),
             hasMedia: !!(mediaUrls && mediaUrls.length > 0),
-            orderId
+            orderId,
+            jobId: job.id
         });
-
-        logger.info("Processing bot job", { jobId: job.id, from });
 
         try {
             // 1. Process Logic
@@ -81,7 +105,8 @@ const worker = new Worker<BotJobData>(
                 mediaUrls
             });
 
-            console.log("🤖 BOT GENERATED REPLY:", {
+            // S4 FIX: console.log → logger.info
+            logger.info("🤖 BOT GENERATED REPLY", {
                 replyLength: result.reply?.length,
                 replyPreview: result.reply?.substring(0, 150),
                 hasContentSid: !!result.contentSid,
@@ -90,13 +115,18 @@ const worker = new Worker<BotJobData>(
 
             // 2. Persist Reply
             try {
-                // InvenTree insertMessage(waId, content, direction)
                 await insertMessage(from, result.reply, "OUT" as any);
             } catch (dbErr: any) {
                 logger.warn("Failed to persist outgoing bot message", { error: dbErr?.message });
             }
 
-            // 3. Send Reply via Twilio
+            // 3. K5: Idempotency check before sending reply
+            if (!markJobProcessed(job.id || `${from}-${Date.now()}`)) {
+                logger.warn("[BotWorker] Skipping duplicate Twilio send", { jobId: job.id });
+                return; // Don't send again on retry
+            }
+
+            // 4. Send Reply via Twilio
             await sendTwilioReply(from, result.reply, {
                 mediaUrl: (result as any).mediaUrl,
                 contentSid: result.contentSid,
@@ -104,15 +134,13 @@ const worker = new Worker<BotJobData>(
             });
 
         } catch (err: any) {
-            logger.error("Bot worker failed", { error: err?.message, jobId: job.id });
-            // Depending on error, we might want to fail the job so it retries?
-            // For now, let's catch it so the worker doesn't crash, but maybe rethrow if it's transient.
-            throw err;
+            logger.error("Bot worker failed", { error: err?.message, jobId: job.id, from });
+            throw err; // Let BullMQ handle retry with backoff
         }
     },
     {
         connection,
-        concurrency: 5 // concurrency setting
+        concurrency: 3 // K3 FIX: reduced from 5 → 3
     }
 );
 
@@ -121,7 +149,12 @@ worker.on("completed", (job: Job) => {
 });
 
 worker.on("failed", (job: Job | undefined, err: Error) => {
-    logger.error("Job failed", { jobId: job?.id, error: err.message });
+    logger.error("Job FAILED (will retry if attempts remain)", {
+        jobId: job?.id,
+        error: err.message,
+        attemptsMade: job?.attemptsMade,
+        maxAttempts: job?.opts?.attempts || 'default'
+    });
 });
 
 export { worker };

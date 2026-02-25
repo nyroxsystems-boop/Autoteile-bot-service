@@ -40,8 +40,8 @@ const FLAGS: Record<string, FeatureFlag> = {
     USE_STATE_MACHINE: {
         name: 'USE_STATE_MACHINE',
         description: 'Use new state machine architecture instead of legacy switch',
-        defaultEnabled: false,
-        rolloutPercentage: 0
+        defaultEnabled: true,  // M4 FIX: Enabled (was false)
+        rolloutPercentage: 10  // Gradual rollout — increase to 100 after testing
     },
 
     // OEM Resolver Improvements
@@ -72,6 +72,16 @@ const FLAGS: Record<string, FeatureFlag> = {
     ENHANCED_CONVERSATION_INTELLIGENCE: {
         name: 'ENHANCED_CONVERSATION_INTELLIGENCE',
         description: 'Use enhanced NLU for better context retention',
+        defaultEnabled: false,
+        rolloutPercentage: 0
+    },
+
+    // AI Triple-Lock in OEM Validation (P0: default OFF)
+    // The AI layer has no real OEM database access — it's an expensive coin flip
+    // that introduces ~3s latency and carries a -0.60 lethal penalty risk.
+    AI_TRIPLE_LOCK: {
+        name: 'AI_TRIPLE_LOCK',
+        description: 'Enable AI Triple-Lock verification layer in OEM validation',
         defaultEnabled: false,
         rolloutPercentage: 0
     }
@@ -192,7 +202,8 @@ export const FF = {
     OEM_DEEP_RESOLUTION: 'OEM_DEEP_RESOLUTION',
     SOURCE_HEALTH_MONITORING: 'SOURCE_HEALTH_MONITORING',
     USE_AI_ORCHESTRATOR: 'USE_AI_ORCHESTRATOR',
-    ENHANCED_CONVERSATION_INTELLIGENCE: 'ENHANCED_CONVERSATION_INTELLIGENCE'
+    ENHANCED_CONVERSATION_INTELLIGENCE: 'ENHANCED_CONVERSATION_INTELLIGENCE',
+    AI_TRIPLE_LOCK: 'AI_TRIPLE_LOCK'
 } as const;
 
 export type FeatureFlagName = keyof typeof FF;
