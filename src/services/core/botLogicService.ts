@@ -73,12 +73,8 @@ async function answerGeneralQuestion(params: {
 
   let missingInfoSentence = "";
   if (missingVehicleInfo.length > 0) {
-    if (language === "de") {
-      missingInfoSentence =
-        "\n\nDamit ich passende Teile finden kann, brauche ich noch: " + missingVehicleInfo.join(", ") + ".";
-    } else {
-      missingInfoSentence =
-        "\n\nTo find the correct parts, I still need: " + missingVehicleInfo.join(", ") + ".";
+    if (missingVehicleInfo.length > 0) {
+      missingInfoSentence = tWith('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
     }
   }
   const userPrompt =
@@ -100,9 +96,7 @@ async function answerGeneralQuestion(params: {
     return (text?.trim() || "") + missingInfoSentence;
   } catch (err: any) {
     logger.error("General QA failed", { error: err?.message });
-    return language === "de"
-      ? "Gute Frage! Leider kann ich sie gerade nicht beantworten. Versuch es bitte später erneut."
-      : "Good question! I can’t answer it right now, please try again later.";
+    return t('qa_error', language);
   }
 }
 
@@ -350,7 +344,7 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
   try {
     const userContent = JSON.stringify(payload);
 
-    // LOG: What we're sending to OpenAI
+    // LOG: Calling Gemini
     logger.info("🤖 Calling Orchestrator", {
       payloadSize: userContent.length,
       status: payload.conversation?.status,
@@ -793,10 +787,7 @@ async function runOemLookupAndScraping(
           }
         }
 
-        const cautionNote =
-          cautious && language === "de"
-            ? " (bitte kurz prüfen)"
-            : cautious ? t('caution_check', language) : "";
+        const cautionNote = cautious ? t('caution_check', language) : "";
 
         const reply = `${t('oem_product_found', language)}${cautionNote}`;
         return {
@@ -1585,7 +1576,7 @@ export async function handleIncomingBotMessage(
         if (orch) {
           // Handle simple orchestrator actions directly
           if (orch.action === "abusive") {
-            const reply = orch.reply || (order.language === "de" ? "Bitte benutze keine Beleidigungen." : "Please refrain from insults.");
+            const reply = orch.reply || t('abuse_warning', order.language ?? 'de');
             return { reply, orderId: order.id };
           }
 
@@ -2319,7 +2310,7 @@ export async function handleIncomingBotMessage(
             if (sorted.length === 1) {
               const offer = sorted[0] as any;
               const endPrice = calculateEndPrice(offer.price);
-              const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
+              const delivery = offer.deliveryTimeDays ?? t('na_text', language);
 
               const bindingNote = t('offer_binding_note', language);
 
@@ -2329,23 +2320,14 @@ export async function handleIncomingBotMessage(
                 ? t('offer_pickup', language)
                 : tWith('offer_delivery', language, { delivery });
 
-              replyText =
-                language === "en"
-                  ? `✅ *Perfect Match Found!*\n\n` +
-                  `🏷️ *Brand:* ${offer.brand ?? "n/a"}\n` +
-                  `💰 *Price:* ${endPrice} ${offer.currency}\n` +
-                  `${stockInfo}\n` +
-                  `${offer.availability && !isInStock ? `📦 *Stock:* ${offer.availability}\n` : ''}` +
-                  `${bindingNote}\n\n` +
-                  `Do you want to order this now?`
-                  : `✅ *Perfektes Angebot gefunden!*\n\n` +
-                  `🏷️ *Marke:* ${offer.brand ?? "unbekannt"}\n` +
-                  `💰 *Preis:* ${endPrice} ${offer.currency}\n` +
-                  `${stockInfo}\n` +
-                  `${offer.availability && !isInStock ? `📦 *Verfügbarkeit:* ${offer.availability}\n` : ''}` +
-                  `${bindingNote}\n\n` +
-                  `Jetzt verbindlich bestellen?`;
-
+                replyText =
+                `${t('offer_single_header', language)}\n\n` +
+                `🏷️ *${t('offer_brand_label', language)}:* ${offer.brand ?? t('na_text', language)}\n` +
+                `💰 *${t('offer_price_label', language)}:* ${endPrice} ${offer.currency}\n` +
+                `${stockInfo}\n` +
+                `${offer.availability && !isInStock ? `📦 *${t('offer_stock_label', language)}:* ${offer.availability}\n` : ''}` +
+                `${bindingNote}\n\n` +
+                `${t('offer_order_prompt', language)}`;
               try {
                 await updateOrderData(order.id, {
                   selectedOfferCandidateId: offer.id
@@ -2360,42 +2342,28 @@ export async function handleIncomingBotMessage(
                 reply: replyText,
                 orderId: order.id,
                 mediaUrl: offer.imageUrl ?? undefined, // Product image for customer
-                buttons: language === "en" ? ["Yes, order now", "No, show others"] : ["Ja, jetzt bestellen", "Nein, andere suchen"]
+                buttons: [t('btn_yes_order', language), t('btn_no_others', language)]
               };
             }
 
             const top = sorted.slice(0, 3);
             const lines =
-              language === "en"
-                ? top.map(
-                  (o: any, idx: number) => {
-                    const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
-                    const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "n/a"} days`;
-                    return `*${idx + 1}.* 🏷️ ${o.brand ?? "n/a"}\n` +
-                      `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
-                  }
-                )
-                : top.map(
-                  (o: any, idx: number) => {
-                    const isInStock = o.shopName === "Händler-Lager" || o.shopName === "Eigener Bestand";
-                    const deliveryInfo = isInStock ? "📦 Sofort" : `🚚 ${o.deliveryTimeDays ?? "k.A."} Tage`;
-                    return `*${idx + 1}.* 🏷️ ${o.brand ?? "k.A."}\n` +
-                      `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+              top.map(
+                (o: any, idx: number) => {
+                  const isInStock = o.shopName === "H\u00e4ndler-Lager" || o.shopName === "Eigener Bestand";
+                  const deliveryInfo = isInStock ? t('offer_instant', language) : `🚚 ${o.deliveryTimeDays ?? t('na_text', language)} ${language === 'de' ? 'Tage' : language === 'en' ? 'days' : language === 'tr' ? 'g\u00fcn' : language === 'pl' ? 'dni' : 'roj'}`;
+                  return `*${idx + 1}.* 🏷️ ${o.brand ?? t('na_text', language)}\n` +
+            `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
                   }
                 );
-
             const multiBindingNote = t('offer_multi_binding', language);
 
             replyText =
-              language === "en"
-                ? "✅ *I found multiple offers!*\n\nPlease choose one:\n\n" +
+            replyText =
+              t('offer_multi_header', language) + "\n\n" +
                 lines.join("\n\n") +
                 multiBindingNote +
-                "\n\n👉 Reply with *1*, *2* or *3*."
-                : "✅ *Ich habe mehrere Angebote gefunden!*\n\nBitte wähle eines:\n\n" +
-                lines.join("\n\n") +
-                multiBindingNote +
-                "\n\n👉 Antworte mit *1*, *2* oder *3*.";
+                "\n\n" + t('offer_choose_prompt', language);
 
             try {
               await updateOrderData(order.id, {
@@ -2667,7 +2635,7 @@ export async function handleIncomingBotMessage(
 
     const vehicleDescToSave = hasVehicleImage
       ? vehicleDescription
-        ? `${vehicleDescription}\n${vehicleImageNote ?? ""}`
+        ? `${ vehicleDescription } \n${ vehicleImageNote ?? "" } `
         : vehicleImageNote ?? ""
       : vehicleDescription || "";
 

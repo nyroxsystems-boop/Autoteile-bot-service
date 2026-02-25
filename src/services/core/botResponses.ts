@@ -71,6 +71,15 @@ type ResponseKey =
     | 'goodbye'
     | 'order_complete'
     | 'delivery_or_pickup_ask'
+    | 'offer_brand_label'
+    | 'offer_price_label'
+    | 'offer_stock_label'
+    | 'offer_instant'
+    | 'na_text'
+    | 'btn_yes_order'
+    | 'btn_no_others'
+    | 'qa_error'
+    | 'qa_missing_info'
     | 'offer_confirmed'
     | 'order_confirmed'
     | 'order_another_part'
@@ -525,6 +534,79 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: 'Lütfen karar verin: Teslimat (D) veya Teslim Alma (P)?',
         ku: 'Ji kerema xwe biryar bidin: Gihandin (D) an Wergirtin (P)?',
         pl: 'Proszę zdecydować: Dostawa (D) czy Odbiór (P)?',
+    },
+
+
+    offer_brand_label: {
+        de: 'Marke',
+        en: 'Brand',
+        tr: 'Marka',
+        ku: 'Marka',
+        pl: 'Marka',
+    },
+
+    offer_price_label: {
+        de: 'Preis',
+        en: 'Price',
+        tr: 'Fiyat',
+        ku: 'Biha',
+        pl: 'Cena',
+    },
+
+    offer_stock_label: {
+        de: 'Verf\u00fcgbarkeit',
+        en: 'Stock',
+        tr: 'Stok',
+        ku: 'Amade',
+        pl: 'Dost\u0119pno\u015b\u0107',
+    },
+
+    offer_instant: {
+        de: '\ud83d\udce6 Sofort',
+        en: '\ud83d\udce6 Instant',
+        tr: '\ud83d\udce6 Hemen',
+        ku: '\ud83d\udce6 Tavil\u00ea',
+        pl: '\ud83d\udce6 Od r\u0119ki',
+    },
+
+    na_text: {
+        de: 'k.A.',
+        en: 'n/a',
+        tr: 'bilgi yok',
+        ku: 'ne d\u00eayar',
+        pl: 'b.d.',
+    },
+
+    btn_yes_order: {
+        de: 'Ja, jetzt bestellen',
+        en: 'Yes, order now',
+        tr: 'Evet, sipari\u015f ver',
+        ku: 'Er\u00ea, niha ferman bide',
+        pl: 'Tak, zam\u00f3w teraz',
+    },
+
+    btn_no_others: {
+        de: 'Nein, andere suchen',
+        en: 'No, show others',
+        tr: 'Hay\u0131r, di\u011ferlerini g\u00f6ster',
+        ku: 'Na, y\u00ean din n\u00ee\u015fan bide',
+        pl: 'Nie, poka\u017c inne',
+    },
+
+    qa_error: {
+        de: 'Gute Frage! Leider kann ich sie gerade nicht beantworten. Versuchen Sie es bitte sp\u00e4ter erneut.',
+        en: 'Good question! I can\'t answer it right now, please try again later.',
+        tr: '\u0130yi soru! \u015eu anda cevaplayam\u0131yorum, l\u00fctfen daha sonra tekrar deneyin.',
+        ku: 'Pirsa ba\u015f! Ez niha nikarim bersiv bidim, ji kerema xwe pa\u015f\u00ea d\u00eesa bicerib\u00eenin.',
+        pl: 'Dobre pytanie! Niestety nie mog\u0119 teraz odpowiedzie\u0107, prosz\u0119 spr\u00f3bowa\u0107 p\u00f3\u017aniej.',
+    },
+
+    qa_missing_info: {
+        de: '\n\nDamit ich passende Teile finden kann, brauche ich noch: {fields}.',
+        en: '\n\nTo find the correct parts, I still need: {fields}.',
+        tr: '\n\nDo\u011fru par\u00e7alar\u0131 bulmak i\u00e7in hala ihtiyac\u0131m var: {fields}.',
+        ku: '\n\nJi bo d\u00eetina per\u00e7ey\u00ean rast, h\u00ea j\u00ee hewce ye: {fields}.',
+        pl: '\n\nAby znale\u017a\u0107 odpowiednie cz\u0119\u015bci, potrzebuj\u0119 jeszcze: {fields}.',
     },
 
     typing_indicator: {
