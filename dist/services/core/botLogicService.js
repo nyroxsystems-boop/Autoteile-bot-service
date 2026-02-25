@@ -86,13 +86,14 @@ async function answerGeneralQuestion(params) {
     const { userText, language, missingVehicleInfo, knownVehicleSummary } = params;
     let missingInfoSentence = "";
     if (missingVehicleInfo.length > 0) {
-        if (missingVehicleInfo.length > 0) {
-            missingInfoSentence = (0, botResponses_1.tWith)('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
-        }
+        missingInfoSentence = (0, botResponses_1.tWith)('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
     }
-    const userPrompt = (language === "de"
-        ? `Nutzerfrage: "${userText}"\n\nBereits bekannte Fahrzeugdaten: ${knownVehicleSummary}\nNoch fehlende Infos: ${missingVehicleInfo.join(", ") || "keine"}`
-        : `User question: "${userText}"\n\nKnown vehicle data: ${knownVehicleSummary}\nMissing info: ${missingVehicleInfo.join(", ") || "none"}`) + "\n\nBitte beantworte die Frage oben.";
+    const userPrompt = [
+        `User message: "${userText}"`,
+        `Known vehicle data: ${knownVehicleSummary}`,
+        `Missing info: ${missingVehicleInfo.join(", ") || "none"}`,
+        `IMPORTANT: Answer in ${language === 'de' ? 'German' : language === 'tr' ? 'Turkish' : language === 'ku' ? 'Kurdish (Kurmanji)' : language === 'pl' ? 'Polish' : 'English'}. Be helpful and concise.`
+    ].join("\n");
     try {
         const text = await (0, geminiService_1.generateChatCompletion)({
             messages: [
@@ -1133,7 +1134,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     const scrapeResult = await scrapeOffersForOrder(order.id, extractedOem);
                     if (scrapeResult && scrapeResult.length > 0) {
                         return {
-                            reply: `✅ OEM ${extractedOem} erkannt! Ich habe ${scrapeResult.length} Angebot(e) gefunden. Soll ich Ihnen die Details zeigen?`,
+                            reply: (0, botResponses_1.tWith)('oem_direct_found', language, { oem: extractedOem, count: String(scrapeResult.length) }),
                             orderId: order.id
                         };
                     }
@@ -1147,7 +1148,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                 catch (err) {
                     logger_1.logger.error("[BotLogic] OEM direct scraping failed", { error: err?.message, oem: extractedOem });
                     return {
-                        reply: `✅ OEM ${extractedOem} erkannt. Ich leite Ihre Anfrage an einen Experten weiter, da die automatische Suche gerade nicht verfügbar ist.`,
+                        reply: (0, botResponses_1.tWith)('oem_direct_scrape_error', language, { oem: extractedOem }),
                         orderId: order.id
                     };
                 }
@@ -1165,9 +1166,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
             }
             const lang = orderToCancel.language || "de";
             return {
-                reply: lang === "en"
-                    ? "No problem! I've cancelled your request. If you need anything else, just write me."
-                    : "Kein Problem! Ihre Anfrage wurde abgebrochen. Wenn Sie etwas anderes brauchen, schreiben Sie mir einfach.",
+                reply: (0, botResponses_1.t)('cancel_confirmed', lang),
                 orderId: orderToCancel.id
             };
         }
@@ -1519,25 +1518,10 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
             const status = order.status;
             const odata = order.order_data || {};
             const delivery = odata.selectedOfferSummary?.deliveryTimeDays ?? "n/a";
-            let statusReply = "";
-            if (language === "en") {
-                statusReply = `I've checked your order ${order.id}. Current status: ${status}. `;
-                if (status === "done")
-                    statusReply += "It should be on its way or ready for pickup!";
-                else if (status === "ready")
-                    statusReply += `It is currently being processed. Estimated delivery: ${delivery} days.`;
-                else
-                    statusReply += "We are currently looking for the best price for you.";
-            }
-            else {
-                statusReply = `Ich habe nachgesehen (Ticket ${order.id}). Status: ${status}. `;
-                if (status === "done")
-                    statusReply += "Ihre Bestellung ist abgeschlossen und sollte bald bei Ihnen sein!";
-                else if (status === "ready")
-                    statusReply += `Wir bearbeiten Ihre Bestellung. Geschätzte Lieferzeit: ${delivery} Tage.`;
-                else
-                    statusReply += "Wir suchen gerade noch nach dem besten Angebot für Sie.";
-            }
+            const statusReply = (0, botResponses_1.tWith)('status_header', language, { orderId: order.id, status }) +
+                (status === "done" ? (0, botResponses_1.t)('status_done', language) :
+                    status === "ready" ? (0, botResponses_1.tWith)('status_ready', language, { delivery }) :
+                        (0, botResponses_1.t)('status_searching', language));
             return { reply: statusReply, orderId: order.id };
         }
         // Allgemeine Fragen (General QA)
@@ -1996,10 +1980,10 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                                 : (0, botResponses_1.tWith)('offer_delivery', language, { delivery });
                             replyText =
                                 `${(0, botResponses_1.t)('offer_single_header', language)}\n\n` +
-                                    `\ud83c\udff7\ufe0f *${(0, botResponses_1.t)('offer_brand_label', language)}:* ${offer.brand ?? (0, botResponses_1.t)('na_text', language)}\n` +
-                                    `\ud83d\udcb0 *${(0, botResponses_1.t)('offer_price_label', language)}:* ${endPrice} ${offer.currency}\n` +
+                                    `🏷️ *${(0, botResponses_1.t)('offer_brand_label', language)}:* ${offer.brand ?? (0, botResponses_1.t)('na_text', language)}\n` +
+                                    `💰 *${(0, botResponses_1.t)('offer_price_label', language)}:* ${endPrice} ${offer.currency}\n` +
                                     `${stockInfo}\n` +
-                                    `${offer.availability && !isInStock ? `\ud83d\udce6 *${(0, botResponses_1.t)('offer_stock_label', language)}:* ${offer.availability}\n` : ''}` +
+                                    `${offer.availability && !isInStock ? `📦 *${(0, botResponses_1.t)('offer_stock_label', language)}:* ${offer.availability}\n` : ''}` +
                                     `${bindingNote}\n\n` +
                                     `${(0, botResponses_1.t)('offer_order_prompt', language)}`;
                             try {
@@ -2022,9 +2006,9 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                         const top = sorted.slice(0, 3);
                         const lines = top.map((o, idx) => {
                             const isInStock = o.shopName === "H\u00e4ndler-Lager" || o.shopName === "Eigener Bestand";
-                            const deliveryInfo = isInStock ? (0, botResponses_1.t)('offer_instant', language) : `\ud83d\ude9a ${o.deliveryTimeDays ?? (0, botResponses_1.t)('na_text', language)} ${language === 'de' ? 'Tage' : language === 'en' ? 'days' : language === 'tr' ? 'g\u00fcn' : language === 'pl' ? 'dni' : 'roj'}`;
-                            return `*${idx + 1}.* \ud83c\udff7\ufe0f ${o.brand ?? (0, botResponses_1.t)('na_text', language)}\n` +
-                                `   \ud83d\udcb0 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+                            const deliveryInfo = isInStock ? (0, botResponses_1.t)('offer_instant', language) : `🚚 ${o.deliveryTimeDays ?? (0, botResponses_1.t)('na_text', language)} ${language === 'de' ? 'Tage' : language === 'en' ? 'days' : language === 'tr' ? 'g\u00fcn' : language === 'pl' ? 'dni' : 'roj'}`;
+                            return `*${idx + 1}.* 🏷️ ${o.brand ?? (0, botResponses_1.t)('na_text', language)}\n` +
+                                `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
                         });
                         const multiBindingNote = (0, botResponses_1.t)('offer_multi_binding', language);
                         replyText =

@@ -73,16 +73,14 @@ async function answerGeneralQuestion(params: {
 
   let missingInfoSentence = "";
   if (missingVehicleInfo.length > 0) {
-    if (missingVehicleInfo.length > 0) {
-      missingInfoSentence = tWith('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
-    }
+    missingInfoSentence = tWith('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
   }
-  const userPrompt =
-    (language === "de"
-      ? `Nutzerfrage: "${userText}"\n\nBereits bekannte Fahrzeugdaten: ${knownVehicleSummary}\nNoch fehlende Infos: ${missingVehicleInfo.join(", ") || "keine"
-      }`
-      : `User question: "${userText}"\n\nKnown vehicle data: ${knownVehicleSummary}\nMissing info: ${missingVehicleInfo.join(", ") || "none"
-      }`) + "\n\nBitte beantworte die Frage oben.";
+  const userPrompt = [
+    `User message: "${userText}"`,
+    `Known vehicle data: ${knownVehicleSummary}`,
+    `Missing info: ${missingVehicleInfo.join(", ") || "none"}`,
+    `IMPORTANT: Answer in ${language === 'de' ? 'German' : language === 'tr' ? 'Turkish' : language === 'ku' ? 'Kurdish (Kurmanji)' : language === 'pl' ? 'Polish' : 'English'}. Be helpful and concise.`
+  ].join("\n");
 
   try {
     const text = await generateChatCompletion({
@@ -1376,7 +1374,7 @@ export async function handleIncomingBotMessage(
 
           if (scrapeResult && scrapeResult.length > 0) {
             return {
-              reply: `✅ OEM ${extractedOem} erkannt! Ich habe ${scrapeResult.length} Angebot(e) gefunden. Soll ich Ihnen die Details zeigen?`,
+              reply: tWith('oem_direct_found', language, { oem: extractedOem, count: String(scrapeResult.length) }),
               orderId: order.id
             };
           } else {
@@ -1388,7 +1386,7 @@ export async function handleIncomingBotMessage(
         } catch (err: any) {
           logger.error("[BotLogic] OEM direct scraping failed", { error: err?.message, oem: extractedOem });
           return {
-            reply: `✅ OEM ${extractedOem} erkannt. Ich leite Ihre Anfrage an einen Experten weiter, da die automatische Suche gerade nicht verfügbar ist.`,
+            reply: tWith('oem_direct_scrape_error', language, { oem: extractedOem }),
             orderId: order.id
           };
         }
@@ -1406,9 +1404,7 @@ export async function handleIncomingBotMessage(
       }
       const lang = orderToCancel.language || "de";
       return {
-        reply: lang === "en"
-          ? "No problem! I've cancelled your request. If you need anything else, just write me."
-          : "Kein Problem! Ihre Anfrage wurde abgebrochen. Wenn Sie etwas anderes brauchen, schreiben Sie mir einfach.",
+        reply: t('cancel_confirmed', lang),
         orderId: orderToCancel.id
       };
     }
@@ -1799,18 +1795,10 @@ export async function handleIncomingBotMessage(
       const odata = order.order_data || {};
       const delivery = odata.selectedOfferSummary?.deliveryTimeDays ?? "n/a";
 
-      let statusReply = "";
-      if (language === "en") {
-        statusReply = `I've checked your order ${order.id}. Current status: ${status}. `;
-        if (status === "done") statusReply += "It should be on its way or ready for pickup!";
-        else if (status === "ready") statusReply += `It is currently being processed. Estimated delivery: ${delivery} days.`;
-        else statusReply += "We are currently looking for the best price for you.";
-      } else {
-        statusReply = `Ich habe nachgesehen (Ticket ${order.id}). Status: ${status}. `;
-        if (status === "done") statusReply += "Ihre Bestellung ist abgeschlossen und sollte bald bei Ihnen sein!";
-        else if (status === "ready") statusReply += `Wir bearbeiten Ihre Bestellung. Geschätzte Lieferzeit: ${delivery} Tage.`;
-        else statusReply += "Wir suchen gerade noch nach dem besten Angebot für Sie.";
-      }
+      const statusReply = tWith('status_header', language, { orderId: order.id, status }) +
+        (status === "done" ? t('status_done', language) :
+          status === "ready" ? tWith('status_ready', language, { delivery }) :
+            t('status_searching', language));
       return { reply: statusReply, orderId: order.id };
     }
 
@@ -2320,7 +2308,7 @@ export async function handleIncomingBotMessage(
                 ? t('offer_pickup', language)
                 : tWith('offer_delivery', language, { delivery });
 
-                replyText =
+              replyText =
                 `${t('offer_single_header', language)}\n\n` +
                 `🏷️ *${t('offer_brand_label', language)}:* ${offer.brand ?? t('na_text', language)}\n` +
                 `💰 *${t('offer_price_label', language)}:* ${endPrice} ${offer.currency}\n` +
@@ -2353,17 +2341,17 @@ export async function handleIncomingBotMessage(
                   const isInStock = o.shopName === "H\u00e4ndler-Lager" || o.shopName === "Eigener Bestand";
                   const deliveryInfo = isInStock ? t('offer_instant', language) : `🚚 ${o.deliveryTimeDays ?? t('na_text', language)} ${language === 'de' ? 'Tage' : language === 'en' ? 'days' : language === 'tr' ? 'g\u00fcn' : language === 'pl' ? 'dni' : 'roj'}`;
                   return `*${idx + 1}.* 🏷️ ${o.brand ?? t('na_text', language)}\n` +
-            `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
-                  }
-                );
+                    `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+                }
+              );
             const multiBindingNote = t('offer_multi_binding', language);
 
             replyText =
-            replyText =
+              replyText =
               t('offer_multi_header', language) + "\n\n" +
-                lines.join("\n\n") +
-                multiBindingNote +
-                "\n\n" + t('offer_choose_prompt', language);
+              lines.join("\n\n") +
+              multiBindingNote +
+              "\n\n" + t('offer_choose_prompt', language);
 
             try {
               await updateOrderData(order.id, {
@@ -2635,7 +2623,7 @@ export async function handleIncomingBotMessage(
 
     const vehicleDescToSave = hasVehicleImage
       ? vehicleDescription
-        ? `${ vehicleDescription } \n${ vehicleImageNote ?? "" } `
+        ? `${vehicleDescription} \n${vehicleImageNote ?? ""} `
         : vehicleImageNote ?? ""
       : vehicleDescription || "";
 

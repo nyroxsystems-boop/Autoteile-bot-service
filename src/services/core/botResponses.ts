@@ -80,6 +80,14 @@ type ResponseKey =
     | 'btn_no_others'
     | 'qa_error'
     | 'qa_missing_info'
+    | 'days_unit'
+    | 'status_done'
+    | 'status_ready'
+    | 'status_searching'
+    | 'status_header'
+    | 'oem_direct_found'
+    | 'oem_direct_scrape_error'
+    | 'cancel_confirmed'
     | 'offer_confirmed'
     | 'order_confirmed'
     | 'order_another_part'
@@ -607,6 +615,71 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: '\n\nDo\u011fru par\u00e7alar\u0131 bulmak i\u00e7in hala ihtiyac\u0131m var: {fields}.',
         ku: '\n\nJi bo d\u00eetina per\u00e7ey\u00ean rast, h\u00ea j\u00ee hewce ye: {fields}.',
         pl: '\n\nAby znale\u017a\u0107 odpowiednie cz\u0119\u015bci, potrzebuj\u0119 jeszcze: {fields}.',
+    },
+
+
+    days_unit: {
+        de: 'Tage',
+        en: 'days',
+        tr: 'gün',
+        ku: 'roj',
+        pl: 'dni',
+    },
+
+    status_header: {
+        de: 'Ich habe nachgesehen (Ticket {orderId}). Status: {status}. ',
+        en: 'I\'ve checked your order {orderId}. Current status: {status}. ',
+        tr: 'Sipari\u015finizi kontrol ettim ({orderId}). Durum: {status}. ',
+        ku: 'Min fermana we kontrol kir ({orderId}). Rewi\u015f: {status}. ',
+        pl: 'Sprawdzi\u0142em zam\u00f3wienie {orderId}. Status: {status}. ',
+    },
+
+    status_done: {
+        de: 'Ihre Bestellung ist abgeschlossen und sollte bald bei Ihnen sein!',
+        en: 'It should be on its way or ready for pickup!',
+        tr: 'Sipari\u015finiz yola \u00e7\u0131km\u0131\u015f olmal\u0131 veya teslim almaya haz\u0131r!',
+        ku: 'Div\u00ea fermana we di r\u00ea de be an amade be ji bo wergirtin\u00ea!',
+        pl: 'Powinno by\u0107 w drodze lub gotowe do odbioru!',
+    },
+
+    status_ready: {
+        de: 'Wir bearbeiten Ihre Bestellung. Gesch\u00e4tzte Lieferzeit: {delivery} Tage.',
+        en: 'It is currently being processed. Estimated delivery: {delivery} days.',
+        tr: '\u015eu anda i\u015fleniyor. Tahmini teslimat: {delivery} g\u00fcn.',
+        ku: 'Niha t\u00ea \u015fuxulkirin. Gihandina texm\u00een\u00ee: {delivery} roj.',
+        pl: 'Jest w trakcie realizacji. Szacowana dostawa: {delivery} dni.',
+    },
+
+    status_searching: {
+        de: 'Wir suchen gerade noch nach dem besten Angebot f\u00fcr Sie.',
+        en: 'We are currently looking for the best price for you.',
+        tr: 'Sizin i\u00e7in en iyi fiyat\u0131 ar\u0131yoruz.',
+        ku: 'Em niha ji bo we bihay\u00ea her\u00ee ba\u015f dig\u00earin.',
+        pl: 'Szukamy dla Ciebie najlepszej oferty.',
+    },
+
+    oem_direct_found: {
+        de: '\u2705 OEM {oem} erkannt! Ich habe {count} Angebot(e) gefunden. Soll ich Ihnen die Details zeigen?',
+        en: '\u2705 OEM {oem} recognized! I found {count} offer(s). Want me to show you the details?',
+        tr: '\u2705 OEM {oem} tan\u0131nd\u0131! {count} teklif buldum. Detaylar\u0131 g\u00f6stermemi ister misiniz?',
+        ku: '\u2705 OEM {oem} hate nas\u00een! Min {count} p\u00ea\u015fniyar d\u00eet(in). Ma h\u00fbn dixwazin h\u00fbragahiyan bib\u00een\u0131m?',
+        pl: '\u2705 OEM {oem} rozpoznany! Znalaz\u0142em {count} ofert(\u0119). Pokaza\u0107 szczeg\u00f3\u0142y?',
+    },
+
+    oem_direct_scrape_error: {
+        de: '\u2705 OEM {oem} erkannt. Ich leite Ihre Anfrage an einen Experten weiter, da die automatische Suche gerade nicht verf\u00fcgbar ist.',
+        en: '\u2705 OEM {oem} recognized. I\'m forwarding your request to an expert as the automated search is currently unavailable.',
+        tr: '\u2705 OEM {oem} tan\u0131nd\u0131. Otomatik arama \u015fu anda kullan\u0131lam\u0131yor, iste\u011finizi bir uzmana y\u00f6nlendiriyorum.',
+        ku: '\u2705 OEM {oem} hate nas\u00een. L\u00eager\u00eena otomat\u00eek niha ne berdest e, ez dax\u0131waziya we ji pispor\u00ea re di\u015f\u00een\u0131m.',
+        pl: '\u2705 OEM {oem} rozpoznany. Przekazuj\u0119 zapytanie do eksperta, automatyczne wyszukiwanie jest niedost\u0119pne.',
+    },
+
+    cancel_confirmed: {
+        de: 'Kein Problem! Ihre Anfrage wurde abgebrochen. Wenn Sie etwas anderes brauchen, schreiben Sie mir einfach.',
+        en: 'No problem! I\'ve cancelled your request. If you need anything else, just write me.',
+        tr: 'Sorun de\u011fil! \u0130ste\u011finiz iptal edildi. Ba\u015fka bir \u015feye ihtiyac\u0131n\u0131z olursa, yaz\u0131n.',
+        ku: 'Tu pirsgir\u00eek nîn e! Daxwaza we hate betal kirin. Heke h\u00fbn ti\u015ftek\u00ee din hewce bikin, ji min re biniv\u00eesin.',
+        pl: '\u017baden problem! Anulowa\u0142em zapytanie. Je\u015bli potrzebujesz czego\u015b innego, napisz.',
     },
 
     typing_indicator: {
