@@ -796,14 +796,14 @@ async function runOemLookupAndScraping(
         logger.error("Scrape after OEM failed", { error: err?.message, orderId });
         return {
           replyText: t('oem_scrape_failed', language),
-          nextStatus: "collect_part"
+          nextStatus: "needs_human" as ConversationStatus
         };
       }
     }
 
     return {
       replyText: t('oem_product_uncertain', language),
-      nextStatus: "collect_part"
+      nextStatus: "needs_human" as ConversationStatus
     };
   } catch (err: any) {
     logger.error("resolveOEM failed", { error: err?.message, orderId });

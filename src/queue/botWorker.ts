@@ -111,7 +111,7 @@ const worker = new Worker<BotJobData>(
         });
 
         // P1 #9: Record activity for session timeout tracking
-        recordActivity(from, orderId || '', null); // language populated after handleIncomingBotMessage
+        // recordActivity moved to after handleIncomingBotMessage (see below for language population)
 
         try {
             // ============================================================

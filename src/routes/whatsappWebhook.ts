@@ -60,6 +60,10 @@ router.post("/", async (req, res) => {
   }
 
   const from = (req.body?.From as string) || "";
+  if (!from) {
+    logger.warn("[Twilio Webhook] Empty From field, rejecting");
+    return res.status(400).send("<Response></Response>");
+  }
   const text = (req.body?.Body as string) || "";
   const numMediaStr = (req.body?.NumMedia as string) || "0";
   const numMedia = parseInt(numMediaStr, 10) || 0;

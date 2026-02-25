@@ -653,13 +653,13 @@ vehicleOverride) {
                 logger_1.logger.error("Scrape after OEM failed", { error: err?.message, orderId });
                 return {
                     replyText: (0, botResponses_1.t)('oem_scrape_failed', language),
-                    nextStatus: "collect_part"
+                    nextStatus: "needs_human"
                 };
             }
         }
         return {
             replyText: (0, botResponses_1.t)('oem_product_uncertain', language),
-            nextStatus: "collect_part"
+            nextStatus: "needs_human"
         };
     }
     catch (err) {
