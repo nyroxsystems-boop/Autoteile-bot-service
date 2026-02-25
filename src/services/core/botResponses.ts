@@ -33,12 +33,45 @@ type ResponseKey =
     | 'vehicle_incomplete'
     | 'vehicle_need_more'
     | 'vehicle_confirm'
+    | 'vehicle_correction'
     | 'doc_hint'
     | 'ask_brand'
     | 'ask_model'
     | 'ask_vin_general'
+    | 'caution_check'
+    | 'part_mentioned'
     | 'offers_intro'
     | 'no_offers'
+    | 'offer_collecting'
+    | 'offer_binding_note'
+    | 'offer_multi_binding'
+    | 'offer_pickup'
+    | 'offer_delivery'
+    | 'offer_single_header'
+    | 'offer_multi_header'
+    | 'offer_choose_prompt'
+    | 'offer_order_prompt'
+    | 'offer_choice_invalid'
+    | 'offer_choice_not_found'
+    | 'offer_confirmed_choice'
+    | 'offer_confirm_prompt'
+    | 'offer_decline_alt'
+    | 'offer_lost'
+    | 'offer_not_found'
+    | 'offer_fetch_failed'
+    | 'confirm_vehicle_yes'
+    | 'delivery_or_pickup'
+    | 'delivery_ask_address'
+    | 'pickup_location'
+    | 'address_saved'
+    | 'address_invalid'
+    | 'fresh_start'
+    | 'follow_up_part'
+    | 'follow_up_fallback'
+    | 'goodbye'
+    | 'order_complete'
+    | 'delivery_or_pickup_ask'
+    | 'offer_confirmed'
     | 'order_confirmed'
     | 'order_another_part'
     | 'order_new_vehicle'
@@ -227,6 +260,271 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: '👋 Merhaba! Hâlâ burada mısınız? Size parça bulmada yardımcı olmaya devam edebilirim.',
         ku: '👋 Silav! Hûn hîn li vir in? Ez dikarim berdewam bikim ku ji we re perçeya rast bibînim.',
         pl: '👋 Cześć! Czy nadal jesteś? Mogę dalej pomagać w znalezieniu odpowiedniej części.',
+    },
+
+
+    caution_check: {
+        de: ' (bitte kurz prüfen)',
+        en: ' (please double-check)',
+        tr: ' (lütfen kontrol edin)',
+        ku: ' (ji kerema xwe kontrol bikin)',
+        pl: ' (proszę sprawdzić)',
+    },
+
+    part_mentioned: {
+        de: 'das genannte Teil',
+        en: 'the part you mentioned',
+        tr: 'bahsettiğiniz parça',
+        ku: 'perçeya ku we got',
+        pl: 'wspomniana część',
+    },
+
+    vehicle_correction: {
+        de: 'Oh, das tut mir leid. Bitte schicken Sie mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Fahrzeug finden kann.',
+        en: 'Oh, I\'m sorry. Please send me a photo of your registration or the correct VIN so I can identify the right car.',
+        tr: 'Özür dilerim. Lütfen ruhsat fotoğrafı veya doğru VIN gönderin, aracınızı belirleyebileyim.',
+        ku: 'Bibore, ez xemgîn im. Ji kerema xwe wêneya belgeyê an VIN-a rast bişînin da ku ez wesayîta rast nas bikim.',
+        pl: 'Przepraszam. Proszę wysłać zdjęcie dowodu rejestracyjnego lub poprawny VIN, abym mógł zidentyfikować właściwy pojazd.',
+    },
+
+    confirm_vehicle_yes: {
+        de: 'Welches Teil suchen Sie? Bitte nennen Sie die Position und eventuelle Symptome.',
+        en: 'Which part do you need? Please include position and symptoms.',
+        tr: 'Hangi parçaya ihtiyacınız var? Lütfen pozisyon ve belirtileri de belirtin.',
+        ku: 'Hûn kîjan perçeyê hewce ne? Ji kerema xwe cih û nîşaneyan jî binivîsin.',
+        pl: 'Jakiej części potrzebujesz? Proszę podać pozycję i objawy.',
+    },
+
+    offer_collecting: {
+        de: 'Ich suche noch passende Angebote. Sie bekommen gleich eine Auswahl.',
+        en: 'I\'m still collecting offers for you. You\'ll get a selection shortly.',
+        tr: 'Sizin için hâlâ teklifler topluyorum. Kısa sürede bir seçenek alacaksınız.',
+        ku: 'Ez hê jî ji bo we pêşniyaran kom dikim. Hûn ê di demek kurt de vebijarkek bistînin.',
+        pl: 'Wciąż zbieram dla Ciebie oferty. Wkrótce otrzymasz wybór.',
+    },
+
+    offer_binding_note: {
+        de: '\n\n⚠️ HINWEIS: Mit Ihrer Bestätigung geben Sie ein verbindliches Kaufangebot bei Ihrem Händler ab.',
+        en: '\n\n⚠️ NOTE: This offer is a binding purchase agreement.',
+        tr: '\n\n⚠️ NOT: Bu teklif bağlayıcı bir satın alma sözleşmesidir.',
+        ku: '\n\n⚠️ ZANÎN: Ev pêşniyar peymanek kirînê ya girêdayî ye.',
+        pl: '\n\n⚠️ UWAGA: Ta oferta stanowi wiążącą umowę kupna.',
+    },
+
+    offer_multi_binding: {
+        de: '\n\n⚠️ Die Auswahl einer Option gilt als verbindliches Kaufangebot.',
+        en: '\n\n⚠️ Selecting an option constitutes a binding purchase agreement.',
+        tr: '\n\n⚠️ Bir seçenek belirlemek bağlayıcı bir satın alma sözleşmesi oluşturur.',
+        ku: '\n\n⚠️ Hilbijartina vebijarkekê peymanek kirînê ya girêdayî çêdike.',
+        pl: '\n\n⚠️ Wybór opcji stanowi wiążącą umowę kupna.',
+    },
+
+    offer_pickup: {
+        de: '📦 *Sofort abholbereit!*',
+        en: '📦 *Available for immediate pickup!*',
+        tr: '📦 *Hemen teslim alınabilir!*',
+        ku: '📦 *Tavilê amade ye ji bo wergirtinê!*',
+        pl: '📦 *Dostępne do natychmiastowego odbioru!*',
+    },
+
+    offer_delivery: {
+        de: '🚚 *Lieferzeit:* {delivery} Tage',
+        en: '🚚 *Delivery:* {delivery} days',
+        tr: '🚚 *Teslimat:* {delivery} gün',
+        ku: '🚚 *Gihandina:* {delivery} roj',
+        pl: '🚚 *Dostawa:* {delivery} dni',
+    },
+
+    offer_single_header: {
+        de: '✅ *Perfektes Angebot gefunden!*',
+        en: '✅ *Perfect Match Found!*',
+        tr: '✅ *Mükemmel Eşleşme Bulundu!*',
+        ku: '✅ *Lihevhatina Bêkêmasî Hat Dîtin!*',
+        pl: '✅ *Znaleziono idealne dopasowanie!*',
+    },
+
+    offer_multi_header: {
+        de: '✅ *Ich habe mehrere Angebote gefunden!*\n\nBitte wählen Sie eines:',
+        en: '✅ *I found multiple offers!*\n\nPlease choose one:',
+        tr: '✅ *Birden fazla teklif buldum!*\n\nLütfen birini seçin:',
+        ku: '✅ *Min gelek pêşniyar dîtin!*\n\nJi kerema xwe yekê hilbijêrin:',
+        pl: '✅ *Znalazłem kilka ofert!*\n\nProszę wybrać jedną:',
+    },
+
+    offer_choose_prompt: {
+        de: '👉 Antworten Sie mit *1*, *2* oder *3*.',
+        en: '👉 Reply with *1*, *2* or *3*.',
+        tr: '👉 *1*, *2* veya *3* ile yanıtlayın.',
+        ku: '👉 Bi *1*, *2* an *3* bersiv bidin.',
+        pl: '👉 Odpowiedz *1*, *2* lub *3*.',
+    },
+
+    offer_order_prompt: {
+        de: 'Jetzt verbindlich bestellen?',
+        en: 'Do you want to order this now?',
+        tr: 'Şimdi sipariş vermek ister misiniz?',
+        ku: 'Ma hûn dixwazin niha fermanê bidin?',
+        pl: 'Czy chcesz teraz zamówić?',
+    },
+
+    offer_choice_invalid: {
+        de: 'Bitte antworten Sie mit 1, 2 oder 3, um ein Angebot auszuwählen.',
+        en: 'Please reply with 1, 2 or 3 to pick one of the offers.',
+        tr: 'Lütfen tekliflerden birini seçmek için 1, 2 veya 3 ile yanıtlayın.',
+        ku: 'Ji kerema xwe bi 1, 2 an 3 bersiv bidin da ku yek ji pêşniyaran hilbijêrin.',
+        pl: 'Proszę odpowiedzieć 1, 2 lub 3, aby wybrać jedną z ofert.',
+    },
+
+    offer_choice_not_found: {
+        de: 'Ich konnte Ihre Auswahl nicht zuordnen. Ich zeige Ihnen die Angebote erneut.',
+        en: 'I couldn\'t match your choice. I\'ll show the offers again.',
+        tr: 'Seçiminizi eşleştiremedim. Teklifleri tekrar göstereceğim.',
+        ku: 'Min nekarî vebijarka we lihev bikim. Ez ê pêşniyaran dîsa nîşan bidim.',
+        pl: 'Nie udało się dopasować wyboru. Pokażę oferty ponownie.',
+    },
+
+    offer_confirmed_choice: {
+        de: 'Vielen Dank! Ihre Bestellung ({orderId}) wurde mit dem Angebot von {shop} ({brand}, {price} {currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Ihr Händler wird Sie bald kontaktieren.',
+        en: 'Thank you! Your order ({orderId}) has been saved with the offer from {shop} ({brand}, {price} {currency}). This is now a binding agreement. Your dealer will contact you soon.',
+        tr: 'Teşekkürler! Siparişiniz ({orderId}) {shop} teklifleriyle ({brand}, {price} {currency}) kaydedildi. Bu artık bağlayıcı bir anlaşmadır. Bayiniz yakında sizinle iletişime geçecek.',
+        ku: 'Spas! Fermana we ({orderId}) bi pêşniyara {shop} ({brand}, {price} {currency}) hat tomarkirin. Ev niha peymanek girêdayî ye. Firoşkarê we dê zû bi we re têkilî daynin.',
+        pl: 'Dziękuję! Zamówienie ({orderId}) zostało zapisane z ofertą od {shop} ({brand}, {price} {currency}). To jest teraz wiążąca umowa. Dealer wkrótce się z Tobą skontaktuje.',
+    },
+
+    offer_confirm_prompt: {
+        de: 'Wenn das Angebot für Sie passt, antworten Sie bitte mit "Ja" oder "OK". Wenn nicht, sagen Sie mir kurz, was Ihnen wichtig ist (z.B. Preis, Marke oder Lieferzeit).',
+        en: 'If this offer works for you, please reply with "Yes" or "OK". If not, tell me what matters most (price, brand, delivery time).',
+        tr: 'Bu teklif sizin için uygunsa, lütfen "Evet" veya "OK" ile yanıtlayın. Değilse, en önemli olanı söyleyin (fiyat, marka, teslimat süresi).',
+        ku: 'Heke ev pêşniyar ji bo we maqûl e, ji kerema xwe bi "Erê" an "OK" bersiv bidin. Heke na, ji min re bibêjin çi girîng e (bihayê, marka, dema gihandina).',
+        pl: 'Jeśli ta oferta Ci odpowiada, odpowiedz "Tak" lub "OK". Jeśli nie, powiedz mi, co jest najważniejsze (cena, marka, czas dostawy).',
+    },
+
+    offer_decline_alt: {
+        de: 'Alles klar, ich schaue, ob ich Ihnen noch andere Angebote finden kann. Sagen Sie mir gerne, was Ihnen wichtiger ist: Preis, Marke oder Lieferzeit.',
+        en: 'Got it, I\'ll see if I can find alternative offers. Tell me what matters most: price, brand or delivery time.',
+        tr: 'Anladım, alternatif teklifler bulabilir miyim bakacağım. En önemli olanı söyleyin: fiyat, marka veya teslimat süresi.',
+        ku: 'Baş e, ez ê bibînim ka ez dikarim pêşniyarên din bibînim. Ji min re bibêjin çi girîngtir e: bihayê, marka an dema gihandina.',
+        pl: 'Rozumiem, zobaczę czy znajdę alternatywne oferty. Powiedz mi, co jest najważniejsze: cena, marka czy czas dostawy.',
+    },
+
+    offer_lost: {
+        de: 'Ich habe das Angebot nicht mehr parat. Ich hole die Optionen nochmal.',
+        en: 'I lost track of the offer. I\'ll fetch the options again.',
+        tr: 'Teklifi kaybettim. Seçenekleri tekrar getireceğim.',
+        ku: 'Min pêşniyar winda kir. Ez ê vebijarkên dîsa bînim.',
+        pl: 'Straciłem ślad oferty. Pobieram opcje ponownie.',
+    },
+
+    offer_not_found: {
+        de: 'Ich konnte dieses Angebot nicht mehr finden. Ich zeige Ihnen die verfügbaren Angebote erneut.',
+        en: 'I couldn\'t find that offer anymore. I\'ll show available offers again.',
+        tr: 'Bu teklifi artık bulamadım. Mevcut teklifleri tekrar göstereceğim.',
+        ku: 'Min êdî nekarî vê pêşniyarê bibînim. Ez ê pêşniyarên berdest dîsa nîşan bidim.',
+        pl: 'Nie mogę już znaleźć tej oferty. Pokażę dostępne oferty ponownie.',
+    },
+
+    offer_fetch_failed: {
+        de: 'Ich konnte gerade keine Angebote abrufen. Ich melde mich bald erneut.',
+        en: 'I couldn\'t retrieve offers right now. I\'ll update you soon.',
+        tr: 'Şu anda teklifleri alamadım. Yakında size bilgi vereceğim.',
+        ku: 'Min niha nekarî pêşniyaran bistînim. Ez ê zû we agahdar bikim.',
+        pl: 'Nie udało się pobrać ofert. Wkrótce się odezwę.',
+    },
+
+    offer_confirmed: {
+        de: 'Perfekt, ich habe dieses Angebot für Sie gespeichert. Ihre Bestellung ({orderId}) ist nun verbindlich. Ihr Händler wird Sie bald kontaktieren.',
+        en: 'Perfect, I\'ve saved this offer for you. Your order ({orderId}) is now binding. Your dealer will contact you soon.',
+        tr: 'Mükemmel, bu teklifi sizin için kaydettim. Siparişiniz ({orderId}) artık bağlayıcıdır. Bayiniz yakında sizinle iletişime geçecek.',
+        ku: 'Bêkêmasî, min ev pêşniyar ji bo we tomar kir. Fermana we ({orderId}) niha girêdayî ye. Firoşkarê we dê zû bi we re têkilî daynin.',
+        pl: 'Doskonale, zapisałem tę ofertę. Zamówienie ({orderId}) jest teraz wiążące. Dealer wkrótce się skontaktuje.',
+    },
+
+    delivery_or_pickup: {
+        de: 'Möchten Sie das Teil nach Hause geliefert bekommen (D) oder holen Sie es beim Händler ab (P)?',
+        en: 'Do you want the part delivered to your home (D) or do you want to pick it up at the dealer (P)?',
+        tr: 'Parçanın eve teslim edilmesini mi (D) yoksa bayiden teslim almayı mı (P) tercih edersiniz?',
+        ku: 'Ma hûn dixwazin perçe were malê we (D) an hûn dixwazin ji firoşkar bistînin (P)?',
+        pl: 'Czy chcesz dostawę do domu (D) czy odbiór u dealera (P)?',
+    },
+
+    delivery_ask_address: {
+        de: 'Sehr gute Wahl. Bitte senden Sie mir nun Ihre vollständige Lieferadresse.',
+        en: 'Excellent choice. Please send me your full delivery address.',
+        tr: 'Mükemmel seçim. Lütfen tam teslimat adresinizi gönderin.',
+        ku: 'Vebijarkek hêja. Ji kerema xwe navnîşana gihandina xwe ya tevahî bişînin.',
+        pl: 'Świetny wybór. Proszę podać pełny adres dostawy.',
+    },
+
+    pickup_location: {
+        de: 'Perfekt! Sie können das Teil hier abholen: {location}. Bis bald!',
+        en: 'Perfect! You can pick up the part at: {location}. See you soon!',
+        tr: 'Mükemmel! Parçayı buradan teslim alabilirsiniz: {location}. Yakında görüşürüz!',
+        ku: 'Bêkêmasî! Hûn dikarin perçeyê li vir bistînin: {location}. Heta demek din!',
+        pl: 'Doskonale! Możesz odebrać część pod adresem: {location}. Do zobaczenia!',
+    },
+
+    address_saved: {
+        de: 'Vielen Dank! Ihre Lieferadresse wurde gespeichert. Wir versenden das Teil in Kürze.',
+        en: 'Thank you! Your delivery address has been saved. We will ship the part shortly.',
+        tr: 'Teşekkürler! Teslimat adresiniz kaydedildi. Parçayı kısa sürede göndereceğiz.',
+        ku: 'Spas! Navnîşana gihandina we hat tomarkirin. Em ê perçeyê di demek kurt de bişînin.',
+        pl: 'Dziękuję! Adres dostawy został zapisany. Część zostanie wkrótce wysłana.',
+    },
+
+    address_invalid: {
+        de: 'Bitte geben Sie eine gültige Lieferadresse an.',
+        en: 'Please provide a valid delivery address.',
+        tr: 'Lütfen geçerli bir teslimat adresi girin.',
+        ku: 'Ji kerema xwe navnîşanek gihandina derbasdar binivîsin.',
+        pl: 'Proszę podać prawidłowy adres dostawy.',
+    },
+
+    fresh_start: {
+        de: 'Klar! Schicken Sie mir ein Foto vom Fahrzeugschein des neuen Fahrzeugs.',
+        en: 'Sure! Send me a photo of the vehicle registration document for the new car.',
+        tr: 'Tabii! Yeni araç için ruhsat fotoğrafını gönderin.',
+        ku: 'Bê guman! Wêneya belgeya qeydkirina wesayîta nû bişînin.',
+        pl: 'Jasne! Wyślij mi zdjęcie dowodu rejestracyjnego nowego pojazdu.',
+    },
+
+    follow_up_part: {
+        de: 'Ich nutze Ihr {make} {model}. Welches Teil benötigen Sie?',
+        en: 'I\'m using your {make} {model}. What part do you need?',
+        tr: '{make} {model} aracınızı kullanıyorum. Hangi parçaya ihtiyacınız var?',
+        ku: 'Ez {make} {model} we bi kar tînim. Hûn kîjan perçeyê hewce ne?',
+        pl: 'Używam Twojego {make} {model}. Jakiej części potrzebujesz?',
+    },
+
+    follow_up_fallback: {
+        de: 'Welches Teil benötigen Sie für Ihr Fahrzeug?',
+        en: 'What part do you need for your vehicle?',
+        tr: 'Aracınız için hangi parçaya ihtiyacınız var?',
+        ku: 'Hûn ji bo wesayîta xwe kîjan perçeyê hewce ne?',
+        pl: 'Jakiej części potrzebujesz do swojego pojazdu?',
+    },
+
+    goodbye: {
+        de: 'Vielen Dank! Wenn Sie noch etwas brauchen, schreiben Sie mir jederzeit. 👋',
+        en: 'Thank you! If you need anything else, just write me anytime. 👋',
+        tr: 'Teşekkürler! Başka bir şeye ihtiyacınız olursa, istediğiniz zaman yazın. 👋',
+        ku: 'Spas! Heke hûn tiştekî din hewce bikin, her dem ji min re binivîsin. 👋',
+        pl: 'Dziękuję! Jeśli potrzebujesz czegoś jeszcze, napisz w dowolnym momencie. 👋',
+    },
+
+    order_complete: {
+        de: 'Ihre Bestellung ist abgeschlossen. Wenn Sie weitere Fragen haben, fragen Sie einfach!',
+        en: 'Your order is complete. If you have further questions, just ask!',
+        tr: 'Siparişiniz tamamlandı. Başka sorularınız varsa, sormaktan çekinmeyin!',
+        ku: 'Fermana we temam bû. Heke pirsên we yên din hene, tenê bipirsin!',
+        pl: 'Zamówienie zostało zrealizowane. Jeśli masz dodatkowe pytania, po prostu zapytaj!',
+    },
+
+    delivery_or_pickup_ask: {
+        de: 'Bitte entscheiden Sie sich: Lieferung (D) oder Abholung (P)?',
+        en: 'Please decide: Delivery (D) or Pickup (P)?',
+        tr: 'Lütfen karar verin: Teslimat (D) veya Teslim Alma (P)?',
+        ku: 'Ji kerema xwe biryar bidin: Gihandin (D) an Wergirtin (P)?',
+        pl: 'Proszę zdecydować: Dostawa (D) czy Odbiór (P)?',
     },
 
     typing_indicator: {

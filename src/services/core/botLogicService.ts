@@ -678,7 +678,7 @@ async function runOemLookupAndScraping(
     orderData?.requestedPart ||
     orderData?.partText ||
     partDescription ||
-    (language === "en" ? "the part you mentioned" : "das genannte Teil");
+    t('part_mentioned', language);
 
   try {
     // Prefer the modern `resolveOEMForOrder` if provided by the module.
@@ -796,9 +796,7 @@ async function runOemLookupAndScraping(
         const cautionNote =
           cautious && language === "de"
             ? " (bitte kurz prüfen)"
-            : cautious && language === "en"
-              ? " (please double-check)"
-              : "";
+            : cautious ? t('caution_check', language) : "";
 
         const reply = `${t('oem_product_found', language)}${cautionNote}`;
         return {
@@ -2049,9 +2047,7 @@ export async function handleIncomingBotMessage(
                 } else if (missingFieldsAfterOcr.length === 0) {
                   nextStatus = "collect_part";
                   replyText =
-                    language === "en"
-                      ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                      : t('ocr_success', language);
+                    t('ocr_success', language);
                 } else {
                   // gezielte Rückfrage
                   const field = missingFieldsAfterOcr[0];
@@ -2100,26 +2096,18 @@ export async function handleIncomingBotMessage(
             } else if (missingFields.length === 0) {
               nextStatus = "collect_part";
               replyText =
-                language === "en"
-                  ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                  : t('ocr_success', language);
+                t('ocr_success', language);
             } else {
               // gezielte Rückfrage
               const field = missingFields[0];
               if (field === "vin_or_hsn_tsn") {
-                replyText =
-                  language === "en"
-                    ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                    : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.";
+                replyText = t('ocr_vin_missing', language);
               } else if (field === "make") {
                 replyText = t('ask_brand', language);
               } else if (field === "model") {
                 replyText = t('ask_model', language);
               } else {
-                replyText =
-                  language === "en"
-                    ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                    : t('collect_vehicle_manual', language);
+                replyText = t('ask_vin_general', language);
               }
               nextStatus = "collect_vehicle";
             }
@@ -2170,15 +2158,11 @@ export async function handleIncomingBotMessage(
             const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
             replyText =
               q ||
-              (language === "en"
-                ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                : t('collect_vehicle_manual', language));
+              t('ask_vin_general', language);
             nextStatus = "collect_vehicle";
           } else {
             const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
-            replyText = language === "en"
-              ? `I've identified your vehicle as ${summary}. Is this correct?`
-              : `Ich habe Ihr Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
+            replyText = tWith('vehicle_confirm', language, { summary });
             nextStatus = "confirm_vehicle";
           }
           break;
@@ -2208,16 +2192,12 @@ export async function handleIncomingBotMessage(
               replyText = oemFlow.replyText;
               nextStatus = oemFlow.nextStatus;
             } else {
-              replyText = language === "en"
-                ? "Great! Which part do you need? Please include position and symptoms."
-                : t('collect_part', language);
+              replyText = t('confirm_vehicle_yes', language);
               nextStatus = "collect_part";
             }
           } else {
             // User says no or provided different info
-            replyText = language === "en"
-              ? "Oh, I'm sorry. Please send me a photo of your registration or the correct VIN so I can identify the right car."
-              : "Oh, das tut mir leid. Bitte schicken Sie mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Fahrzeug finden kann.";
+            replyText = t('vehicle_correction', language);
             nextStatus = "collect_vehicle";
             // Option: Clear vehicle data? User might just want to correct it.
           }
@@ -2285,7 +2265,7 @@ export async function handleIncomingBotMessage(
               mergedPartInfo.partText ||
               orderData?.requestedPart ||
               (partDescription || "").trim() ||
-              (language === "en" ? "the part you mentioned" : "das genannte Teil");
+              t('part_mentioned', language);
 
             logger.info("Conversation state", {
               orderId: order.id,
@@ -2331,9 +2311,7 @@ export async function handleIncomingBotMessage(
             logger.info("Show offers", { orderId: order.id, offersCount: sorted.length });
             if (!sorted || sorted.length === 0) {
               replyText =
-                language === "en"
-                  ? "I’m still collecting offers for you. You’ll get a selection shortly."
-                  : "Ich suche noch passende Angebote. Du bekommst gleich eine Auswahl.";
+                t('offer_collecting', language);
               nextStatus = "show_offers";
               break;
             }
@@ -2343,15 +2321,13 @@ export async function handleIncomingBotMessage(
               const endPrice = calculateEndPrice(offer.price);
               const delivery = offer.deliveryTimeDays ?? (language === "en" ? "n/a" : "k.A.");
 
-              const bindingNote = language === "en"
-                ? "\n\n⚠️ NOTE: This offer is a binding purchase agreement."
-                : "\n\n⚠️ HINWEIS: Mit deiner Bestätigung gibst du ein verbindliches Kaufangebot bei deinem Händler ab.";
+              const bindingNote = t('offer_binding_note', language);
 
               // Beautiful offer formatting for WhatsApp (NO LINK, NO SHOP NAME for customer)
               const isInStock = offer.shopName === "Händler-Lager" || offer.shopName === "Eigener Bestand";
               const stockInfo = isInStock
-                ? (language === "en" ? "📦 *Available for immediate pickup!*" : "📦 *Sofort abholbereit!*")
-                : (language === "en" ? `🚚 *Delivery:* ${delivery} days` : `🚚 *Lieferzeit:* ${delivery} Tage`);
+                ? t('offer_pickup', language)
+                : tWith('offer_delivery', language, { delivery });
 
               replyText =
                 language === "en"
@@ -2408,9 +2384,7 @@ export async function handleIncomingBotMessage(
                   }
                 );
 
-            const multiBindingNote = language === "en"
-              ? "\n\n⚠️ Selecting an option constitutes a binding purchase agreement."
-              : "\n\n⚠️ Die Auswahl einer Option gilt als verbindliches Kaufangebot.";
+            const multiBindingNote = t('offer_multi_binding', language);
 
             replyText =
               language === "en"
@@ -2441,9 +2415,7 @@ export async function handleIncomingBotMessage(
           } catch (err: any) {
             logger.error("Fetching offers failed", { error: err?.message, orderId: order.id });
             replyText =
-              language === "en"
-                ? "I couldn't retrieve offers right now. I'll update you soon."
-                : "Ich konnte gerade keine Angebote abrufen. Ich melde mich bald erneut.";
+              t('offer_fetch_failed', language);
             nextStatus = "show_offers";
             return { reply: replyText, orderId: order.id };
           }
@@ -2451,19 +2423,17 @@ export async function handleIncomingBotMessage(
         }
 
         case "await_offer_choice": {
-          const t = (userText || "").trim().toLowerCase();
+          const txt = (userText || "").trim().toLowerCase();
           let choiceIndex: number | null = null;
-          if (t.includes("1")) choiceIndex = 0;
-          else if (t.includes("2")) choiceIndex = 1;
-          else if (t.includes("3")) choiceIndex = 2;
+          if (txt.includes("1")) choiceIndex = 0;
+          else if (txt.includes("2")) choiceIndex = 1;
+          else if (txt.includes("3")) choiceIndex = 2;
           logger.info("User offer choice message", { orderId: order.id, text: userText });
 
           const choiceIds: string[] | undefined = orderData?.offerChoiceIds;
           if (choiceIndex === null || !choiceIds || choiceIndex < 0 || choiceIndex >= choiceIds.length) {
             replyText =
-              language === "en"
-                ? 'Please reply with 1, 2 or 3 to pick one of the offers.'
-                : 'Bitte antworte mit 1, 2 oder 3, um ein Angebot auszuwählen.';
+              t('offer_choice_invalid', language);
             nextStatus = "await_offer_choice";
             break;
           }
@@ -2473,9 +2443,7 @@ export async function handleIncomingBotMessage(
           const chosen = offers.find((o: any) => o.id === chosenOfferId);
           if (!chosen) {
             replyText =
-              language === "en"
-                ? "I couldn’t match your choice. I’ll show the offers again."
-                : "Ich konnte deine Auswahl nicht zuordnen. Ich zeige dir die Angebote gleich erneut.";
+              t('offer_choice_not_found', language);
             nextStatus = "show_offers";
             break;
           }
@@ -2504,17 +2472,15 @@ export async function handleIncomingBotMessage(
             price: chosen.price
           });
           replyText =
-            language === "en"
-              ? `Thank you! Your order (${order.id}) has been saved with the offer from ${chosen.shopName} (${chosen.brand ?? "n/a"}, ${calculateEndPrice(chosen.price)} ${chosen.currency}). This is now a binding agreement. Your dealer will contact you soon.`
-              : `Vielen Dank! Ihre Bestellung (${order.id}) wurde mit dem Angebot von ${chosen.shopName} (${chosen.brand ?? "k.A."}, ${calculateEndPrice(chosen.price)} ${chosen.currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Ihr Händler wird Sie bald kontaktieren.`;
+            tWith('offer_confirmed_choice', language, { orderId: order.id });
           nextStatus = "done";
           break;
         }
 
         case "await_offer_confirmation": {
-          const t = (userText || "").trim().toLowerCase();
-          const isYes = ["ja", "okay", "ok", "passt", "yes", "yep", "okey"].some((w) => t.includes(w));
-          const isNo = ["nein", "no", "nicht", "anders"].some((w) => t.includes(w));
+          const txt = (userText || "").trim().toLowerCase();
+          const isYes = ["ja", "okay", "ok", "passt", "yes", "yep", "okey"].some((w) => txt.includes(w));
+          const isNo = ["nein", "no", "nicht", "anders"].some((w) => txt.includes(w));
           const candidateId = orderData?.selectedOfferCandidateId as string | undefined;
           logger.info("User offer confirmation", {
             orderId: order.id,
@@ -2526,27 +2492,21 @@ export async function handleIncomingBotMessage(
 
           if (!isYes && !isNo) {
             replyText =
-              language === "en"
-                ? 'If this offer works for you, please reply with "Yes" or "OK". If not, tell me what matters most (price, brand, delivery time).'
-                : 'Wenn das Angebot für Sie passt, antworten Sie bitte mit "Ja" oder "OK". Wenn nicht, sagen Sie mir kurz, was Ihnen wichtig ist (z.B. Preis, Marke oder Lieferzeit).';
+              t('offer_confirm_prompt', language);
             nextStatus = "await_offer_confirmation";
             break;
           }
 
           if (isNo) {
             replyText =
-              language === "en"
-                ? "Got it, I’ll see if I can find alternative offers. Tell me what matters most: price, brand or delivery time."
-                : "Alles klar, ich schaue, ob ich Ihnen noch andere Angebote finden kann. Sagen Sie mir gerne, was Ihnen wichtiger ist: Preis, Marke oder Lieferzeit.";
+              t('offer_decline_alt', language);
             nextStatus = "show_offers";
             break;
           }
 
           if (!candidateId) {
             replyText =
-              language === "en"
-                ? "I lost track of the offer. I’ll fetch the options again."
-                : "Ich habe das Angebot nicht mehr parat. Ich hole die Optionen nochmal.";
+              t('offer_lost', language);
             nextStatus = "show_offers";
             break;
           }
@@ -2555,9 +2515,7 @@ export async function handleIncomingBotMessage(
           const chosen = offers.find((o: any) => o.id === candidateId);
           if (!chosen) {
             replyText =
-              language === "en"
-                ? "I couldn’t find that offer anymore. I’ll show available offers again."
-                : "Ich konnte dieses Angebot nicht mehr finden. Ich zeige dir die verfügbaren Angebote erneut.";
+              t('offer_not_found', language);
             nextStatus = "show_offers";
             break;
           }
@@ -2576,15 +2534,11 @@ export async function handleIncomingBotMessage(
             await updateOrderStatus(order.id, "ready");
 
             if (merchantSettings?.allowDirectDelivery) {
-              replyText = language === "en"
-                ? "Great! Do you want the part delivered to your home (D) or do you want to pick it up at the dealer (P)?"
-                : "Super! Möchtest du das Teil nach Hause geliefert bekommen (D) oder holst du es beim Händler ab (P)?";
+              replyText = t('delivery_or_pickup', language);
               nextStatus = "collect_delivery_preference";
             } else {
               const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
-              replyText = language === "en"
-                ? `Perfect! I've reserved the part. You can pick it up at: ${dealerLoc}.`
-                : `Perfekt! Ich habe das Teil reserviert. Du kannst es hier abholen: ${dealerLoc}.`;
+              replyText = tWith('pickup_location', language, { location: dealerLoc });
               nextStatus = "done";
             }
           } catch (err: any) {
@@ -2597,9 +2551,7 @@ export async function handleIncomingBotMessage(
             statusUpdatedTo: "ready"
           });
           replyText =
-            language === "en"
-              ? `Perfect, I’ve saved this offer for you. Your order (${order.id}) is now binding. Your dealer will contact you soon.`
-              : `Perfekt, ich habe dieses Angebot für Sie gespeichert. Ihre Bestellung (${order.id}) ist nun verbindlich. Ihr Händler wird Sie bald kontaktieren.`;
+            tWith('offer_confirmed', language, { orderId: order.id });
           nextStatus = "done";
           break;
         }
@@ -2608,20 +2560,14 @@ export async function handleIncomingBotMessage(
         case "collect_delivery_preference": {
           const choice = userText.toLowerCase();
           if (choice.includes("d") || choice.includes("liefer")) {
-            replyText = language === "en"
-              ? "Excellent choice. Please send me your full delivery address."
-              : "Sehr gute Wahl. Bitte sende mir nun deine vollständige Lieferadresse.";
+            replyText = t('delivery_ask_address', language);
             nextStatus = "collect_address";
           } else if (choice.includes("p") || choice.includes("abhol")) {
             const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
-            replyText = language === "en"
-              ? `Perfect! You can pick up the part at: ${dealerLoc}. See you soon!`
-              : `Perfekt! Du kannst das Teil hier abholen: ${dealerLoc}. Bis bald!`;
+            replyText = tWith('pickup_location', language, { location: dealerLoc });
             nextStatus = "done";
           } else {
-            replyText = language === "en"
-              ? "Please decide: Delivery (D) or Pickup (P)?"
-              : "Bitte entscheide dich: Lieferung (D) oder Abholung (P)?";
+            replyText = t('delivery_or_pickup_ask', language);
             nextStatus = "collect_delivery_preference";
           }
           break;
@@ -2634,14 +2580,10 @@ export async function handleIncomingBotMessage(
             } catch (err) {
               logger.error("Failed to save delivery address", { orderId: order.id, error: err });
             }
-            replyText = language === "en"
-              ? "Thank you! Your delivery address has been saved. We will ship the part shortly."
-              : "Vielen Dank! Deine Lieferadresse wurde gespeichert. Wir versenden das Teil in Kürze.";
+            replyText = t('address_saved', language);
             nextStatus = "done";
           } else {
-            replyText = language === "en"
-              ? "Please provide a valid delivery address."
-              : "Bitte gib eine gültige Lieferadresse an.";
+            replyText = t('address_invalid', language);
             nextStatus = "collect_address";
           }
           break;
@@ -2649,28 +2591,26 @@ export async function handleIncomingBotMessage(
 
         case "done": {
           // Context-aware handling: detect what user wants to do next
-          const t = userText.toLowerCase();
+          const txt = userText.toLowerCase();
 
           // Check if user wants another part for the same vehicle
           const newPartKeywords = ["brauche auch", "noch ein", "außerdem", "dazu noch", "zusätzlich",
             "another", "also need", "bremsbeläge", "scheiben", "filter", "zündkerzen", "kupplung"];
-          const wantsNewPart = newPartKeywords.some(k => t.includes(k)) ||
-            (t.length > 5 && !t.includes("?") && !t.includes("danke") && !t.includes("thanks"));
+          const wantsNewPart = newPartKeywords.some(k => txt.includes(k)) ||
+            (txt.length > 5 && !txt.includes("?") && !txt.includes("danke") && !txt.includes("thanks"));
 
           // Check if user wants to start completely fresh
           const freshStartKeywords = ["neues auto", "anderes auto", "new car", "different vehicle", "von vorn"];
-          const wantsFreshStart = freshStartKeywords.some(k => t.includes(k));
+          const wantsFreshStart = freshStartKeywords.some(k => txt.includes(k));
 
           // Check if it's just a thank you / goodbye
           const goodbyeKeywords = ["danke", "thanks", "tschüss", "bye", "super", "perfekt", "ok"];
-          const isGoodbye = goodbyeKeywords.some(k => t.includes(k));
+          const isGoodbye = goodbyeKeywords.some(k => txt.includes(k));
 
           if (wantsFreshStart) {
             // User wants different vehicle
             nextStatus = "collect_vehicle";
-            replyText = language === "en"
-              ? "Sure! Send me a photo of the vehicle registration document for the new car."
-              : "Klar! Schicken Sie mir ein Foto vom Fahrzeugschein des neuen Fahrzeugs.";
+            replyText = t('fresh_start', language);
           } else if (wantsNewPart && order.vehicle_description) {
             // User wants another part for same vehicle - create new order with copied vehicle
             try {
@@ -2683,27 +2623,19 @@ export async function handleIncomingBotMessage(
               if (orderData?.vehicle) {
                 await getSupa().updateOrderData(newOrder.id, { vehicle: orderData.vehicle });
               }
-              replyText = language === "en"
-                ? `Great! I'm using your ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "vehicle"}. What part do you need?`
-                : `Super! Ich nutze Ihr ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil benötigen Sie?`;
+              replyText = tWith('follow_up_part', language, { make: orderData?.vehicle?.make || '', model: orderData?.vehicle?.model || '' });
               return { reply: replyText, orderId: newOrder.id };
             } catch (err) {
               logger.error("Failed to create follow-up order", { error: (err as any)?.message });
-              replyText = language === "en"
-                ? "What part do you need for your vehicle?"
-                : "Welches Teil benötigen Sie für Ihr Fahrzeug?";
+              replyText = t('follow_up_fallback', language);
               nextStatus = "collect_part";
             }
           } else if (isGoodbye) {
             // User is saying goodbye
-            replyText = language === "en"
-              ? "Thank you! If you need anything else, just write me anytime. 👋"
-              : "Vielen Dank! Wenn du noch etwas brauchst, schreib mir jederzeit. 👋";
+            replyText = t('goodbye', language);
           } else {
             // Default: order complete message
-            replyText = language === "en"
-              ? "Your order is complete. If you have further questions, just ask!"
-              : "Ihre Bestellung ist abgeschlossen. Wenn Sie weitere Fragen haben, fragen Sie einfach!";
+            replyText = t('order_complete', language);
           }
 
           // Only use Content API for actual goodbye, not for follow-up parts
