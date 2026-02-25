@@ -153,7 +153,7 @@ async function runCollectPartBrain(params: {
       replyText:
         params.language === "en"
           ? "Please tell me which exact part you need and, if relevant, for which side/axle."
-          : "Bitte sag mir genau, welches Teil du brauchst und falls relevant, für welche Achse/Seite.",
+          : "Bitte teilen Sie mir mit, welches Teil Sie genau benötigen und falls relevant, für welche Achse/Seite.",
       nextStatus: "collect_part",
       slotsToAsk: [],
       shouldApologize: false,
@@ -488,35 +488,35 @@ function buildSmalltalkReply(kind: SmalltalkType, lang: "de" | "en", stage: stri
 
   if (kind === "thanks") {
     return lang === "de"
-      ? "Gern geschehen! Sag mir einfach, wenn du noch ein Teil oder mehr Infos brauchst."
+      ? "Gern geschehen! Melden Sie sich einfach, wenn Sie noch ein Teil oder mehr Infos brauchen."
       : "You’re welcome! Let me know if you need a part or any other help.";
   }
 
   if (kind === "bot_question") {
     return lang === "de"
-      ? "Ich bin dein Teile-Assistent und helfe dir, das richtige Ersatzteil zu finden. Schick mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
+      ? "Ich bin Ihr Teile-Assistent und helfe Ihnen, das richtige Ersatzteil zu finden. Schicken Sie mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
       : "I’m your parts assistant and can help you find the right part. Send me the car brand/model/year or a photo of the registration document.";
   }
 
   // greeting
   if (needsVehicleDoc) {
     return lang === "de"
-      ? "Hi! 👋 Schick mir am besten zuerst ein Foto deines Fahrzeugscheins. Wenn du keins hast, nenn mir bitte Marke, Modell, Baujahr und falls möglich Motor/HSN/TSN."
+      ? "Hi! 👋 Schicken Sie mir am besten zuerst ein Foto Ihres Fahrzeugscheins. Wenn Sie keins haben, nennen Sie mir bitte Marke, Modell, Baujahr und falls möglich Motor/HSN/TSN."
       : "Hi there! 👋 Please send a photo of your vehicle registration first. If you don’t have one, tell me brand, model, year and, if possible, engine/HSN/TSN.";
   }
   if (needsVehicleData) {
     return lang === "de"
-      ? "Hallo! 👋 Welche Fahrzeugdaten hast du für mich? Marke, Modell, Baujahr und Motor helfen mir am meisten."
+      ? "Hallo! 👋 Welche Fahrzeugdaten haben Sie für mich? Marke, Modell, Baujahr und Motor helfen mir am meisten."
       : "Hello! 👋 Which vehicle details do you have for me? Brand, model, year, and engine help the most.";
   }
   if (needsPartData) {
     return lang === "de"
-      ? "Hey! 👋 Um dir das richtige Teil zu finden, sag mir bitte um welches Teil es geht und vorne/hinten, links/rechts."
+      ? "Hey! 👋 Um Ihnen das richtige Teil zu finden, sagen Sie mir bitte, um welches Teil es geht und vorne/hinten, links/rechts."
       : "Hey! 👋 To find the right part, tell me which part you need and whether it’s front/rear, left/right.";
   }
 
   return lang === "de"
-    ? "Hallo! 👋 Wie kann ich dir helfen? Suchst du ein Ersatzteil? Dann schick mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
+    ? "Hallo! 👋 Wie kann ich Ihnen helfen? Suchen Sie ein Ersatzteil? Dann schicken Sie mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
     : "Hi! 👋 How can I help? Looking for a part? Share the car brand/model/year or send a photo of the registration.";
 }
 
@@ -576,12 +576,12 @@ function buildVehicleFollowUpQuestion(missingFields: string[], lang: string): st
   const qDe: Record<string, string> = {
     make: "Welche Automarke ist es?",
     model: "Welches Modell genau?",
-    year: "Welches Baujahr hat dein Fahrzeug?",
+    year: "Welches Baujahr hat Ihr Fahrzeug?",
     engine: "Welche Motorisierung ist verbaut (kW oder Motorkennbuchstabe)?",
-    vin: "Hast du die Fahrgestellnummer (VIN) für mich?",
-    hsn: "Hast du die HSN (Feld 2.1 im Fahrzeugschein)?",
-    tsn: "Hast du die TSN (Feld 2.2 im Fahrzeugschein)?",
-    vin_or_hsn_tsn_or_engine: "Hast du VIN oder HSN/TSN oder die Motorisierung (kW/MKB)?"
+    vin: "Haben Sie die Fahrgestellnummer (VIN) für mich?",
+    hsn: "Haben Sie die HSN (Feld 2.1 im Fahrzeugschein)?",
+    tsn: "Haben Sie die TSN (Feld 2.2 im Fahrzeugschein)?",
+    vin_or_hsn_tsn_or_engine: "Haben Sie VIN oder HSN/TSN oder die Motorisierung (kW/MKB)?"
   };
 
   const qEn: Record<string, string> = {
@@ -877,7 +877,7 @@ async function runOemLookupAndScraping(
       replyText:
         language === "en"
           ? "A technical error occurred while finding the right part. Please send more vehicle info."
-          : "Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Bitte schick mir noch ein paar Fahrzeugdaten.",
+          : "Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Bitte geben Sie mir noch ein paar Fahrzeugdaten.",
       nextStatus: "collect_vehicle"
     };
   }
@@ -1339,6 +1339,20 @@ function detectIntent(text: string, hasVehicleImage: boolean): MessageIntent {
     "vorkasse", "status", "wo bleibt", "retoure", "liefertermin", "tracking", "order", "bestellung"
   ];
   if (statusKeywords.some((k) => t.includes(k))) return "status_question";
+
+  // P1 #7: OEM Direct Input Detection — pro users send OEM numbers directly
+  // VAG (1K0615301AC), BMW (34116792219), Mercedes (A0044206920), generic
+  const oemPatterns = [
+    /\b[0-9]{1,2}[A-Z][0-9]{3,6}[A-Z]{0,3}\b/i,      // VAG: 1K0615301AC
+    /\b[0-9]{11}\b/,                                     // BMW: 34116792219
+    /\bA[0-9]{10,12}\b/i,                                // Mercedes: A0044206920
+    /\b[A-Z]{1,3}[-\s]?[0-9]{3,8}[-\s]?[A-Z0-9]{0,4}\b/i, // Generic: XX-12345-AB
+  ];
+  const stripped = text.replace(/\s+/g, '');
+  if (stripped.length >= 7 && stripped.length <= 15 && oemPatterns.some(p => p.test(text))) {
+    return "new_order"; // Treat as part request with known OEM
+  }
+
   return "unknown";
 }
 
@@ -1434,7 +1448,7 @@ export async function handleIncomingBotMessage(
         return {
           reply: lang === "en"
             ? "Great! I'm using the same vehicle. What other part do you need?"
-            : "Super! Ich nutze das gleiche Fahrzeug. Welches andere Teil brauchst du?",
+            : "Super! Ich nutze das gleiche Fahrzeug. Welches andere Teil benötigen Sie?",
           orderId: newOrder.id
         };
       }
@@ -1583,7 +1597,7 @@ export async function handleIncomingBotMessage(
               const docHint =
                 order.language === "en"
                   ? "The best way is to send me a photo of your vehicle registration document. Alternatively: brand, model, year and VIN or HSN/TSN."
-                  : "Schick mir am besten zuerst ein Foto deines Fahrzeugscheins. Falls nicht möglich: Marke, Modell, Baujahr und VIN oder HSN/TSN.";
+                  : "Schicken Sie mir am besten zuerst ein Foto Ihres Fahrzeugscheins. Falls nicht möglich: Marke, Modell, Baujahr und VIN oder HSN/TSN.";
               reply = reply ? `${reply} ${docHint}` : docHint;
             }
             return { reply, orderId: order.id };
@@ -1639,7 +1653,7 @@ export async function handleIncomingBotMessage(
               const summary = `${vehicleCandidate.make} ${vehicleCandidate.model} (${vehicleCandidate.year})`;
               const reply = language === "en"
                 ? `I've identified your vehicle as ${summary}. Is this correct?`
-                : `Ich habe dein Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
+                : `Ich habe Ihr Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
               await updateOrder(order.id, { status: "confirm_vehicle" });
               return { reply, orderId: order.id, nextStatus: "confirm_vehicle" };
             }
@@ -1845,8 +1859,8 @@ export async function handleIncomingBotMessage(
         else statusReply += "We are currently looking for the best price for you.";
       } else {
         statusReply = `Ich habe nachgesehen (Ticket ${order.id}). Status: ${status}. `;
-        if (status === "done") statusReply += "Deine Bestellung ist abgeschlossen und sollte bald bei dir sein!";
-        else if (status === "ready") statusReply += `Wir bearbeiten deine Bestellung. Geschätzte Lieferzeit: ${delivery} Tage.`;
+        if (status === "done") statusReply += "Ihre Bestellung ist abgeschlossen und sollte bald bei Ihnen sein!";
+        else if (status === "ready") statusReply += `Wir bearbeiten Ihre Bestellung. Geschätzte Lieferzeit: ${delivery} Tage.`;
         else statusReply += "Wir suchen gerade noch nach dem besten Angebot für dich.";
       }
       return { reply: statusReply, orderId: order.id };
@@ -2086,7 +2100,7 @@ export async function handleIncomingBotMessage(
                     replyText =
                       language === "en"
                         ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                        : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
+                        : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.";
                   } else if (field === "make") {
                     replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
                   } else if (field === "model") {
@@ -2108,7 +2122,7 @@ export async function handleIncomingBotMessage(
               replyText =
                 language === "en"
                   ? "I couldn’t load your registration photo. Please type your make, model, year, and VIN/HSN/TSN."
-                  : "Ich konnte dein Fahrzeugschein-Foto nicht laden. Bitte schreib mir Marke, Modell, Baujahr und VIN/HSN/TSN.";
+                  : "Ich konnte Ihr Fahrzeugschein-Foto nicht laden. Bitte schreiben Sie mir Marke, Modell, Baujahr und VIN/HSN/TSN.";
               nextStatus = "collect_vehicle";
               break;
             }
@@ -2146,7 +2160,7 @@ export async function handleIncomingBotMessage(
                 replyText =
                   language === "en"
                     ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                    : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schick mir die Nummern oder ein schärferes Foto.";
+                    : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.";
               } else if (field === "make") {
                 replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
               } else if (field === "model") {
@@ -2214,7 +2228,7 @@ export async function handleIncomingBotMessage(
             const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
             replyText = language === "en"
               ? `I've identified your vehicle as ${summary}. Is this correct?`
-              : `Ich habe dein Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
+              : `Ich habe Ihr Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
             nextStatus = "confirm_vehicle";
           }
           break;
@@ -2253,7 +2267,7 @@ export async function handleIncomingBotMessage(
             // User says no or provided different info
             replyText = language === "en"
               ? "Oh, I'm sorry. Please send me a photo of your registration or the correct VIN so I can identify the right car."
-              : "Oh, das tut mir leid. Bitte schick mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Auto finde.";
+              : "Oh, das tut mir leid. Bitte schicken Sie mir ein Foto vom Fahrzeugschein oder die korrekte VIN, damit ich das richtige Fahrzeug finden kann.";
             nextStatus = "collect_vehicle";
             // Option: Clear vehicle data? User might just want to correct it.
           }
@@ -2542,7 +2556,7 @@ export async function handleIncomingBotMessage(
           replyText =
             language === "en"
               ? `Thank you! Your order (${order.id}) has been saved with the offer from ${chosen.shopName} (${chosen.brand ?? "n/a"}, ${calculateEndPrice(chosen.price)} ${chosen.currency}). This is now a binding agreement. Your dealer will contact you soon.`
-              : `Vielen Dank! Deine Bestellung (${order.id}) wurde mit dem Angebot von ${chosen.shopName} (${chosen.brand ?? "k.A."}, ${calculateEndPrice(chosen.price)} ${chosen.currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Dein Händler wird dich bald kontaktieren.`;
+              : `Vielen Dank! Ihre Bestellung (${order.id}) wurde mit dem Angebot von ${chosen.shopName} (${chosen.brand ?? "k.A."}, ${calculateEndPrice(chosen.price)} ${chosen.currency}) gespeichert. Dies ist nun eine verbindliche Bestellung. Ihr Händler wird Sie bald kontaktieren.`;
           nextStatus = "done";
           break;
         }
@@ -2564,7 +2578,7 @@ export async function handleIncomingBotMessage(
             replyText =
               language === "en"
                 ? 'If this offer works for you, please reply with "Yes" or "OK". If not, tell me what matters most (price, brand, delivery time).'
-                : 'Wenn das Angebot für dich passt, antworte bitte mit "Ja" oder "OK". Wenn nicht, sag mir kurz, was dir wichtig ist (z.B. Preis, Marke oder Lieferzeit).';
+                : 'Wenn das Angebot für Sie passt, antworten Sie bitte mit "Ja" oder "OK". Wenn nicht, sagen Sie mir kurz, was Ihnen wichtig ist (z.B. Preis, Marke oder Lieferzeit).';
             nextStatus = "await_offer_confirmation";
             break;
           }
@@ -2573,7 +2587,7 @@ export async function handleIncomingBotMessage(
             replyText =
               language === "en"
                 ? "Got it, I’ll see if I can find alternative offers. Tell me what matters most: price, brand or delivery time."
-                : "Alles klar, ich schaue, ob ich dir noch andere Angebote finden kann. Sag mir gerne, was dir wichtiger ist: Preis, Marke oder Lieferzeit.";
+                : "Alles klar, ich schaue, ob ich Ihnen noch andere Angebote finden kann. Sagen Sie mir gerne, was Ihnen wichtiger ist: Preis, Marke oder Lieferzeit.";
             nextStatus = "show_offers";
             break;
           }
@@ -2635,7 +2649,7 @@ export async function handleIncomingBotMessage(
           replyText =
             language === "en"
               ? `Perfect, I’ve saved this offer for you. Your order (${order.id}) is now binding. Your dealer will contact you soon.`
-              : `Perfekt, ich habe dieses Angebot für dich gespeichert. Deine Bestellung (${order.id}) ist nun verbindlich. Dein Händler wird dich bald kontaktieren.`;
+              : `Perfekt, ich habe dieses Angebot für Sie gespeichert. Ihre Bestellung (${order.id}) ist nun verbindlich. Ihr Händler wird Sie bald kontaktieren.`;
           nextStatus = "done";
           break;
         }
@@ -2706,7 +2720,7 @@ export async function handleIncomingBotMessage(
             nextStatus = "collect_vehicle";
             replyText = language === "en"
               ? "Sure! Send me a photo of the vehicle registration document for the new car."
-              : "Klar! Schick mir ein Foto vom Fahrzeugschein des neuen Autos.";
+              : "Klar! Schicken Sie mir ein Foto vom Fahrzeugschein des neuen Fahrzeugs.";
           } else if (wantsNewPart && order.vehicle_description) {
             // User wants another part for same vehicle - create new order with copied vehicle
             try {
@@ -2721,13 +2735,13 @@ export async function handleIncomingBotMessage(
               }
               replyText = language === "en"
                 ? `Great! I'm using your ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "vehicle"}. What part do you need?`
-                : `Super! Ich nutze dein ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil brauchst du?`;
+                : `Super! Ich nutze Ihr ${orderData?.vehicle?.make || ""} ${orderData?.vehicle?.model || "Fahrzeug"}. Welches Teil benötigen Sie?`;
               return { reply: replyText, orderId: newOrder.id };
             } catch (err) {
               logger.error("Failed to create follow-up order", { error: (err as any)?.message });
               replyText = language === "en"
                 ? "What part do you need for your vehicle?"
-                : "Welches Teil brauchst du für dein Fahrzeug?";
+                : "Welches Teil benötigen Sie für Ihr Fahrzeug?";
               nextStatus = "collect_part";
             }
           } else if (isGoodbye) {
@@ -2739,7 +2753,7 @@ export async function handleIncomingBotMessage(
             // Default: order complete message
             replyText = language === "en"
               ? "Your order is complete. If you have further questions, just ask!"
-              : "Deine Bestellung ist abgeschlossen. Wenn du weitere Fragen hast, frag einfach!";
+              : "Ihre Bestellung ist abgeschlossen. Wenn Sie weitere Fragen haben, fragen Sie einfach!";
           }
 
           // Only use Content API for actual goodbye, not for follow-up parts
