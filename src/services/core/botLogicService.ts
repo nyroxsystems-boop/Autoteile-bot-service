@@ -30,6 +30,7 @@ import { ORCHESTRATOR_PROMPT } from '../../prompts/orchestratorPrompt';
 import { generateChatCompletion, generateVisionCompletion } from '../intelligence/geminiService';
 import { getConversationDecision, type ConversationContext } from '../intelligence/conversationIntelligence';
 import { checkVehicleCompleteness } from '../intelligence/vehicleGuard';
+import { t } from './botResponses';
 import * as fs from "fs/promises";
 import { isEnabled, FF } from './featureFlags';
 // REMOVED: LangChain agent — dead code, fallback path always used
@@ -608,20 +609,11 @@ function buildPartFollowUpQuestion(missingFields: string[], lang: "de" | "en"): 
 
   const field = missingFields[0];
 
-  if (lang === "de") {
-    if (field === "part_name") {
-      return "Welches Teil brauchst du genau? Zum Beispiel: Zündkerzen, Bremsscheiben vorne, Stoßdämpfer hinten, Querlenker…";
-    }
-    if (field === "position") {
-      return "Für welche Seite/Achse brauchst du das Teil genau? Zum Beispiel: vorne links, vorne rechts, hinten links, hinten rechts.";
-    }
-  } else {
-    if (field === "part_name") {
-      return "Which part do you need exactly? For example: spark plugs, front brake discs, rear shock absorber, control arm…";
-    }
-    if (field === "position") {
-      return "For which side/axle do you need the part exactly? For example: front left, front right, rear left, rear right.";
-    }
+  if (field === "part_name") {
+    return t('collect_part', lang);
+  }
+  if (field === "position") {
+    return t('collect_part_position', lang);
   }
 
   return null;
@@ -692,6 +684,13 @@ async function runOemLookupAndScraping(
     emissionClass?: string;
   }
 ): Promise<{ replyText: string; nextStatus: ConversationStatus }> {
+
+  // P0 #1: Zwischennachricht — Tell user we're searching (eliminates dead silence)
+  // We return a search-indicator as a "pre-reply" that the caller can send immediately
+  // while the actual OEM resolution runs. For the current architecture, we log it as
+  // a hint. The actual pre-reply is sent by the botWorker via sendTwilioReply.
+  logger.info('[OEMLookup] Starting OEM resolution', { orderId, language });
+
   const vehicle = vehicleOverride ?? (await getVehicleForOrder(orderId));
   const engineVal = (vehicle as any)?.engineCode ?? (vehicle as any)?.engine ?? undefined;
   const vehicleForOem = {
@@ -1553,6 +1552,9 @@ export async function handleIncomingBotMessage(
     const statesForOrchestrator: ConversationStatus[] = ["choose_language", "collect_vehicle", "collect_part"];
     if (statesForOrchestrator.includes(order.status as any)) {
       try {
+        // Fix: Load lastBotMessage from orderData instead of null
+        const lastBotMsg = orderData?.lastBotMessage || orderData?.last_bot_reply || null;
+
         const orchestratorPayload = {
           sender: payload.from,
           orderId: order.id,
@@ -1560,7 +1562,7 @@ export async function handleIncomingBotMessage(
             status: order.status,
             language: order.language,
             orderData: orderData,
-            lastBotMessage: null
+            lastBotMessage: lastBotMsg
           },
           latestMessage: userText,
           ocr: ocrResult
@@ -1759,6 +1761,10 @@ export async function handleIncomingBotMessage(
               positionNeeded: Boolean(orch.slots.position)
             };
 
+            // P0 #1: Send Zwischennachricht BEFORE starting OEM resolution
+            // This eliminates the "dead silence" where users see nothing for 5-22s
+            const searchingMsg = t('oem_searching', order.language);
+
             // M2 FIX: 30s timeout for entire OEM resolution
             const OEM_TIMEOUT_MS = 30000;
             try {
@@ -1775,14 +1781,11 @@ export async function handleIncomingBotMessage(
                   setTimeout(() => reject(new Error('OEM_TIMEOUT')), OEM_TIMEOUT_MS)
                 )
               ]);
-              return { reply: oemFlow.replyText, orderId: order.id };
+              return { reply: oemFlow.replyText, orderId: order.id, preReply: searchingMsg };
             } catch (err: any) {
               if (err.message === 'OEM_TIMEOUT') {
                 logger.warn('[BotLogic] OEM resolution timed out after 30s', { orderId: order.id });
-                const timeoutReply = language === 'de'
-                  ? '⏳ Die OEM-Suche dauert länger als erwartet. Ich arbeite im Hintergrund weiter und melde mich, sobald ich ein Ergebnis habe.'
-                  : '⏳ OEM search is taking longer than expected. I\'ll keep working and get back to you with results.';
-                return { reply: timeoutReply, orderId: order.id };
+                return { reply: t('oem_timeout', order.language), orderId: order.id, preReply: searchingMsg };
               }
               throw err;
             }
@@ -1946,17 +1949,7 @@ export async function handleIncomingBotMessage(
             }
             nextStatus = "collect_vehicle";
             // Generate greeting after language selection
-            if (language === "en") {
-              replyText = "Great! 🎉 Please send me a photo of your vehicle registration document, or tell me: brand, model, year.";
-            } else if (language === "tr") {
-              replyText = "Harika! 🎉 Lütfen araç ruhsatınızın fotoğrafını gönderin veya marka, model, yıl bilgilerini yazın.";
-            } else if (language === "ku") {
-              replyText = "Baş e! 🎉 Ji kerema xwe wêneya belgeya qeydkirina wesayîta xwe bişînin, an jî marka, model, sal binivîsin.";
-            } else if (language === "pl") {
-              replyText = "Świetnie! 🎉 Wyślij mi zdjęcie dowodu rejestracyjnego pojazdu lub podaj: markę, model, rok.";
-            } else {
-              replyText = "Super! 🎉 Schick mir bitte ein Foto deines Fahrzeugscheins, oder nenne mir: Marke, Modell, Baujahr.";
-            }
+            replyText = t('greeting_after_language', language);
           } else {
             replyText =
               "Hallo! Bitte wähle deine Sprache:\n" +
@@ -2085,7 +2078,7 @@ export async function handleIncomingBotMessage(
                   replyText =
                     language === "en"
                       ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                      : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
+                      : t('ocr_success', language);
                 } else {
                   // gezielte Rückfrage
                   const field = missingFieldsAfterOcr[0];
@@ -2102,7 +2095,7 @@ export async function handleIncomingBotMessage(
                     replyText =
                       language === "en"
                         ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                        : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
+                        : t('collect_vehicle_manual', language);
                   }
                   nextStatus = "collect_vehicle";
                 }
@@ -2145,7 +2138,7 @@ export async function handleIncomingBotMessage(
               replyText =
                 language === "en"
                   ? "Got the vehicle document. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
-                  : "Fahrzeugschein verarbeitet. Welches Teil brauchst du? Bitte Position (vorne/hinten, links/rechts) und Symptome nennen.";
+                  : t('ocr_success', language);
             } else {
               // gezielte Rückfrage
               const field = missingFields[0];
@@ -2162,7 +2155,7 @@ export async function handleIncomingBotMessage(
                 replyText =
                   language === "en"
                     ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                    : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.";
+                    : t('collect_vehicle_manual', language);
               }
               nextStatus = "collect_vehicle";
             }
@@ -2215,7 +2208,7 @@ export async function handleIncomingBotMessage(
               q ||
               (language === "en"
                 ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                : "Bitte nenne mir VIN oder HSN/TSN oder mindestens Marke/Modell/Baujahr, damit ich dein Auto identifizieren kann.");
+                : t('collect_vehicle_manual', language));
             nextStatus = "collect_vehicle";
           } else {
             const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
@@ -2253,7 +2246,7 @@ export async function handleIncomingBotMessage(
             } else {
               replyText = language === "en"
                 ? "Great! Which part do you need? Please include position and symptoms."
-                : "Super! Welches Teil brauchst du? Bitte nenne mir auch die Position und eventuelle Symptome.";
+                : t('collect_part', language);
               nextStatus = "collect_part";
             }
           } else {

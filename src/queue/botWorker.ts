@@ -126,6 +126,12 @@ const worker = new Worker<BotJobData>(
                 return; // Don't send again on retry
             }
 
+            // 3.5 P0 #1: Send Zwischennachricht (preReply) if present
+            if ((result as any).preReply) {
+                await sendTwilioReply(from, (result as any).preReply);
+                logger.info("📤 PRE-REPLY SENT (searching...)", { to: from });
+            }
+
             // 4. Send Reply via Twilio
             await sendTwilioReply(from, result.reply, {
                 mediaUrl: (result as any).mediaUrl,
