@@ -37,7 +37,7 @@ export function determineMissingPartFields(parsed: any, orderData: any): string[
 // Prompts
 // ============================================================================
 
-const PROMPTS = {
+const PROMPTS: Record<string, { askPart: string; askPosition: string; askDiameter: string; processing: string }> = {
     de: {
         askPart: "Welches Ersatzteil brauchst du? Beschreibe auch Symptome falls vorhanden.",
         askPosition: "Ist das Teil vorne oder hinten? Links oder rechts?",
@@ -49,6 +49,24 @@ const PROMPTS = {
         askPosition: "Is the part front or rear? Left or right?",
         askDiameter: "What diameter are your current brake discs (in mm)?",
         processing: "Perfect, I have all the info. Looking up the OEM number now..."
+    },
+    tr: {
+        askPart: "Hangi yedek parçaya ihtiyacınız var? Belirtileri de açıklayın.",
+        askPosition: "Parça ön mü arka mı? Sol mu sağ mı?",
+        askDiameter: "Mevcut fren disklerinizin çapı kaç mm?",
+        processing: "Mükemmel, tüm bilgilere sahibim. OEM numarasını arıyorum..."
+    },
+    ku: {
+        askPart: "Kîjan parçeya yedek hewce ye? Nîşanên wê jî binivîsin.",
+        askPosition: "Parçe pêş e an paş? Çep an rast?",
+        askDiameter: "Diametera dîskên frena we çend mm e?",
+        processing: "Temam, hemû agahî hene. Niha jimareya OEM-ê lê digerim..."
+    },
+    pl: {
+        askPart: "Jakiej części zamiennej potrzebujesz? Opisz objawy jeśli są.",
+        askPosition: "Część jest z przodu czy z tyłu? Lewa czy prawa?",
+        askDiameter: "Jaka jest średnica obecnych tarcz hamulcowych (w mm)?",
+        processing: "Świetnie, mam wszystkie informacje. Szukam numeru OEM..."
     }
 };
 
@@ -61,7 +79,7 @@ export const collectPartHandler = createHandler(
     ['collect_part'],
     async (ctx: StateContext): Promise<StateResult> => {
         const { order, orderData, language, parsed } = ctx;
-        const lang = language === 'en' ? 'en' : 'de';
+        const lang = (['de', 'en', 'tr', 'ku', 'pl'].includes(language) ? language : 'de') as keyof typeof PROMPTS;
 
         // Merge part info from parsed message
         const partUpdate: Record<string, any> = {};

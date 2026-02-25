@@ -41,7 +41,7 @@ const FLAGS: Record<string, FeatureFlag> = {
         name: 'USE_STATE_MACHINE',
         description: 'Use new state machine architecture instead of legacy switch',
         defaultEnabled: true,  // M4 FIX: Enabled (was false)
-        rolloutPercentage: 10  // Gradual rollout — increase to 100 after testing
+        rolloutPercentage: 100  // ACTIVATED: All users through state machine (legacy fallback preserved)
     },
 
     // OEM Resolver Improvements

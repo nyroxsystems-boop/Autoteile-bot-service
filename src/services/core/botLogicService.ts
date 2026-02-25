@@ -1826,7 +1826,11 @@ export async function handleIncomingBotMessage(
 
     // 🚀 STATE MACHINE INTEGRATION (Feature Flag controlled)
     // When enabled, use new state machine handlers instead of legacy switch
-    const stateMachineStates: ConversationStatus[] = ['choose_language', 'collect_vehicle', 'collect_part'];
+    const stateMachineStates: ConversationStatus[] = [
+      'choose_language', 'collect_vehicle', 'confirm_vehicle', 'collect_part',
+      'oem_lookup', 'show_offers', 'await_offer_choice', 'await_offer_confirmation',
+      'collect_delivery_preference', 'collect_address', 'done'
+    ];
     if (isEnabled(FF.USE_STATE_MACHINE, { userId: payload.from }) && stateMachineStates.includes(nextStatus)) {
       try {
         // Dynamic import to avoid circular dependencies

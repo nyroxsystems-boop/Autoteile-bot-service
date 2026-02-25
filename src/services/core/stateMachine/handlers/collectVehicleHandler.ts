@@ -40,7 +40,7 @@ export function determineMissingVehicleFields(vehicle: any): string[] {
 // Prompts
 // ============================================================================
 
-const PROMPTS = {
+const PROMPTS: Record<string, { askMake: string; askModel: string; askVin: string; complete: string }> = {
     de: {
         askMake: "Welche Automarke ist es?",
         askModel: "Welches Modell genau?",
@@ -52,6 +52,24 @@ const PROMPTS = {
         askModel: "Which exact model is it?",
         askVin: "Please share VIN or HSN/TSN, or at least make/model/year.",
         complete: "Vehicle data saved. Which part do you need? Please include position (front/rear, left/right) and any symptoms."
+    },
+    tr: {
+        askMake: "Araç markası nedir?",
+        askModel: "Tam model nedir?",
+        askVin: "Lütfen VIN, HSN/TSN veya en azından marka/model/yıl bilgisini gönderin.",
+        complete: "Araç bilgileri kaydedildi. Hangi parçaya ihtiyacınız var? Lütfen konumu (ön/arka, sol/sağ) belirtin."
+    },
+    ku: {
+        askMake: "Marka wesayîtê çi ye?",
+        askModel: "Modela tam çi ye?",
+        askVin: "Ji kerema xwe VIN, HSN/TSN an jî herî kêm marka/model/sal bişînin.",
+        complete: "Daneyên wesayîtê hatine tomarkirin. Kîjan parçe hewce ye? Ji kerema xwe cih (pêş/paş, çep/rast) binivisin."
+    },
+    pl: {
+        askMake: "Jaka marka samochodu?",
+        askModel: "Jaki dokładnie model?",
+        askVin: "Proszę podać VIN, HSN/TSN lub przynajmniej markę/model/rok.",
+        complete: "Dane pojazdu zapisane. Jakiej części potrzebujesz? Podaj pozycję (przód/tył, lewo/prawo) i objawy."
     }
 };
 
@@ -64,7 +82,7 @@ export const collectVehicleHandler = createHandler(
     ['collect_vehicle'],
     async (ctx: StateContext): Promise<StateResult> => {
         const { order, orderData, language, parsed } = ctx;
-        const lang = language === 'en' ? 'en' : 'de';
+        const lang = (['de', 'en', 'tr', 'ku', 'pl'].includes(language) ? language : 'de') as keyof typeof PROMPTS;
 
         // If image present, delegate to legacy handler (OCR complex)
         if (ctx.mediaUrls && ctx.mediaUrls.length > 0) {
