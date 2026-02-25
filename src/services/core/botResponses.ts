@@ -16,14 +16,27 @@ type ResponseKey =
     | 'collect_vehicle_manual'
     | 'collect_part'
     | 'collect_part_position'
+    | 'collect_part_fallback'
     | 'ocr_success'
     | 'ocr_partial'
     | 'ocr_failed'
+    | 'ocr_vin_missing'
+    | 'ocr_photo_failed'
     | 'oem_searching'
     | 'oem_found'
     | 'oem_not_found'
     | 'oem_timeout'
+    | 'oem_product_found'
+    | 'oem_product_uncertain'
+    | 'oem_scrape_failed'
+    | 'oem_tech_error'
     | 'vehicle_incomplete'
+    | 'vehicle_need_more'
+    | 'vehicle_confirm'
+    | 'doc_hint'
+    | 'ask_brand'
+    | 'ask_model'
+    | 'ask_vin_general'
     | 'offers_intro'
     | 'no_offers'
     | 'order_confirmed'
@@ -246,6 +259,110 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: 'Talebiniz üzerinde çalışıyorum. Lütfen biraz bekleyin.',
         ku: 'Ez li ser daxwaziya we dixebitim. Ji kerema xwe hinekî bisekinin.',
         pl: 'Pracuję nad Twoim zapytaniem. Proszę o chwilę cierpliwości.',
+    },
+
+    collect_part_fallback: {
+        de: 'Bitte teilen Sie mir mit, welches Teil Sie genau benötigen und falls relevant, für welche Achse/Seite.',
+        en: 'Please tell me which exact part you need and, if relevant, for which side/axle.',
+        tr: 'Lütfen hangi parçaya ihtiyacınız olduğunu ve gerekiyorsa hangi taraf/aks için olduğunu belirtin.',
+        ku: 'Ji kerema xwe ji min re bibêjin ku hûn bi rastî kîjan perçeyê hewce ne û heke têkildar e ji bo kîjan alî/axê.',
+        pl: 'Proszę podać dokładnie, jakiej części potrzebujesz i ewentualnie dla której strony/osi.',
+    },
+
+    ocr_vin_missing: {
+        de: 'Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.',
+        en: 'I couldn\'t read VIN or HSN/TSN. Please send those numbers or a clearer photo.',
+        tr: 'VIN veya HSN/TSN\'yi okuyamadım. Lütfen numaraları veya daha net bir fotoğraf gönderin.',
+        ku: 'Min nekarî VIN an HSN/TSN bixwînim. Ji kerema xwe jimareyan an wêneyek zelaltir bişînin.',
+        pl: 'Nie udało się odczytać VIN lub HSN/TSN. Proszę podać numery lub przesłać wyraźniejsze zdjęcie.',
+    },
+
+    ocr_photo_failed: {
+        de: 'Ich konnte Ihr Fahrzeugschein-Foto nicht laden. Bitte schreiben Sie mir Marke, Modell, Baujahr und VIN/HSN/TSN.',
+        en: 'I couldn\'t load your registration photo. Please type your make, model, year, and VIN/HSN/TSN.',
+        tr: 'Ruhsat fotoğrafınızı yükleyemedim. Lütfen marka, model, yıl ve VIN/HSN/TSN yazın.',
+        ku: 'Min nekarî wêneya belgeya we bar bikim. Ji kerema xwe marka, model, sal û VIN/HSN/TSN binivîsin.',
+        pl: 'Nie udało się załadować zdjęcia dowodu rejestracyjnego. Proszę wpisać markę, model, rok i VIN/HSN/TSN.',
+    },
+
+    oem_product_found: {
+        de: 'Ich habe ein passendes Produkt gefunden und prüfe Angebote.',
+        en: 'I found a suitable product and am checking offers now.',
+        tr: 'Uygun bir ürün buldum ve teklifleri kontrol ediyorum.',
+        ku: 'Min hilberek maqûl dît û niha pêşniyaran kontrol dikim.',
+        pl: 'Znalazłem odpowiedni produkt i sprawdzam oferty.',
+    },
+
+    oem_product_uncertain: {
+        de: 'Ich bin mir beim Produkt nicht sicher. Ich gebe das an einen Kollegen weiter.',
+        en: 'I\'m not fully confident about the product yet. I\'ll hand this to a colleague.',
+        tr: 'Ürün hakkında tam emin değilim. Bunu bir meslektaşıma ileteceğim.',
+        ku: 'Ez li ser hilberê ne bi temamî bawer im. Ez ê vê ji hevkarekî re bişînim.',
+        pl: 'Nie jestem w pełni pewien tego produktu. Przekażę to koledze.',
+    },
+
+    oem_scrape_failed: {
+        de: 'Ich habe ein passendes Produkt, aber die Angebotssuche ist fehlgeschlagen. Ich gebe das an einen Kollegen weiter.',
+        en: 'I found a product match but fetching offers failed. I\'ll ask a colleague.',
+        tr: 'Uygun bir ürün buldum ama teklifleri getirme başarısız oldu. Bir meslektaşıma soracağım.',
+        ku: 'Min hilberek maqûl dît lê anîna pêşniyaran bi ser neket. Ez ê ji hevkarekî bipirsim.',
+        pl: 'Znalazłem pasujący produkt, ale pobranie ofert nie powiodło się. Zapytam kolegę.',
+    },
+
+    oem_tech_error: {
+        de: 'Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Ich leite Ihre Anfrage an einen Experten weiter.',
+        en: 'A technical error occurred while finding the right part. I\'m forwarding your request to an expert.',
+        tr: 'Doğru parçayı bulurken teknik bir hata oluştu. Talebinizi bir uzmana yönlendiriyorum.',
+        ku: 'Dema ku perçeya rast dibû çewtiya teknîkî çêbû. Ez daxwaziya we ji pispor re dişînim.',
+        pl: 'Wystąpił błąd techniczny podczas szukania odpowiedniej części. Przekazuję zapytanie do eksperta.',
+    },
+
+    vehicle_need_more: {
+        de: 'Ich brauche noch ein paar Fahrzeugdaten.',
+        en: 'I need a bit more vehicle info.',
+        tr: 'Biraz daha araç bilgisine ihtiyacım var.',
+        ku: 'Hinek agahdariya wesayîtê zêde hewce ye.',
+        pl: 'Potrzebuję jeszcze kilku danych pojazdu.',
+    },
+
+    vehicle_confirm: {
+        de: 'Ich habe Ihr Fahrzeug als {summary} identifiziert. Ist das korrekt?',
+        en: 'I\'ve identified your vehicle as {summary}. Is this correct?',
+        tr: 'Aracınızı {summary} olarak belirledim. Doğru mu?',
+        ku: 'Min wesayîta we wek {summary} nas kir. Ev rast e?',
+        pl: 'Zidentyfikowałem Twój pojazd jako {summary}. Czy to poprawne?',
+    },
+
+    doc_hint: {
+        de: 'Schicken Sie mir am besten zuerst ein Foto Ihres Fahrzeugscheins. Falls nicht möglich: Marke, Modell, Baujahr und VIN oder HSN/TSN.',
+        en: 'The best way is to send me a photo of your vehicle registration document. Alternatively: brand, model, year and VIN or HSN/TSN.',
+        tr: 'En iyi yol araç ruhsatınızın fotoğrafını göndermek. Alternatif olarak: marka, model, yıl ve VIN veya HSN/TSN.',
+        ku: 'Rêya herî baş ev e ku wêneya belgeya qeydkirina wesayîtê bişînin. Alternatîf: marka, model, sal û VIN an HSN/TSN.',
+        pl: 'Najlepiej wyślij mi zdjęcie dowodu rejestracyjnego. Alternatywnie: marka, model, rok i VIN lub HSN/TSN.',
+    },
+
+    ask_brand: {
+        de: 'Welche Automarke ist es?',
+        en: 'Which car brand is it?',
+        tr: 'Hangi araba markası?',
+        ku: 'Kîjan marka otomobîl e?',
+        pl: 'Jaka to marka samochodu?',
+    },
+
+    ask_model: {
+        de: 'Welches Modell genau?',
+        en: 'Which exact model is it?',
+        tr: 'Tam olarak hangi model?',
+        ku: 'Bi rastî kîjan model e?',
+        pl: 'Jaki dokładnie model?',
+    },
+
+    ask_vin_general: {
+        de: 'Bitte teilen Sie mir VIN oder HSN/TSN mit, oder mindestens Marke/Modell/Baujahr, damit ich Ihr Fahrzeug identifizieren kann.',
+        en: 'Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car.',
+        tr: 'Lütfen VIN veya HSN/TSN paylaşın veya en azından marka/model/yıl bilgisi verin, aracınızı belirleyebileyim.',
+        ku: 'Ji kerema xwe VIN an HSN/TSN parve bikin, an herî kêm marka/model/sal, da ku ez karibim wesayîta we nas bikim.',
+        pl: 'Proszę podać VIN lub HSN/TSN, lub przynajmniej markę/model/rok, abym mógł zidentyfikować pojazd.',
     },
 };
 

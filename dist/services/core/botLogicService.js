@@ -148,9 +148,7 @@ async function runCollectPartBrain(params) {
     catch (error) {
         logger_1.logger.error("runCollectPartBrain failed", { error: error?.message });
         return {
-            replyText: params.language === "en"
-                ? "Please tell me which exact part you need and, if relevant, for which side/axle."
-                : "Bitte teilen Sie mir mit, welches Teil Sie genau benötigen und falls relevant, für welche Achse/Seite.",
+            replyText: (0, botResponses_1.t)('collect_part_fallback', params.language),
             nextStatus: "collect_part",
             slotsToAsk: [],
             shouldApologize: false,
@@ -528,9 +526,7 @@ vehicleOverride) {
         const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
         return {
             replyText: q ||
-                (language === "en"
-                    ? "I need a bit more vehicle info."
-                    : "Ich brauche noch ein paar Fahrzeugdaten."),
+                (0, botResponses_1.t)('vehicle_need_more', language),
             nextStatus: "collect_vehicle"
         };
     }
@@ -657,9 +653,7 @@ vehicleOverride) {
                     : cautious && language === "en"
                         ? " (please double-check)"
                         : "";
-                const reply = language === "en"
-                    ? `I found a suitable product and am checking offers now.${cautionNote}`
-                    : `Ich habe ein passendes Produkt gefunden und prüfe Angebote.${cautionNote}`;
+                const reply = `${(0, botResponses_1.t)('oem_product_found', language)}${cautionNote}`;
                 return {
                     replyText: reply,
                     nextStatus: "show_offers"
@@ -668,26 +662,20 @@ vehicleOverride) {
             catch (err) {
                 logger_1.logger.error("Scrape after OEM failed", { error: err?.message, orderId });
                 return {
-                    replyText: language === "en"
-                        ? "I found a product match but fetching offers failed. I’ll ask a colleague."
-                        : "Ich habe ein passendes Produkt, aber die Angebotssuche ist fehlgeschlagen. Ich gebe das an einen Kollegen weiter.",
+                    replyText: (0, botResponses_1.t)('oem_scrape_failed', language),
                     nextStatus: "collect_part"
                 };
             }
         }
         return {
-            replyText: language === "en"
-                ? "I’m not fully confident about the product yet. I’ll hand this to a colleague."
-                : "Ich bin mir beim Produkt nicht sicher. Ich gebe das an einen Kollegen weiter.",
+            replyText: (0, botResponses_1.t)('oem_product_uncertain', language),
             nextStatus: "collect_part"
         };
     }
     catch (err) {
         logger_1.logger.error("resolveOEM failed", { error: err?.message, orderId });
         return {
-            replyText: language === "en"
-                ? "A technical error occurred while finding the right part. Please send more vehicle info."
-                : "Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Ich leite Ihre Anfrage an einen Experten weiter.",
+            replyText: (0, botResponses_1.t)('oem_tech_error', language),
             nextStatus: "oem_lookup" // #8 FIX: was collect_vehicle (loop), now stays in oem_lookup for human escalation
         };
     }
@@ -1357,9 +1345,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                         // do not change state, just reply
                         let reply = orch.reply || "";
                         if (needsVehicleDocumentHint(order)) {
-                            const docHint = order.language === "en"
-                                ? "The best way is to send me a photo of your vehicle registration document. Alternatively: brand, model, year and VIN or HSN/TSN."
-                                : "Schicken Sie mir am besten zuerst ein Foto Ihres Fahrzeugscheins. Falls nicht möglich: Marke, Modell, Baujahr und VIN oder HSN/TSN.";
+                            const docHint = (0, botResponses_1.t)('doc_hint', order.language);
                             reply = reply ? `${reply} ${docHint}` : docHint;
                         }
                         return { reply, orderId: order.id };
@@ -1410,9 +1396,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     if (statesForOrchestrator.includes(order.status) && isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
                         if (!orderData?.vehicleConfirmed) {
                             const summary = `${vehicleCandidate.make} ${vehicleCandidate.model} (${vehicleCandidate.year})`;
-                            const reply = language === "en"
-                                ? `I've identified your vehicle as ${summary}. Is this correct?`
-                                : `Ich habe Ihr Fahrzeug als ${summary} identifiziert. Ist das korrekt?`;
+                            const reply = (0, botResponses_1.tWith)('vehicle_confirm', language, { summary });
                             await (0, supabaseService_1.updateOrder)(order.id, { status: "confirm_vehicle" });
                             return { reply, orderId: order.id, nextStatus: "confirm_vehicle" };
                         }
@@ -1780,22 +1764,16 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                                     // gezielte Rückfrage
                                     const field = missingFieldsAfterOcr[0];
                                     if (field === "vin_or_hsn_tsn") {
-                                        replyText =
-                                            language === "en"
-                                                ? "I couldn’t read VIN or HSN/TSN. Please send those numbers or a clearer photo."
-                                                : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.";
+                                        replyText = (0, botResponses_1.t)('ocr_vin_missing', language);
                                     }
                                     else if (field === "make") {
-                                        replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
+                                        replyText = (0, botResponses_1.t)('ask_brand', language);
                                     }
                                     else if (field === "model") {
-                                        replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
+                                        replyText = (0, botResponses_1.t)('ask_model', language);
                                     }
                                     else {
-                                        replyText =
-                                            language === "en"
-                                                ? "Please share VIN or HSN/TSN, or at least make/model/year, so I can identify your car."
-                                                : (0, botResponses_1.t)('collect_vehicle_manual', language);
+                                        replyText = (0, botResponses_1.t)('ask_vin_general', language);
                                     }
                                     nextStatus = "collect_vehicle";
                                 }
@@ -1805,10 +1783,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                             logger_1.logger.error("Vehicle OCR failed", { error: err?.message, orderId: order.id });
                         }
                         if (!anyBufferDownloaded) {
-                            replyText =
-                                language === "en"
-                                    ? "I couldn’t load your registration photo. Please type your make, model, year, and VIN/HSN/TSN."
-                                    : "Ich konnte Ihr Fahrzeugschein-Foto nicht laden. Bitte schreiben Sie mir Marke, Modell, Baujahr und VIN/HSN/TSN.";
+                            replyText = (0, botResponses_1.t)('ocr_photo_failed', language);
                             nextStatus = "collect_vehicle";
                             break;
                         }
@@ -1842,10 +1817,10 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                                         : "Ich konnte VIN oder HSN/TSN nicht sicher erkennen. Bitte schicken Sie mir die Nummern oder ein schärferes Foto.";
                             }
                             else if (field === "make") {
-                                replyText = language === "en" ? "Which car brand is it?" : "Welche Automarke ist es?";
+                                replyText = (0, botResponses_1.t)('ask_brand', language);
                             }
                             else if (field === "model") {
-                                replyText = language === "en" ? "Which exact model is it?" : "Welches Modell genau?";
+                                replyText = (0, botResponses_1.t)('ask_model', language);
                             }
                             else {
                                 replyText =
