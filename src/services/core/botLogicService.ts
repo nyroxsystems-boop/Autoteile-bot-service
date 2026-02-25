@@ -878,8 +878,8 @@ async function runOemLookupAndScraping(
       replyText:
         language === "en"
           ? "A technical error occurred while finding the right part. Please send more vehicle info."
-          : "Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Bitte geben Sie mir noch ein paar Fahrzeugdaten.",
-      nextStatus: "collect_vehicle"
+          : "Beim Finden des passenden Teils ist ein technischer Fehler aufgetreten. Ich leite Ihre Anfrage an einen Experten weiter.",
+      nextStatus: "oem_lookup" as ConversationStatus // #8 FIX: was collect_vehicle (loop), now stays in oem_lookup for human escalation
     };
   }
 }
@@ -1367,7 +1367,8 @@ function shortOrderLabel(o: { id: string; vehicle_description?: string | null; p
 // Hauptlogik – zustandsbasierter Flow
 // ------------------------------
 export async function handleIncomingBotMessage(
-  payload: BotMessagePayload
+  payload: BotMessagePayload,
+  sendInterimReply?: (message: string) => Promise<void>
 ): Promise<{
   reply: string;
   orderId: string;
@@ -1402,7 +1403,7 @@ export async function handleIncomingBotMessage(
       const options = activeOrders.slice(0, 3).map(shortOrderLabel).join(" | ");
       return {
         reply:
-          "Zu welcher Anfrage hast du die Frage? Bitte nenn die Ticket-ID.\nOptionen: " +
+          "Zu welcher Anfrage haben Sie die Frage? Bitte nennen Sie die Ticket-ID.\nOptionen: " +
           options,
         orderId: activeOrders[0].id
       };
@@ -1421,7 +1422,7 @@ export async function handleIncomingBotMessage(
       return {
         reply: lang === "en"
           ? "No problem! I've cancelled your request. If you need anything else, just write me."
-          : "Kein Problem! Deine Anfrage wurde abgebrochen. Wenn du etwas anderes brauchst, schreib mir einfach.",
+          : "Kein Problem! Ihre Anfrage wurde abgebrochen. Wenn Sie etwas anderes brauchen, schreiben Sie mir einfach.",
         orderId: orderToCancel.id
       };
     }
@@ -1515,12 +1516,7 @@ export async function handleIncomingBotMessage(
     // Early abuse detection: if the message is insulting, short-circuit and don't advance the flow.
     try {
       if (detectAbusive(userText)) {
-        const reply = language
-          ? language === "de"
-            ? "Bitte benutze keine Beleidigungen. Ich helfe dir gern weiter, wenn du sachlich bleibst."
-            : "Please refrain from insults. I can help if you ask politely."
-          : "Bitte benutze keine Beleidigungen. / Please refrain from insults.";
-        // Do not change order state. Just respond.
+        const reply = t('abuse_warning', language);
         return { reply, orderId: order.id };
       }
     } catch (e) {
@@ -1783,9 +1779,10 @@ export async function handleIncomingBotMessage(
               positionNeeded: Boolean(orch.slots.position)
             };
 
-            // P0 #1: Send Zwischennachricht BEFORE starting OEM resolution
-            // This eliminates the "dead silence" where users see nothing for 5-22s
-            const searchingMsg = t('oem_searching', order.language);
+            // #1 FIX: Send Zwischennachricht BEFORE OEM lookup via callback
+            if (sendInterimReply) {
+              await sendInterimReply(t('oem_searching', order.language));
+            }
 
             // M2 FIX: 30s timeout for entire OEM resolution
             const OEM_TIMEOUT_MS = 30000;
@@ -1803,11 +1800,11 @@ export async function handleIncomingBotMessage(
                   setTimeout(() => reject(new Error('OEM_TIMEOUT')), OEM_TIMEOUT_MS)
                 )
               ]);
-              return { reply: oemFlow.replyText, orderId: order.id, preReply: searchingMsg };
+              return { reply: oemFlow.replyText, orderId: order.id };
             } catch (err: any) {
               if (err.message === 'OEM_TIMEOUT') {
                 logger.warn('[BotLogic] OEM resolution timed out after 30s', { orderId: order.id });
-                return { reply: t('oem_timeout', order.language), orderId: order.id, preReply: searchingMsg };
+                return { reply: t('oem_timeout', order.language), orderId: order.id };
               }
               throw err;
             }
@@ -1869,7 +1866,7 @@ export async function handleIncomingBotMessage(
         statusReply = `Ich habe nachgesehen (Ticket ${order.id}). Status: ${status}. `;
         if (status === "done") statusReply += "Ihre Bestellung ist abgeschlossen und sollte bald bei Ihnen sein!";
         else if (status === "ready") statusReply += `Wir bearbeiten Ihre Bestellung. Geschätzte Lieferzeit: ${delivery} Tage.`;
-        else statusReply += "Wir suchen gerade noch nach dem besten Angebot für dich.";
+        else statusReply += "Wir suchen gerade noch nach dem besten Angebot für Sie.";
       }
       return { reply: statusReply, orderId: order.id };
     }
@@ -2781,17 +2778,14 @@ export async function handleIncomingBotMessage(
           nextStatus = "choose_language";
           language = null;
           replyText =
-            "Es ist ein interner Fehler im Status aufgetreten. Lass uns neu starten: Bitte wähle deine Sprache (1-5).\nThere was an internal state error. Let’s restart: please choose your language (1-5).";
+            "Es ist ein interner Fehler im Status aufgetreten. Bitte beginnen wir neu: Wählen Sie Ihre Sprache (1-5).\nThere was an internal state error. Let’s restart: please choose your language (1-5).";
         }
       } // END switch
     } // END if (!replyText) - state machine fallback wrapper
 
     // Fallback, falls keine Antwort gesetzt wurde
     if (!replyText) {
-      replyText =
-        (language ?? "de") === "en"
-          ? "I'm working on your request. I'll update you soon."
-          : "Ich arbeite an deiner Anfrage und melde mich gleich.";
+      replyText = t('global_fallback', language);
     }
 
     const vehicleDescToSave = hasVehicleImage

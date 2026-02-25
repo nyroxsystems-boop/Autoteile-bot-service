@@ -95,36 +95,12 @@ function mergeCandidates(candidates: OEMCandidate[]): OEMCandidate[] {
   }));
 }
 
-function pickPrimary(candidates: any[]): { primaryOEM?: string; note?: string; overall: number } {
-  if (!candidates.length) return { primaryOEM: undefined, note: "Keine OEM-Kandidaten gefunden.", overall: 0 };
-  const sorted = [...candidates].sort((a, b) => b.confidence - a.confidence);
-  const best = sorted[0];
-  const overall = best.confidence;
-
-  // STRICT VALIDATION: Multi-source check
-  const isMultiSource = best.sourceCount >= 2;
-  const isExtremelyStable = best.sourceCount >= 3;
-
-  if (best.confidence >= CONFIDENCE_THRESHOLD_VETTED && isMultiSource) {
-    return { primaryOEM: best.oem, note: "Validiert (Multi-Source + High Confidence).", overall };
-  }
-
-  if (best.confidence >= CONFIDENCE_THRESHOLD_RELIABLE) {
-    return {
-      primaryOEM: best.oem,
-      note: isMultiSource ? "Vorausgewählt (Prüfung empfohlen)." : "Unsicherer Treffer (Single-Source). Manuelle Prüfung zwingend.",
-      overall: isMultiSource ? overall : overall * 0.9 // Penalty for single source
-    };
-  }
-
-  return {
-    primaryOEM: undefined,
-    note: "Trefferquote unter 70%. Eskalation an Experten.",
-    overall
-  };
-}
+// NOTE: pickPrimary() was dead code (never called). Removed in audit cleanup.
 
 export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverResult> {
+  // #11 FIX: Set _startTime for latency metrics (was never set, always 0)
+  (req as any)._startTime = Date.now();
+
   const allCandidates: OEMCandidate[] = [];
   let deepResolutionMetadata: any = {};
 

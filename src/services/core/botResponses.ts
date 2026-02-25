@@ -32,6 +32,9 @@ type ResponseKey =
     | 'farewell'
     | 'frustration_apology'
     | 'abuse_warning'
+    | 'cancel_order'
+    | 'status_multi_ticket'
+    | 'global_fallback'
     | 'session_timeout'
     | 'typing_indicator';
 
@@ -219,6 +222,30 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: '...',
         ku: '...',
         pl: '...',
+    },
+
+    cancel_order: {
+        de: 'Kein Problem! Ihre Anfrage wurde abgebrochen. Wenn Sie etwas anderes brauchen, schreiben Sie mir einfach.',
+        en: 'No problem! I\'ve cancelled your request. If you need anything else, just write me.',
+        tr: 'Sorun değil! Talebiniz iptal edildi. Başka bir şeye ihtiyacınız olursa yazmanız yeterli.',
+        ku: 'Pirsgirêk tune! Daxwaziya we hat betal kirin. Heke tiştekî din hewce be, tenê ji min re binivîsin.',
+        pl: 'Nie ma problemu! Zapytanie zostało anulowane. Jeśli potrzebujesz czegoś innego, napisz do mnie.',
+    },
+
+    status_multi_ticket: {
+        de: 'Zu welcher Anfrage haben Sie die Frage? Bitte nennen Sie die Ticket-ID.',
+        en: 'Which request do you have a question about? Please provide the ticket ID.',
+        tr: 'Hangi talep hakkında sorunuz var? Lütfen bilet numarasını belirtin.',
+        ku: 'Li ser kîjan daxwaziyê pirsa we heye? Ji kerema xwe nasnameya bilêtê binivîsin.',
+        pl: 'Którego zapytania dotyczy pytanie? Proszę podać numer zgłoszenia.',
+    },
+
+    global_fallback: {
+        de: 'Ich arbeite an Ihrer Anfrage. Bitte haben Sie einen Moment Geduld.',
+        en: 'I\'m working on your request. Please bear with me for a moment.',
+        tr: 'Talebiniz üzerinde çalışıyorum. Lütfen biraz bekleyin.',
+        ku: 'Ez li ser daxwaziya we dixebitim. Ji kerema xwe hinekî bisekinin.',
+        pl: 'Pracuję nad Twoim zapytaniem. Proszę o chwilę cierpliwości.',
     },
 };
 

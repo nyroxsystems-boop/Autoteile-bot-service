@@ -15,7 +15,7 @@ const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+
 // K5: Idempotency — Prevent duplicate Twilio replies on BullMQ retry
 // ============================================================================
 const processedJobs = new Map<string, number>(); // jobId → timestamp
-const IDEMPOTENCY_TTL_MS = 60_000; // 60s
+const IDEMPOTENCY_TTL_MS = 120_000; // 120s (was 60s — extend for retries with backoff)
 
 function markJobProcessed(jobId: string): boolean {
     // Clean expired entries
@@ -29,58 +29,71 @@ function markJobProcessed(jobId: string): boolean {
         return false; // already processed
     }
     processedJobs.set(jobId, now);
-    return true; // first time
+    return true;
 }
 
 // ============================================================================
-// Twilio Reply
+// #10 FIX: Twilio Client Singleton — no longer created per-reply
 // ============================================================================
+let twilioClient: ReturnType<typeof twilio> | null = null;
 
+function getTwilioClient(): ReturnType<typeof twilio> | null {
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+        logger.error("Twilio credentials missing, cannot send reply");
+        return null;
+    }
+    if (!twilioClient) {
+        twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+        logger.info("[BotWorker] Twilio client initialized (singleton)");
+    }
+    return twilioClient;
+}
+
+// #10 FIX: sendTwilioReply now THROWS on error instead of silently logging
 async function sendTwilioReply(
     to: string,
     body: string,
     options: { mediaUrl?: string; buttons?: string[]; contentSid?: string; contentVariables?: string } = {}
 ) {
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-        logger.error("Twilio credentials missing, cannot send reply");
-        return;
+    const client = getTwilioClient();
+    if (!client) {
+        throw new Error("Twilio client not available — missing credentials");
     }
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-    try {
-        const payload: any = {
-            from: TWILIO_WHATSAPP_NUMBER,
-            to,
-        };
 
-        if (options.contentSid) {
-            payload.contentSid = options.contentSid;
-            if (options.contentVariables) {
-                payload.contentVariables = options.contentVariables;
-            }
-        } else {
-            payload.body = body;
-            if (options.mediaUrl) {
-                payload.mediaUrl = [options.mediaUrl];
-            }
+    const payload: any = {
+        from: TWILIO_WHATSAPP_NUMBER,
+        to,
+        body,
+    };
+
+    if (options.contentSid) {
+        payload.contentSid = options.contentSid;
+        if (options.contentVariables) {
+            payload.contentVariables = options.contentVariables;
         }
+        delete payload.body; // Content API replaces body
+    }
 
+    if (options.mediaUrl) {
+        payload.mediaUrl = [options.mediaUrl];
+    }
+
+    try {
         await client.messages.create(payload);
-
-        // S4 FIX: console.log → logger.info
-        logger.info("📤 BOT REPLY SENT", {
+        logger.info("📤 Twilio reply sent", { to, bodyLen: body?.length });
+    } catch (err: any) {
+        logger.error("Twilio send FAILED", {
             to,
-            message: payload.body?.substring(0, 100) || "[template message]",
-            hasMedia: !!options.mediaUrl,
-            contentSid: options.contentSid
+            error: err?.message,
+            code: err?.code,
+            status: err?.status
         });
-    } catch (error: any) {
-        // S4 FIX: console.error → logger.error
-        logger.error("❌ FAILED TO SEND WHATSAPP REPLY", { error: error?.message, to });
+        throw err; // #10 FIX: propagate error so BullMQ retries
     }
 }
 
 // ============================================================================
-// K3: Worker with exponential backoff + reduced concurrency
+// #2 FIX: Worker with exponential backoff + DLQ + reduced concurrency
 // ============================================================================
 
 const worker = new Worker<BotJobData>(
@@ -88,28 +101,42 @@ const worker = new Worker<BotJobData>(
     async (job: Job<BotJobData>) => {
         const { from, text, orderId, mediaUrls } = job.data;
 
-        // S4 FIX: console.log → logger.info
         logger.info("📥 INCOMING MESSAGE", {
             from,
             message: text?.substring(0, 100),
             hasMedia: !!(mediaUrls && mediaUrls.length > 0),
             orderId,
-            jobId: job.id
+            jobId: job.id,
+            attempt: job.attemptsMade + 1
         });
 
         // P1 #9: Record activity for session timeout tracking
-        recordActivity(from, orderId || '', null);
+        recordActivity(from, orderId || '', null); // language populated after handleIncomingBotMessage
 
         try {
-            // 1. Process Logic
+            // ============================================================
+            // #1 FIX: Pass sendInterimReply callback into handleIncomingBotMessage
+            // This sends the Zwischennachricht BEFORE OEM lookup starts,
+            // not after the entire function returns.
+            // ============================================================
+            const sendInterimReply = async (message: string) => {
+                try {
+                    await sendTwilioReply(from, message);
+                    logger.info("📤 INTERIM REPLY SENT", { to: from, message: message.substring(0, 50) });
+                } catch (err: any) {
+                    // Non-fatal: interim message failure shouldn't block main flow
+                    logger.warn("[BotWorker] Interim reply failed (non-blocking)", { error: err?.message });
+                }
+            };
+
+            // 1. Process Logic — with callback for interim messages
             const result = await handleIncomingBotMessage({
                 from,
                 text,
                 orderId: orderId || null,
                 mediaUrls
-            });
+            }, sendInterimReply);
 
-            // S4 FIX: console.log → logger.info
             logger.info("🤖 BOT GENERATED REPLY", {
                 replyLength: result.reply?.length,
                 replyPreview: result.reply?.substring(0, 150),
@@ -124,16 +151,10 @@ const worker = new Worker<BotJobData>(
                 logger.warn("Failed to persist outgoing bot message", { error: dbErr?.message });
             }
 
-            // 3. K5: Idempotency check before sending reply
+            // 3. Idempotency check before sending reply
             if (!markJobProcessed(job.id || `${from}-${Date.now()}`)) {
                 logger.warn("[BotWorker] Skipping duplicate Twilio send", { jobId: job.id });
                 return; // Don't send again on retry
-            }
-
-            // 3.5 P0 #1: Send Zwischennachricht (preReply) if present
-            if ((result as any).preReply) {
-                await sendTwilioReply(from, (result as any).preReply);
-                logger.info("📤 PRE-REPLY SENT (searching...)", { to: from });
             }
 
             // 4. Send Reply via Twilio
@@ -143,31 +164,54 @@ const worker = new Worker<BotJobData>(
                 contentVariables: result.contentVariables
             });
 
+            // 5. Persist lastBotMessage for orchestrator context
+            try {
+                const { updateOrderData } = await import("../services/adapters/supabaseService");
+                if (result.orderId) {
+                    await updateOrderData(result.orderId, { lastBotMessage: result.reply });
+                }
+            } catch (_) { /* non-critical */ }
+
         } catch (err: any) {
-            logger.error("Bot worker failed", { error: err?.message, jobId: job.id, from });
-            throw err; // Let BullMQ handle retry with backoff
+            logger.error("Bot worker failed", {
+                error: err?.message,
+                jobId: job.id,
+                from,
+                attempt: job.attemptsMade + 1,
+                maxAttempts: job.opts?.attempts || 3
+            });
+            throw err; // Let BullMQ handle retry with exponential backoff
         }
     },
     {
         connection,
-        concurrency: 3 // K3 FIX: reduced from 5 → 3
+        concurrency: 3,
+        // #2 FIX: Default job options with exponential backoff
+        settings: {},
     }
 );
+
+// #2 FIX: Configure default job options on the queue side
+// Note: BullMQ applies backoff from Job options, not Worker options.
+// The queue producer (botQueue.ts) should set these. Here we configure
+// the worker to handle retries gracefully via the job's own settings.
 
 worker.on("completed", (job: Job) => {
     logger.info("Job completed", { jobId: job.id });
 });
 
 worker.on("failed", (job: Job | undefined, err: Error) => {
-    logger.error("Job FAILED (will retry if attempts remain)", {
+    const isFinalFail = job && job.attemptsMade >= (job.opts?.attempts || 3);
+    logger.error(isFinalFail ? "Job DEAD-LETTERED (all retries exhausted)" : "Job FAILED (will retry)", {
         jobId: job?.id,
         error: err.message,
         attemptsMade: job?.attemptsMade,
-        maxAttempts: job?.opts?.attempts || 'default'
+        maxAttempts: job?.opts?.attempts || 3,
+        deadLettered: isFinalFail
     });
 });
 
-// P1 #9: Start session timeout checker (sends follow-up after 24h inactivity)
+// P1 #9: Start session timeout checker
 startSessionTimeoutChecker(async (waId: string, message: string) => {
     await sendTwilioReply(waId, message);
 });

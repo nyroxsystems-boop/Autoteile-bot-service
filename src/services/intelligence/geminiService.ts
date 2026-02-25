@@ -35,17 +35,19 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const RATE_LIMIT_MAX = 30;      // Max requests per window
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+const RATE_LIMIT_REFILL_RATE = RATE_LIMIT_MAX / RATE_LIMIT_WINDOW_MS; // ~0.5 tokens/sec
 let rateLimitTokens = RATE_LIMIT_MAX;
 let rateLimitLastRefill = Date.now();
 
 function acquireRateToken(): boolean {
     const now = Date.now();
     const elapsed = now - rateLimitLastRefill;
-    if (elapsed >= RATE_LIMIT_WINDOW_MS) {
-        rateLimitTokens = RATE_LIMIT_MAX;
-        rateLimitLastRefill = now;
-    }
-    if (rateLimitTokens > 0) {
+    // #13 FIX: Gradual refill — tokens trickle back, no burst spike
+    const tokensToAdd = elapsed * RATE_LIMIT_REFILL_RATE;
+    rateLimitTokens = Math.min(RATE_LIMIT_MAX, rateLimitTokens + tokensToAdd);
+    rateLimitLastRefill = now;
+
+    if (rateLimitTokens >= 1) {
         rateLimitTokens--;
         return true;
     }
