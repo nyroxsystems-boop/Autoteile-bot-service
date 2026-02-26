@@ -92,8 +92,76 @@ class OEMDatabase {
         this.createTables();
         this.initialized = true;
 
+        // Auto-seed if database is empty (first run)
+        this.autoSeedIfEmpty();
+
         logger.info(`[OEMDatabase] Initialized at ${DB_PATH}`);
         return this.db;
+    }
+
+    /**
+     * Auto-seeds verified OEM data on first run.
+     * Checks if DB is empty, then bulk-inserts all verified OEMs.
+     * This ensures the 300+ curated entries are always available.
+     */
+    private autoSeedIfEmpty(): void {
+        try {
+            const countStmt = this.db!.prepare('SELECT COUNT(*) as count FROM oem_records');
+            const { count } = countStmt.get() as any;
+
+            if (count > 0) {
+                logger.info(`[OEMDatabase] Already seeded (${count} records)`);
+                return;
+            }
+
+            logger.info('[OEMDatabase] 🌱 Empty database detected — auto-seeding verified OEM data...');
+
+            // Inline require to avoid circular dependency with oemDataSeeder
+            const { ALL_VERIFIED_OEMS } = require('./verifiedOemData');
+
+            const insert = this.db!.prepare(`
+                INSERT OR IGNORE INTO oem_records (
+                    oem, brand, model, model_code, year_from, year_to,
+                    part_category, part_description, superseded_by, supersedes,
+                    sources, confidence, last_verified, hit_count
+                ) VALUES (
+                    @oem, @brand, @model, @modelCode, @yearFrom, @yearTo,
+                    @partCategory, @partDescription, @supersededBy, @supersedes,
+                    @sources, @confidence, @lastVerified, @hitCount
+                )
+            `);
+
+            const insertMany = this.db!.transaction((records: any[]) => {
+                let seeded = 0;
+                for (const record of records) {
+                    insert.run({
+                        oem: record.oem,
+                        brand: record.brand.toUpperCase(),
+                        model: record.model || null,
+                        modelCode: record.modelCode || null,
+                        yearFrom: record.yearFrom || null,
+                        yearTo: record.yearTo || null,
+                        partCategory: record.partCategory,
+                        partDescription: record.partDescription || '',
+                        supersededBy: record.supersededBy || null,
+                        supersedes: record.supersedes || null,
+                        sources: JSON.stringify(record.sources || []),
+                        confidence: record.confidence || 0.5,
+                        lastVerified: record.lastVerified || new Date().toISOString(),
+                        hitCount: record.hitCount || 0,
+                    });
+                    seeded++;
+                }
+                return seeded;
+            });
+
+            const seeded = insertMany(ALL_VERIFIED_OEMS);
+            logger.info(`[OEMDatabase] ✅ Auto-seeded ${seeded} verified OEM records`);
+
+        } catch (err: any) {
+            // Non-fatal — system works without seed data, just slower
+            logger.warn('[OEMDatabase] Auto-seed failed (non-fatal)', { error: err?.message });
+        }
     }
 
     private createTables(): void {
@@ -124,6 +192,7 @@ class OEMDatabase {
 
         // Indexes for fast lookup
         db.exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_oem_brand_category ON oem_records(oem, brand, part_category);
             CREATE INDEX IF NOT EXISTS idx_oem ON oem_records(oem);
             CREATE INDEX IF NOT EXISTS idx_brand ON oem_records(brand);
             CREATE INDEX IF NOT EXISTS idx_brand_model ON oem_records(brand, model);

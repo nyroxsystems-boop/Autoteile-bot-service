@@ -598,6 +598,28 @@ vehicleOverride) {
         catch (err) {
             logger_1.logger.warn("Failed to persist OEM resolver output", { orderId, error: err?.message });
         }
+        // 🔀 BUG A FIX: Handle variant detection — ask customer instead of escalating
+        if (oemResult.variantDetected && oemResult.variantQuestion && oemResult.variants?.length) {
+            logger_1.logger.info('[OEMLookup] Variants detected — asking customer', {
+                orderId,
+                variantCount: oemResult.variants.length,
+                variants: oemResult.variants.map((v) => v.oem),
+            });
+            // Persist variants so we can retrieve the selected OEM when customer replies
+            try {
+                await (0, supabaseService_1.updateOrderData)(orderId, {
+                    pendingVariants: oemResult.variants,
+                    oemCandidates: oemResult.candidates ?? [],
+                });
+            }
+            catch (err) {
+                logger_1.logger.warn('Failed to persist variant data', { orderId, error: err?.message });
+            }
+            return {
+                replyText: oemResult.variantQuestion,
+                nextStatus: "awaiting_variant_selection"
+            };
+        }
         if (oemResult.primaryOEM && oemResult.overallConfidence >= 0.7) {
             const cautious = oemResult.overallConfidence < 0.9;
             try {
@@ -1265,31 +1287,96 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
             // If abuse check fails for any reason, continue normally.
             logger_1.logger.warn("Abuse detection failed", { error: e?.message });
         }
-        // If user sent an image, try OCR first so orchestrator can use it
+        // =====================================================================
+        // 🖼️ IMAGE FLOW: Classify first, then route appropriately
+        // vehicle_document → OCR → vehicle data enrichment
+        // part_photo       → extract OEM from label → direct answer
+        // unknown          → skip OCR (no waste)
+        // =====================================================================
         let ocrResult = null;
         let ocrFailed = false;
+        let partLabelOem = null;
         if (hasVehicleImage && Array.isArray(payload.mediaUrls) && payload.mediaUrls.length > 0) {
             try {
+                // Step 1: Classify the image (cheap Gemini Flash call ~$0.001)
+                const { classifyImage } = await Promise.resolve().then(() => __importStar(require('../intelligence/imageClassifier')));
+                const classification = await classifyImage(payload.mediaUrls[0]);
+                logger_1.logger.info('[ImageFlow] Classification result', {
+                    type: classification.classification,
+                    confidence: classification.confidence,
+                    orderId: order.id,
+                });
                 const buf = await downloadFromTwilio(payload.mediaUrls[0]);
-                ocrResult = await extractVehicleDataFromImage(buf);
-                logger_1.logger.info("Pre-OCR result for orchestrator", { orderId: order.id, ocr: ocrResult });
-                // M1 FIX: Check if OCR actually extracted anything useful
-                const hasData = ocrResult && (ocrResult.make || ocrResult.model || ocrResult.vin || ocrResult.hsn);
-                if (!hasData) {
-                    ocrFailed = true;
-                    logger_1.logger.warn("OCR returned empty result", { orderId: order.id });
+                switch (classification.classification) {
+                    case 'vehicle_document': {
+                        // Route 1: Fahrzeugschein → existing OCR pipeline
+                        ocrResult = await extractVehicleDataFromImage(buf);
+                        logger_1.logger.info('[ImageFlow] Vehicle document OCR complete', { orderId: order.id, ocr: ocrResult });
+                        const hasData = ocrResult && (ocrResult.make || ocrResult.model || ocrResult.vin || ocrResult.hsn);
+                        if (!hasData) {
+                            ocrFailed = true;
+                            logger_1.logger.warn('[ImageFlow] OCR returned empty result', { orderId: order.id });
+                        }
+                        break;
+                    }
+                    case 'part_photo': {
+                        // Route 2: Part label/Teileetikett → extract OEM directly from photo
+                        try {
+                            const base64 = buf.toString('base64');
+                            const extractPrompt = `Dieses Bild zeigt ein Autoteil oder eine Teileverpackung.
+Extrahiere die OEM/OE-Nummer (Originalteilenummer des Herstellers).
+Suche nach:
+- Aufdrucken auf dem Teil selbst
+- Etiketten auf der Verpackung
+- Stanzungen/Gravuren auf Metallteilen
+
+Antworte NUR mit JSON: {"oem": "NUMMER", "description": "Was ist das Teil?", "confidence": 0.0-1.0}
+Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence": 0}`;
+                            const visionResult = await (0, geminiService_1.generateVisionCompletion)({ prompt: extractPrompt, imageBase64: base64 });
+                            const parsed = JSON.parse(visionResult.replace(/```json/g, '').replace(/```/g, '').trim());
+                            if (parsed.oem && parsed.confidence > 0.5) {
+                                partLabelOem = parsed.oem.replace(/[\s.-]/g, '').toUpperCase();
+                                logger_1.logger.info('[ImageFlow] Part label OEM extracted', {
+                                    oem: partLabelOem,
+                                    description: parsed.description,
+                                    confidence: parsed.confidence,
+                                    orderId: order.id,
+                                });
+                                // Direct fast-path: return the OEM from the label immediately
+                                const lang = language || 'de';
+                                const reply = lang === 'en'
+                                    ? `📸 I found an OEM number on the photo:\n\n*${partLabelOem}*\n${parsed.description ? `\n_${parsed.description}_` : ''}\n\nWould you like me to search for offers for this part?`
+                                    : `📸 Ich habe eine OEM-Nummer auf dem Foto gefunden:\n\n*${partLabelOem}*\n${parsed.description ? `\n_${parsed.description}_` : ''}\n\nSoll ich nach Angeboten für dieses Teil suchen?`;
+                                // Store the OEM on the order
+                                await (0, supabaseService_1.updateOrderData)(order.id, { oem: partLabelOem, partLabelExtracted: true });
+                                return { reply, orderId: order.id };
+                            }
+                        }
+                        catch (labelErr) {
+                            logger_1.logger.warn('[ImageFlow] Part label extraction failed', { error: labelErr?.message });
+                        }
+                        // If extraction failed, fall through to normal flow
+                        break;
+                    }
+                    default: {
+                        // Route 3: Unknown image (selfie, screenshot, etc.) → skip OCR
+                        logger_1.logger.info('[ImageFlow] Non-automotive image, skipping OCR', { orderId: order.id });
+                        const lang = language || 'de';
+                        const skipReply = lang === 'en'
+                            ? '📷 I received the photo but couldn\'t identify an automotive document or part. Could you send a photo of your vehicle registration (Fahrzeugschein) or the part label?'
+                            : '📷 Ich habe das Foto erhalten, konnte aber kein Fahrzeugdokument oder Autoteil erkennen. Könnten Sie ein Foto vom Fahrzeugschein oder dem Teileetikett senden?';
+                        return { reply: skipReply, orderId: order.id };
+                    }
                 }
             }
             catch (err) {
-                logger_1.logger.warn("Pre-OCR failed", { error: err?.message, orderId: order.id });
+                logger_1.logger.warn('[ImageFlow] Image processing failed', { error: err?.message, orderId: order.id });
                 ocrResult = null;
                 ocrFailed = true;
             }
             // M1 FIX: Tell the user when OCR can't read their photo
             if (ocrFailed) {
                 const ocrErrorMsg = (0, botResponses_1.t)('ocr_failed', language);
-                // Don't return yet — let orchestrator continue, but prepend the message
-                // so user knows why we're asking for manual input
                 if (!ocrResult?.make && !ocrResult?.vin) {
                     return { reply: ocrErrorMsg, orderId: order.id };
                 }
@@ -1956,6 +2043,107 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     const oemFlow = await runOemLookupAndScraping(order.id, language ?? "de", parsed, orderData, partDescription ?? null);
                     replyText = oemFlow.replyText;
                     nextStatus = oemFlow.nextStatus;
+                    break;
+                }
+                // 🔀 BUG B FIX: Handle customer's variant selection
+                case "awaiting_variant_selection": {
+                    const pendingVariants = orderData?.pendingVariants;
+                    if (!pendingVariants || !Array.isArray(pendingVariants) || pendingVariants.length === 0) {
+                        logger_1.logger.warn('[VariantSelection] No pending variants found', { orderId: order.id });
+                        replyText = (0, botResponses_1.t)('oem_product_uncertain', language);
+                        nextStatus = "needs_human";
+                        break;
+                    }
+                    const selectionText = (parsed.part || parsed.userPartText || userText || '').trim();
+                    // Try to parse customer's selection
+                    let selectedIndex = -1;
+                    // Method 1: Direct number ("1", "2", "3")
+                    const numMatch = selectionText.match(/^(\d+)$/);
+                    if (numMatch) {
+                        selectedIndex = parseInt(numMatch[1], 10) - 1; // 1-indexed → 0-indexed
+                    }
+                    // Method 2: Number at start of message ("2 bitte", "3 das ist meins")
+                    if (selectedIndex < 0) {
+                        const startNumMatch = selectionText.match(/^(\d+)\s/);
+                        if (startNumMatch) {
+                            selectedIndex = parseInt(startNumMatch[1], 10) - 1;
+                        }
+                    }
+                    // Method 3: Try to match description text to a variant
+                    if (selectedIndex < 0) {
+                        const lowerText = selectionText.toLowerCase();
+                        for (let i = 0; i < pendingVariants.length; i++) {
+                            const v = pendingVariants[i];
+                            const diff = (v.differentiator || '').toLowerCase();
+                            const desc = (v.description || '').toLowerCase();
+                            if (diff && lowerText.includes(diff)) {
+                                selectedIndex = i;
+                                break;
+                            }
+                            if (desc && lowerText.includes(desc)) {
+                                selectedIndex = i;
+                                break;
+                            }
+                            // Match OEM number directly if customer types it
+                            if (v.oem && lowerText.includes(v.oem.toLowerCase())) {
+                                selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    // Validate selection
+                    if (selectedIndex < 0 || selectedIndex >= pendingVariants.length) {
+                        const maxNum = pendingVariants.length;
+                        replyText = language === "de"
+                            ? `Bitte antworten Sie mit einer Zahl von 1 bis ${maxNum}, um Ihre Variante auszuwählen.`
+                            : `Please reply with a number from 1 to ${maxNum} to select your variant.`;
+                        nextStatus = "awaiting_variant_selection";
+                        break;
+                    }
+                    const selectedVariant = pendingVariants[selectedIndex];
+                    const selectedOem = selectedVariant.oem;
+                    logger_1.logger.info('[VariantSelection] Customer selected variant', {
+                        orderId: order.id,
+                        selectedIndex: selectedIndex + 1,
+                        selectedOem,
+                        differentiator: selectedVariant.differentiator,
+                    });
+                    // Persist selected OEM
+                    try {
+                        await (0, supabaseService_1.updateOrderData)(order.id, {
+                            oemNumber: selectedOem,
+                            oemConfidence: selectedVariant.confidence,
+                            selectedVariant: selectedVariant,
+                            pendingVariants: null, // Clear pending
+                        });
+                        try {
+                            await (0, supabaseService_1.updateOrderOEM)(order.id, {
+                                oemStatus: "resolved",
+                                oemNumber: selectedOem,
+                                oemData: { selectedVariant, allVariants: pendingVariants },
+                            });
+                        }
+                        catch (err) {
+                            logger_1.logger.warn("Failed to persist selected variant OEM", { orderId: order.id, error: err?.message });
+                        }
+                    }
+                    catch (err) {
+                        logger_1.logger.warn("Failed to persist variant selection", { orderId: order.id, error: err?.message });
+                    }
+                    // Proceed to scrape offers with the selected OEM
+                    try {
+                        await (0, scrapingService_1.scrapeOffersForOrder)(order.id, selectedOem);
+                        const variantLabel = selectedVariant.differentiator || selectedOem;
+                        replyText = language === "de"
+                            ? `✅ *${variantLabel}* ausgewählt (${selectedOem}).\n\n🔍 Ich suche jetzt die besten Angebote für Sie...`
+                            : `✅ *${variantLabel}* selected (${selectedOem}).\n\n🔍 Searching for the best offers for you...`;
+                        nextStatus = "show_offers";
+                    }
+                    catch (err) {
+                        logger_1.logger.error("Scrape after variant selection failed", { error: err?.message, orderId: order.id });
+                        replyText = (0, botResponses_1.t)('oem_scrape_failed', language);
+                        nextStatus = "needs_human";
+                    }
                     break;
                 }
                 case "show_offers": {

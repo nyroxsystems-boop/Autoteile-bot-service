@@ -1,8 +1,11 @@
 /**
  * 🔍 Backsearch Module - OEM Validation via Web Scrapers
  * 
- * Validates found OEM numbers by re-querying multiple independent web sources
- * and checking for explicit vehicle compatibility.
+ * Validates found OEM numbers by re-querying INDEPENDENT web sources.
+ * 
+ * ⚠️ CRITICAL: Backsearch sources MUST NOT overlap with primary sources!
+ * Primary sources: vagEtkaSource(7zap), autodocWebSource(Autodoc), realOemSource, etc.
+ * Backsearch sources: pkwteile.de, kfzteile24.de, PartsGateway, eBay — all independent.
  * 
  * K1 FIX: Uses fetchText (ScraperAPI-proxied) instead of raw fetch
  */
@@ -11,15 +14,15 @@ import { logger } from "@utils/logger";
 import { OEMResolverRequest } from "./types";
 
 export type BacksearchResult = {
-  webHit: boolean;      // 7zap
-  autodocHit: boolean;  // Autodoc.de
-  dapartoHit: boolean;  // Daparto.de
-  ebayHit: boolean;     // eBay.de
+  dapartoHit: boolean;    // Daparto.de (independent from primary sources)
+  hoodHit: boolean;       // Hood.de (independent German marketplace)
+  partsGatewayHit: boolean; // PartsGateway.co.uk (independent)
+  ebayHit: boolean;       // eBay.de (independent)
   totalHits: number;
   errors: string[];     // Track errors for observability
 };
 
-const BACKSEARCH_TIMEOUT_MS = 5000;
+
 
 /**
  * Validate a found OEM by re-querying multiple independent sources 
@@ -27,9 +30,9 @@ const BACKSEARCH_TIMEOUT_MS = 5000;
  */
 export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promise<BacksearchResult> {
   const result: BacksearchResult = {
-    webHit: false,
-    autodocHit: false,
     dapartoHit: false,
+    hoodHit: false,
+    partsGatewayHit: false,
     ebayHit: false,
     totalHits: 0,
     errors: []
@@ -63,14 +66,14 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     return keywords.some(k => originalLowerHtml.includes(k));
   };
 
-  // 1. 7zap / Web Check — via ScraperAPI
+  // 1. Daparto.de — INDEPENDENT (not used as primary source)
   tasks.push((async () => {
-    const source = "7zap";
+    const source = "daparto";
     try {
-      const url = `https://7zap.com/en/search/?keyword=${encodeURIComponent(oem)}`;
+      const url = `https://www.daparto.de/suche?q=${encodeURIComponent(oem)}`;
       const html = await fetchText(url);
       if (checkCompliance(html)) {
-        result.webHit = true;
+        result.dapartoHit = true;
         logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
@@ -80,14 +83,14 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     }
   })());
 
-  // 2. TecDoc Catalog Search — via ScraperAPI
+  // 2. Hood.de — INDEPENDENT German marketplace
   tasks.push((async () => {
-    const source = "tecdoc";
+    const source = "hood";
     try {
-      const url = `https://www.tecdoc.net/search?q=${encodeURIComponent(oem)}`;
+      const url = `https://www.hood.de/suche/${encodeURIComponent(oem)}.htm`;
       const html = await fetchText(url);
       if (checkCompliance(html)) {
-        result.autodocHit = true;
+        result.hoodHit = true;
         logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
@@ -104,7 +107,7 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
       const url = `https://www.partsgateway.co.uk/car-parts?q=${encodeURIComponent(oem)}`;
       const html = await fetchText(url);
       if (checkCompliance(html)) {
-        result.dapartoHit = true;
+        result.partsGatewayHit = true;
         logger.info(`[Backsearch] ✅ ${source} confirmed OEM`, { oem });
       }
     } catch (err: any) {
@@ -135,9 +138,9 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
 
   // Calculate total hits
   let hits = 0;
-  if (result.webHit) hits++;
-  if (result.autodocHit) hits++;
   if (result.dapartoHit) hits++;
+  if (result.hoodHit) hits++;
+  if (result.partsGatewayHit) hits++;
   if (result.ebayHit) hits++;
   result.totalHits = hits;
 
@@ -145,9 +148,9 @@ export async function backsearchOEM(oem: string, req: OEMResolverRequest): Promi
     oem,
     totalHits: result.totalHits,
     sources: {
-      webHit: result.webHit,
-      autodocHit: result.autodocHit,
       dapartoHit: result.dapartoHit,
+      hoodHit: result.hoodHit,
+      partsGatewayHit: result.partsGatewayHit,
       ebayHit: result.ebayHit
     },
     errorCount: result.errors.length

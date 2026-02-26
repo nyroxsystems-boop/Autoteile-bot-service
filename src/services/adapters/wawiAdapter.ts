@@ -6,13 +6,15 @@ export type ConversationStatus =
   | "confirm_vehicle"
   | "collect_part"
   | "oem_lookup"
+  | "awaiting_variant_selection"
   | "show_offers"
   | "await_offer_choice"
   | "await_offer_confirmation"
   | "collect_delivery_preference"
   | "collect_address"
   | "await_pickup_confirmation"
-  | "cancelled"  // ADDED: For abort_order intent
+  | "needs_human"
+  | "cancelled"
   | "done";
 
 const ACTIVE_CONVERSATION_STATUSES: ConversationStatus[] = [
@@ -20,6 +22,7 @@ const ACTIVE_CONVERSATION_STATUSES: ConversationStatus[] = [
   "collect_vehicle",
   "collect_part",
   "oem_lookup",
+  "awaiting_variant_selection",
   "show_offers",
   "await_offer_choice",
   "await_offer_confirmation"

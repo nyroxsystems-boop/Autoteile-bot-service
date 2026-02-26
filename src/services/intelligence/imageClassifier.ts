@@ -6,15 +6,15 @@
  * - A part photo (user showing the part they need)
  * - Neither (random photo, screenshot, etc.)
  *
- * This avoids sending every image through GPT-4.1 Vision OCR,
- * which is expensive (~$0.01-0.03 per call) and adds ~3-5s latency.
+ * This avoids sending every image through expensive OCR,
+ * and routes part photos to direct OEM extraction.
  *
- * Uses a cheap Gemini Flash call for classification only.
- * Only vehicle documents proceed to the expensive OCR pipeline.
+ * Uses Gemini Vision (generateVisionCompletion) — the model MUST SEE the image.
+ * Previous bug: used generateChatCompletion (text-only) which couldn't see the image.
  */
 
 import { logger } from '@utils/logger';
-import { generateChatCompletion } from '../intelligence/geminiService';
+import { generateVisionCompletion } from '../intelligence/geminiService';
 
 // ============================================================================
 // Types
@@ -41,9 +41,10 @@ Klassifiziere das Bild in eine der drei Kategorien:
    - Enthält typische Felder: HSN/TSN, VIN, Erstzulassung, Marke/Modell
    - Offizielles Dokument mit Datenfeldern
 
-2. "part_photo" — Foto eines Autoteils
+2. "part_photo" — Foto eines Autoteils oder einer Teileverpackung
    - Bremsscheibe, Filter, Zündkerze, Stoßdämpfer etc.
-   - Teile-Verpackung mit OEM-Nummer
+   - Teile-Verpackung mit OEM-Nummer oder Aufkleber
+   - Metallteile mit Stanzungen/Gravuren
 
 3. "unknown" — Keines der obigen
    - Screenshot, Selfie, Landschaft, Text-Chat etc.
@@ -61,21 +62,49 @@ Antworte NUR mit JSON:
 
 /**
  * Classify an image before sending it to expensive OCR.
- * Uses a cheap Gemini Flash call (~$0.001).
- * Returns whether OCR should run.
+ * 
+ * CRITICAL FIX: Uses generateVisionCompletion (can SEE the image)
+ * instead of generateChatCompletion (text-only, could NOT see image).
+ * 
+ * Accepts either a Twilio media URL or a base64 string.
+ * Downloads from URL first, then sends base64 to Gemini Vision.
  */
-export async function classifyImage(imageUrl: string): Promise<ImageClassificationResult> {
+export async function classifyImage(imageUrlOrBase64: string): Promise<ImageClassificationResult> {
     try {
-        const promptWithUrl = `${CLASSIFICATION_PROMPT}\n\nBild-URL: ${imageUrl}\n\n(Wenn du das Bild nicht sehen kannst, antworte mit {"classification": "unknown", "confidence": 0, "reason": "Bild nicht verfügbar"})`;
+        let imageBase64: string;
 
-        const response = await generateChatCompletion({
-            messages: [
-                {
-                    role: 'user',
-                    content: promptWithUrl
-                }
-            ],
-            responseFormat: 'json_object',
+        // If it's a URL, download the image first
+        if (imageUrlOrBase64.startsWith('http')) {
+            const fetch = (await import('node-fetch')).default;
+
+            // Twilio media URLs require auth
+            const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+            const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+            const headers: Record<string, string> = {};
+            if (twilioSid && twilioToken && imageUrlOrBase64.includes('twilio.com')) {
+                headers['Authorization'] = 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+            }
+
+            const response = await fetch(imageUrlOrBase64, {
+                headers,
+                signal: AbortSignal.timeout(8000),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Image download failed: HTTP ${response.status}`);
+            }
+
+            const buffer = await response.buffer();
+            imageBase64 = buffer.toString('base64');
+        } else {
+            // Already base64
+            imageBase64 = imageUrlOrBase64;
+        }
+
+        // Use Vision API — the model can actually SEE the image
+        const response = await generateVisionCompletion({
+            prompt: CLASSIFICATION_PROMPT,
+            imageBase64,
             temperature: 0,
         });
 
@@ -95,11 +124,13 @@ export async function classifyImage(imageUrl: string): Promise<ImageClassificati
             shouldRunOCR: classification === 'vehicle_document' && confidence >= 0.6,
         };
     } catch (err: any) {
-        logger.warn('[ImageClassifier] Classification failed, defaulting to OCR', { error: err?.message });
+        logger.warn('[ImageClassifier] Classification failed, defaulting to vehicle_document (safe fallback)', {
+            error: err?.message,
+        });
 
-        // Fail-safe: if classification fails, run OCR anyway (conservative approach)
+        // Fail-safe: if classification fails, assume vehicle document (conservative — runs OCR)
         return {
-            classification: 'unknown',
+            classification: 'vehicle_document',
             confidence: 0,
             reason: `Classification failed: ${err?.message}`,
             shouldRunOCR: true,

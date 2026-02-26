@@ -1,5 +1,5 @@
 /**
- * Web-basierter OEM-Finder ohne TecDoc/Apify.
+ * Web-basierter OEM-Finder.
  * Sucht OEMs über mehrere Webseiten und aggregiert das Ergebnis.
  * Unterstützt Gemini AI für Query-Expansion/Re-Ranking.
  * 
@@ -205,29 +205,7 @@ async function searchOemOnAmayama(ctx: SearchContext): Promise<OemCandidate[]> {
   }
 }
 
-async function searchOemOnAutodocParts(ctx: SearchContext): Promise<OemCandidate[]> {
-  try {
-    const q = [ctx.vehicle.brand, ctx.vehicle.model, ctx.userQuery].filter(Boolean).join(" ");
-    const url = `https://www.autodoc.parts/search?keyword=${encodeURIComponent(q)}`;
-    const html = await fetchTextWithFallback(url);
-    if (html.includes("Just a moment") && html.includes("challenge-platform")) return [];
-    const jsonMatches = html.match(/\"oeNumbers\"\\s*:\\s*\\[(.*?)\\]/gi) || [];
-    const extracted: string[] = [];
-    jsonMatches.forEach((m: string) => {
-      const parts = m.match(/[A-Z0-9\\-\\.]{5,20}/gi);
-      if (parts) parts.forEach((p) => extracted.push(p));
-    });
-
-    // 🎯 Use enhanced extraction with brand context
-    let oems = [...smartExtractOems(html, ctx), ...extracted.filter(e => normalizeOem(e))];
-    if (!oems.length) {
-      oems = await aiExtractOemsFromHtml(html, ctx);
-    }
-    return oems.map((o: string) => ({ source: "Autodoc.parts", rawValue: o, normalized: o }));
-  } catch {
-    return [];
-  }
-}
+// REMOVED: searchOemOnAutodocParts — duplicated by standalone autodocWebSource
 
 async function searchOemOnSpareto(ctx: SearchContext): Promise<OemCandidate[]> {
   try {
@@ -274,18 +252,7 @@ async function searchOemOnSite5(ctx: SearchContext): Promise<OemCandidate[]> {
   }
 }
 
-async function searchOemOn7zap(ctx: SearchContext): Promise<OemCandidate[]> {
-  try {
-    const q = ctx.vehicle.vin ? ctx.vehicle.vin : [ctx.vehicle.brand, ctx.vehicle.model, ctx.userQuery].filter(Boolean).join(" ");
-    const url = `https://7zap.com/en/search/?keyword=${encodeURIComponent(q)}`;
-    const html = await fetchText(url);
-    // 🎯 Use enhanced extraction with brand context
-    const oems = smartExtractOems(html, ctx);
-    return oems.map((o: string) => ({ source: "7zap", rawValue: o, normalized: o }));
-  } catch {
-    return [];
-  }
-}
+// REMOVED: searchOemOn7zap — duplicated by standalone vagEtkaSource
 
 async function searchOemOnDaparto(ctx: SearchContext): Promise<OemCandidate[]> {
   try {
@@ -309,21 +276,7 @@ async function searchOemOnDaparto(ctx: SearchContext): Promise<OemCandidate[]> {
   }
 }
 
-async function searchOemOnMotointegrator(ctx: SearchContext): Promise<OemCandidate[]> {
-  try {
-    const q = [ctx.vehicle.brand, ctx.vehicle.model, ctx.userQuery].filter(Boolean).join(" ");
-    const url = `https://www.motointegrator.de/suche/result/?q=${encodeURIComponent(q)}`;
-    const html = await fetchTextWithFallback(url);
-
-    // 🎯 Use enhanced extraction with brand context
-    const oems = smartExtractOems(html, ctx);
-    const aiOems = await aiExtractOemsFromHtml(html, ctx);
-
-    return [...oems, ...aiOems].map((o: string) => ({ source: "Motointegrator", rawValue: o, normalized: o }));
-  } catch {
-    return [];
-  }
-}
+// REMOVED: searchOemOnMotointegrator — standalone source was deleted in Phase 1
 
 async function searchOemOnEbay(ctx: SearchContext): Promise<OemCandidate[]> {
   try {
@@ -355,53 +308,12 @@ async function searchOemOnEbay(ctx: SearchContext): Promise<OemCandidate[]> {
 // ----------------------------------
 
 export async function fallbackResolveOem(ctx: SearchContext): Promise<string | null> {
-  // KI-gestützter Fallback: Versuche zuerst eine Nummer im Usertext, danach Gemini-Guess.
+  // SAFE fallback: Only extract potential OEM numbers already present in user text.
+  // NO AI guessing, NO synthetic generation — these produce false OEMs.
   const match = ctx.userQuery.match(/\b(?=.*\d)[A-Z0-9][A-Z0-9\.\-\s]{4,20}[A-Z0-9]\b/i);
   if (match) return normalizeOem(match[0]);
 
-  // Gemini-gestützter Guess basierend auf Fahrzeug + Teilname
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const prompt = `Fahrzeugdaten:\n${JSON.stringify(ctx.vehicle, null, 2)}\nTeil: ${ctx.userQuery}\n\nGib eine JSON-Antwort: {"oems": ["<OEM1>", "<OEM2>"]}. Keine Erklärungen. OEMs normalisiert (Großbuchstaben, keine Sonderzeichen).`;
-      const txt = await generateChatCompletion({
-        messages: [
-          { role: "system", content: "Du bist ein Automotive-OEM-Detektor. Antworte strikt mit JSON und plausiblen OEM-Nummern." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0
-      });
-      let parsed: any = null;
-      try {
-        parsed = JSON.parse(txt);
-      } catch {
-        const matchJson = txt.match(/\{[\s\S]*\}/);
-        if (matchJson) {
-          try {
-            parsed = JSON.parse(matchJson[0]);
-          } catch {
-            parsed = null;
-          }
-        }
-      }
-      const fromList = Array.isArray(parsed?.oems) ? parsed.oems.map((o: string) => normalizeOem(o)).find(Boolean) : null;
-      if (fromList) return fromList;
-      // Fallback: direkt erste OEM-artige Zeichenfolge aus dem Text holen
-      const regex = /[A-Z0-9][A-Z0-9\.\-\s]{4,20}[A-Z0-9]/gi;
-      const plainMatch = txt.match(regex);
-      const first =
-        plainMatch
-          ?.map((s: string) => normalizeOem(s))
-          .find((n: string | null | undefined) => n && looksLikeOem(n)) || null;
-      if (first) return first;
-    } catch (err) {
-      // ignore and fallback
-    }
-  }
-
-  // Fallback-Synthetic
-  if (ctx.vehicle.brand && ctx.vehicle.model) {
-    return normalizeOem(`${ctx.vehicle.brand}-${ctx.vehicle.model}-${ctx.userQuery}`.replace(/\s+/g, ""));
-  }
+  // No fallback — returning null is better than returning a fake OEM
   return null;
 }
 
@@ -449,24 +361,25 @@ function smartExtractOems(html: string, ctx: SearchContext): string[] {
   return extractOemsFromHtml(html);
 }
 
+// REMOVED: geminiSuggestQueries — saves 10-15 ScraperAPI calls per request
+// Query expansion is now done by the consensus of multiple sources in oemResolver.ts
 export async function findBestOemForVehicle(ctx: SearchContext, useFallback = true): Promise<BestOemResult> {
-  // Query-Expansion über OpenAI
-  const extraQueries = await geminiSuggestQueries(ctx);
-  const queryVariants = [ctx.suspectedNumber || undefined, ctx.userQuery, ...extraQueries].filter(
+  const queryVariants = [ctx.suspectedNumber || undefined, ctx.userQuery].filter(
     (v): v is string => typeof v === "string" && v.length > 0
   );
 
   const scrapeOnce = async (userQuery: string) => {
     const subCtx = { ...ctx, userQuery };
+    // DEDUP: Only scrapers NOT covered by standalone sources in oemResolver.ts
+    // Removed: searchOemOnAutodocParts (→ autodocWebSource)
+    // Removed: searchOemOn7zap (→ vagEtkaSource)
+    // Removed: searchOemOnMotointegrator (→ deleted in Phase 1)
     const results = await Promise.allSettled([
       searchOemOnPartSouq(subCtx),
       searchOemOnAmayama(subCtx),
-      searchOemOnAutodocParts(subCtx),
       searchOemOnSpareto(subCtx),
-      searchOemOn7zap(subCtx),
       searchOemOnSite5(subCtx),
       searchOemOnDaparto(subCtx),
-      searchOemOnMotointegrator(subCtx)
     ]);
     const cands: OemCandidate[] = [];
     for (const r of results) {
@@ -502,8 +415,8 @@ export async function findBestOemForVehicle(ctx: SearchContext, useFallback = tr
     bestOem = sorted[0]?.[0] ?? null;
   }
 
-  // OpenAI-Reranking
-  bestOem = await geminiRerank(bestOem, candidates, ctx);
+  // REMOVED: geminiRerank — consensus engine in oemResolver.ts handles this better
+  // with source-group deduplication. AI override of histogram-best = bad.
 
   // Fallback, falls nichts gefunden
   let fallbackUsed = false;
@@ -517,20 +430,10 @@ export async function findBestOemForVehicle(ctx: SearchContext, useFallback = tr
     }
   }
 
-  // Rückabsicherung: mit der gefundenen OEM erneut quer suchen
+  // REMOVED: Confirmation re-scrape — backsearchOEM() in oemResolver.ts already validates
+  // independently via daparto/hood/partsgateway/ebay. Re-scraping same sites = waste.
   let confirmationHits = 0;
   const confirmationSources: string[] = [];
-  if (bestOem) {
-    const confirmCands = await scrapeOnce(bestOem);
-    confirmCands.forEach((c) => {
-      candidates.push(c);
-      histogram[c.normalized] = (histogram[c.normalized] || 0) + 1;
-      if (c.normalized === bestOem) {
-        confirmationHits += 1;
-        confirmationSources.push(c.source);
-      }
-    });
-  }
 
   return { bestOem, candidates, histogram, fallbackUsed, confirmationHits, confirmationSources };
 }

@@ -59,14 +59,65 @@ const VAG_MODEL_PREFIXES: Record<string, string[]> = {
 const MQB_PREFIXES = ['5Q', '5G', '5N2', 'AD1'];
 
 // Part category to ETKA group mapping
+// VAG uses 2-digit group codes in ETKA catalog
 const CATEGORY_TO_GROUP: Record<string, string[]> = {
-    'bremse': ['03', '44', '45'],    // Brakes
-    'brake': ['03', '44', '45'],
-    'filter': ['01', '07'],           // Engine/Fuel
-    'öl': ['01'],
-    'motor': ['01', '02', '03'],
-    'fahrwerk': ['40', '41', '42'],   // Suspension
-    'suspension': ['40', '41', '42'],
+    // Brakes (Group 03, 44, 45)
+    'bremse': ['03', '44', '45'], 'brake': ['03', '44', '45'],
+    'bremsscheibe': ['44', '45'], 'bremsbelag': ['44', '45'],
+    'bremssattel': ['44', '45'], 'handbremse': ['03'],
+    // Engine (Group 01, 02, 03)
+    'motor': ['01', '02', '03'], 'engine': ['01', '02', '03'],
+    'filter': ['01', '07'], 'öl': ['01'],
+    'ölfilter': ['01'], 'luftfilter': ['07'],
+    'zahnriemen': ['01'], 'steuerkette': ['01'],
+    'timing': ['01'], 'wasserpumpe': ['01'],
+    'thermostat': ['01'], 'turbolader': ['01'],
+    'turbo': ['01'], 'dichtung': ['01'],
+    'keilriemen': ['01'], 'ventildeckel': ['01'],
+    // Fuel (Group 07)
+    'kraftstoff': ['07'], 'fuel': ['07'],
+    'einspritz': ['07'], 'injector': ['07'],
+    // Suspension (Group 40, 41, 42)
+    'fahrwerk': ['40', '41', '42'], 'suspension': ['40', '41', '42'],
+    'stoßdämpfer': ['40', '41'], 'shock': ['40', '41'],
+    'querlenker': ['40'], 'control arm': ['40'],
+    'feder': ['40', '41'], 'spring': ['40', '41'],
+    'stabilisator': ['40', '41'], 'koppelstange': ['40', '41'],
+    'radlager': ['40', '42'], 'wheel bearing': ['40', '42'],
+    'traggelenk': ['40'], 'ball joint': ['40'],
+    // Steering (Group 40)
+    'lenkung': ['40'], 'steering': ['40'],
+    'spurstange': ['40'], 'tie rod': ['40'],
+    'lenkgetriebe': ['40'], 'servo': ['40'],
+    // Clutch / Gearbox (Group 30)
+    'kupplung': ['30'], 'clutch': ['30'],
+    'schwungrad': ['30'], 'flywheel': ['30'],
+    'getriebe': ['30'], 'gearbox': ['30'],
+    // Drive shaft (Group 40)
+    'antriebswelle': ['40'], 'drive shaft': ['40'],
+    'achsmanschette': ['40'], 'cv boot': ['40'],
+    // Exhaust (Group 26)
+    'auspuff': ['26'], 'exhaust': ['26'],
+    'katalysator': ['26'], 'dpf': ['26'],
+    'partikelfilter': ['26'], 'lambda': ['26'],
+    // Electrical (Group 27)
+    'lichtmaschine': ['27'], 'alternator': ['27'],
+    'anlasser': ['27'], 'starter': ['27'],
+    'batterie': ['27'], 'sensor': ['27'],
+    // AC (Group 87)
+    'klima': ['87'], 'klimakompressor': ['87'],
+    'ac': ['87'], 'klimaanlage': ['87'],
+    // Lights (Group 94)
+    'scheinwerfer': ['94'], 'headlight': ['94'],
+    'rücklicht': ['94'], 'tail light': ['94'],
+    'blinker': ['94'], 'nebelscheinwerfer': ['94'],
+    // Body (Group 80)
+    'spiegel': ['80'], 'mirror': ['80'],
+    'fensterheber': ['80'], 'window regulator': ['80'],
+    'türschloss': ['80'], 'door lock': ['80'],
+    // Cooling (Group 01)
+    'kühler': ['01'], 'radiator': ['01'],
+    'kühlmittel': ['01'], 'lüfter': ['01'],
 };
 
 async function fetchWithFallback(url: string): Promise<string> {

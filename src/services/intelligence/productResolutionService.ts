@@ -14,7 +14,7 @@ type ResolutionOrder = Pick<
   country: string;
   requested_oem?: string;
   vehicle_vin?: string;
-  vehicle_tecdoc_id?: string;
+
   // Enhanced fields for scraping
   vehicle_brand?: string;
   vehicle_model?: string;
@@ -22,7 +22,7 @@ type ResolutionOrder = Pick<
   part_text?: string;
 };
 
-import { findBestOemForVehicle, type SearchContext } from "./oemWebFinder";
+import { resolveOEMForOrder } from "./oemService";
 
 export interface DbClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
@@ -32,7 +32,7 @@ export interface ApifyClient {
   runActorDataset<I, O>(actorId: string, input: I): Promise<O[]>;
 }
 
-// TecDoc types removed as we switched to scraping reference
+
 
 export class ProductResolutionService {
   constructor(private readonly db: DbClient, private readonly apifyClient: ApifyClient) { }
@@ -101,38 +101,40 @@ export class ProductResolutionService {
       return order.requested_oem;
     }
 
-    // Use the new Scraper-based Finder
-    const ctx: SearchContext = {
-      vehicle: {
-        vin: order.vehicle_vin || undefined,
-        brand: order.vehicle_brand || undefined,
-        model: order.vehicle_model || undefined,
-        year: order.vehicle_year || undefined,
-      },
-      userQuery: order.part_text || "Ersatzteil"
-    };
+    // BUG C FIX: Use the modern unified resolver (15 sources, consensus, validation)
+    // instead of the legacy findBestOemForVehicle which bypasses all quality layers
+    console.log(`[ProductResolution] Resolving OEM via unified resolver for Order ${order.id}...`);
 
-    console.log(`[ProductResolution] Resolving OEM via Scraping for Order ${order.id}...`, ctx);
+    try {
+      const result = await resolveOEMForOrder(
+        order.id,
+        {
+          make: order.vehicle_brand ?? null,
+          model: order.vehicle_model ?? null,
+          year: order.vehicle_year ?? null,
+          engine: null,
+          engineKw: null,
+          vin: order.vehicle_vin ?? null,
+          hsn: null,
+          tsn: null,
+        },
+        order.part_text || "Ersatzteil"
+      );
 
-    // We try to find the best OEM using our multi-source scraper
-    const result = await findBestOemForVehicle(ctx, true);
+      if (result.primaryOEM) {
+        console.log(`[ProductResolution] Found OEM: ${result.primaryOEM} (Confidence: ${result.overallConfidence})`);
+        return result.primaryOEM;
+      }
 
-    if (result.bestOem) {
-      console.log(`[ProductResolution] Found OEM: ${result.bestOem} (Score: ${result.histogram[result.bestOem]})`);
-      return result.bestOem;
+      console.warn(`[ProductResolution] No OEM found for Order ${order.id}`);
+      return null;
+    } catch (err: any) {
+      console.error(`[ProductResolution] Unified resolver failed for Order ${order.id}`, err?.message);
+      return null;
     }
-
-    console.warn(`[ProductResolution] No OEM found for Order ${order.id}`);
-    return null;
   }
 
-  // TecDoc Mappers removed or kept for generic fallback if needed
-  private mapLanguageToTecDocLangId(language: string | null | undefined): number {
-    return 1; // dummy path
-  }
-  private mapCountryToTecDocCountryFilterId(country: string | null | undefined): number {
-    return 1; // dummy path
-  }
+
 
   protected async loadActiveSuppliersForDealer(dealerId: string): Promise<Supplier[]> {
     const sql = `

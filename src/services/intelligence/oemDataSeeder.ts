@@ -11,6 +11,7 @@
 import { oemDatabase, OEMRecord } from './oemDatabase';
 import { logger } from '@utils/logger';
 import { ALL_REGISTRIES } from './oemRegistry';
+import { ALL_VERIFIED_OEMS, VERIFIED_OEM_COUNT } from './verifiedOemData';
 
 // ============================================================================
 // Seed from Static Registry
@@ -180,6 +181,7 @@ export async function seedAllData(): Promise<void> {
 
     const staticCount = await seedFromStaticRegistry();
     const knownCount = await seedKnownOEMs();
+    const verifiedCount = await seedVerifiedCatalog();
     const superCount = await seedSupersessions();
 
     const stats = oemDatabase.getStats();
@@ -187,6 +189,7 @@ export async function seedAllData(): Promise<void> {
     logger.info('[OEMSeeder] Seed complete!', {
         fromRegistry: staticCount,
         knownOEMs: knownCount,
+        verifiedCatalog: verifiedCount,
         supersessions: superCount,
         totalRecords: stats.totalRecords,
         brands: Object.keys(stats.brands).length,
@@ -196,6 +199,18 @@ export async function seedAllData(): Promise<void> {
     console.log(`Total Records: ${stats.totalRecords}`);
     console.log('Brands:', stats.brands);
     console.log('Categories:', stats.categories);
+}
+
+/**
+ * Seed from verified OEM catalog (250+ verified entries across 12 brands)
+ */
+export async function seedVerifiedCatalog(): Promise<number> {
+    logger.info(`[OEMSeeder] Seeding ${VERIFIED_OEM_COUNT} verified catalog OEMs...`);
+
+    oemDatabase.bulkInsert(ALL_VERIFIED_OEMS);
+
+    logger.info(`[OEMSeeder] Inserted ${VERIFIED_OEM_COUNT} verified catalog OEMs`);
+    return VERIFIED_OEM_COUNT;
 }
 
 // ============================================================================

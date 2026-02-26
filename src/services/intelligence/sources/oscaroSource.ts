@@ -66,8 +66,8 @@ export const oscaroSource: OEMSource = {
             return allOems.map(oem => ({
                 oem,
                 source: "Oscaro",
-                confidence: 0.83, // Slightly lower than German sources due to potential language issues
-                metadata: { url }
+                confidence: 0.45,
+                meta: { url, priority: 3, note: 'oscaro scrape' }
             }));
 
         } catch (error: any) {

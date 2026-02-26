@@ -3,8 +3,8 @@
  * 🌟 Mercedes EPC Parts Catalog Scraper
  * 
  * Scrapes Mercedes parts information from public sources:
- * - parts.mercedes-benz.com (public catalog)
- * - mercedes-catalog.net (aftermarket reference)
+ * - catcar.info (public multi-brand catalog with Mercedes support)
+ * - autodoc.de (Mercedes-filtered aftermarket search)
  * 
  * Mercedes OEM patterns:
  * - A 123 456 78 90 (with letter prefix, spaces)
@@ -56,10 +56,21 @@ const MERCEDES_MODEL_CODES: Record<string, string[]> = {
 
 // Part category keywords for context scoring
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
-    'brake': ['bremse', 'brake', 'scheibe', 'disc', 'belag', 'pad'],
-    'filter': ['filter', 'öl', 'oil', 'luft', 'air', 'kraftstoff', 'fuel'],
-    'suspension': ['fahrwerk', 'suspension', 'stoßdämpfer', 'shock', 'feder', 'spring'],
-    'engine': ['motor', 'engine', 'zündkerze', 'spark', 'zahnriemen', 'timing'],
+    'brake': ['bremse', 'brake', 'scheibe', 'disc', 'belag', 'pad', 'sattel', 'caliper'],
+    'filter': ['filter', 'öl', 'oil', 'luft', 'air', 'kraftstoff', 'fuel', 'pollen'],
+    'suspension': ['fahrwerk', 'suspension', 'stoßdämpfer', 'shock', 'feder', 'spring',
+        'querlenker', 'control arm', 'stabilisator', 'koppelstange', 'radlager', 'traggelenk'],
+    'engine': ['motor', 'engine', 'zündkerze', 'spark', 'zahnriemen', 'timing',
+        'steuerkette', 'chain', 'ventildeckel', 'dichtung', 'gasket'],
+    'clutch': ['kupplung', 'clutch', 'schwungrad', 'flywheel', 'ausrücklager'],
+    'steering': ['lenkung', 'steering', 'spurstange', 'tie rod', 'lenkgetriebe', 'servo'],
+    'exhaust': ['auspuff', 'exhaust', 'katalysator', 'dpf', 'partikelfilter', 'lambda'],
+    'turbo': ['turbolader', 'turbo', 'ladeluftkühler', 'intercooler'],
+    'electrical': ['lichtmaschine', 'alternator', 'anlasser', 'starter', 'sensor', 'batterie'],
+    'cooling': ['kühler', 'radiator', 'wasserpumpe', 'water pump', 'thermostat', 'lüfter'],
+    'ac': ['klima', 'klimakompressor', 'ac compressor', 'klimaanlage'],
+    'lighting': ['scheinwerfer', 'headlight', 'rücklicht', 'tail light', 'blinker', 'nebel'],
+    'body': ['spiegel', 'mirror', 'fensterheber', 'window', 'türschloss', 'door'],
 };
 
 async function fetchWithFallback(url: string): Promise<string> {
@@ -150,12 +161,12 @@ export const mercedesEpcSource: OEMSource = {
             // Build search URLs
             const urls: string[] = [];
 
-            // Try mercedes-catalog.net search
+            // Try catcar.info Mercedes catalog
             const searchQuery = encodeURIComponent(`${model} ${req.partQuery.rawText}`);
-            urls.push(`https://mercedes-catalog.net/search?q=${searchQuery}`);
+            urls.push(`https://www.catcar.info/mercedes/?q=${searchQuery}`);
 
-            // Try parts.mercedes-benz.com (may require different approach)
-            urls.push(`https://www.mercedes-benz.de/passengercars/services-accessories/genuine-parts.html?q=${searchQuery}`);
+            // Try autodoc.de with Mercedes filter
+            urls.push(`https://www.autodoc.de/search?keyword=${encodeURIComponent(`Mercedes ${model} ${req.partQuery.rawText}`)}`);
 
             // Scrape each URL
             for (const url of urls.slice(0, 2)) {

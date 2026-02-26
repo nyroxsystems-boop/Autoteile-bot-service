@@ -338,6 +338,131 @@ export function getYearFromVIN(vin: string): number | null {
 }
 
 // ============================================================================
+// NHTSA VIN Decoder API (FREE, no API key, no rate limits)
+// ============================================================================
+
+export interface NHTSADecodeResult {
+    make: string | null;
+    model: string | null;
+    year: number | null;
+    engineModel: string | null;
+    engineCylinders: string | null;
+    displacementCC: string | null;
+    displacementL: string | null;
+    fuelType: string | null;
+    driveType: string | null;
+    bodyClass: string | null;
+    vehicleType: string | null;
+    plantCountry: string | null;
+    errorCode: string | null;
+    raw: Record<string, string>;
+}
+
+/**
+ * Decode VIN using the free NHTSA vPIC API.
+ * 
+ * This US government API provides verified vehicle data for any VIN
+ * of vehicles sold in the US (covers most global manufacturers).
+ * 
+ * API: https://vpic.nhtsa.dot.gov/api/
+ * Cost: FREE, no API key needed, no rate limits
+ */
+export async function decodeVinNhtsa(vin: string): Promise<NHTSADecodeResult | null> {
+    const normalized = vin.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '');
+    if (normalized.length !== 17) {
+        logger.warn('[NHTSA] Invalid VIN length', { vin, length: normalized.length });
+        return null;
+    }
+
+    try {
+        const url = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${normalized}?format=json`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            logger.warn('[NHTSA] API error', { status: response.status });
+            return null;
+        }
+
+        const data = await response.json() as any;
+        const results = data?.Results?.[0];
+        if (!results) {
+            logger.warn('[NHTSA] No results', { vin });
+            return null;
+        }
+
+        // Helper: return null for empty strings or "Not Applicable"
+        const clean = (val: string | undefined): string | null => {
+            if (!val || val.trim() === '' || val === 'Not Applicable') return null;
+            return val.trim();
+        };
+
+        const result: NHTSADecodeResult = {
+            make: clean(results.Make),
+            model: clean(results.Model),
+            year: results.ModelYear ? parseInt(results.ModelYear, 10) || null : null,
+            engineModel: clean(results.EngineModel),
+            engineCylinders: clean(results.EngineCylinders),
+            displacementCC: clean(results.DisplacementCC),
+            displacementL: clean(results.DisplacementL),
+            fuelType: clean(results.FuelTypePrimary),
+            driveType: clean(results.DriveType),
+            bodyClass: clean(results.BodyClass),
+            vehicleType: clean(results.VehicleType),
+            plantCountry: clean(results.PlantCountry),
+            errorCode: clean(results.ErrorCode),
+            raw: results,
+        };
+
+        logger.info('[NHTSA] VIN decoded successfully', {
+            vin: normalized,
+            make: result.make,
+            model: result.model,
+            year: result.year,
+            engine: result.engineModel,
+            fuelType: result.fuelType,
+            driveType: result.driveType,
+        });
+
+        return result;
+    } catch (err: any) {
+        if (err?.name === 'AbortError') {
+            logger.warn('[NHTSA] Request timed out', { vin });
+        } else {
+            logger.warn('[NHTSA] API call failed', { vin, error: err?.message });
+        }
+        return null;
+    }
+}
+
+/**
+ * Enhanced VIN decode: local WMI decode + NHTSA API enrichment.
+ * Returns both local and NHTSA results merged for maximum data.
+ */
+export async function decodeVinEnriched(vin: string): Promise<VINDecodeResult & { nhtsa?: NHTSADecodeResult }> {
+    const local = decodeVIN(vin);
+
+    // Try NHTSA enrichment (non-blocking, best-effort)
+    try {
+        const nhtsa = await decodeVinNhtsa(vin);
+        if (nhtsa) {
+            // Enrich local result with NHTSA data
+            if (!local.brand && nhtsa.make) local.brand = nhtsa.make.toUpperCase();
+            if (!local.year && nhtsa.year) local.year = nhtsa.year;
+
+            return { ...local, nhtsa };
+        }
+    } catch (err: any) {
+        logger.warn('[VIN] NHTSA enrichment failed, using local decode only', { error: err?.message });
+    }
+
+    return local;
+}
+
+// ============================================================================
 // Export
 // ============================================================================
 
@@ -349,4 +474,6 @@ export default {
     isVAGVehicle,
     getManufacturerFromVIN,
     getYearFromVIN,
+    decodeVinNhtsa,
+    decodeVinEnriched,
 };

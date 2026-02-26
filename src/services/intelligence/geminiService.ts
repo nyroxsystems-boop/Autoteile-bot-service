@@ -392,6 +392,88 @@ export async function* streamChatCompletion(params: {
 }
 
 // ============================================================================
+// 🌐 Grounded Completion (with Google Search)
+// ============================================================================
+
+export interface GroundedResult {
+    text: string;
+    groundingChunks: Array<{ uri?: string; title?: string }>;
+    searchQueries: string[];
+    isGrounded: boolean;
+}
+
+/**
+ * Generate a completion with Google Search grounding enabled.
+ * Gemini will search the web during inference and return cited results.
+ * Cost: 0 extra API keys — uses existing GEMINI_API_KEY.
+ */
+export async function generateGroundedCompletion(params: {
+    prompt: string;
+    systemInstruction?: string;
+    temperature?: number;
+}): Promise<GroundedResult> {
+    const { prompt, systemInstruction, temperature = 0.3 } = params;
+
+    await waitForRateToken();
+
+    const startTime = Date.now();
+
+    try {
+        const genModel = genAI.getGenerativeModel({
+            model: DEFAULT_MODEL,
+            systemInstruction,
+            generationConfig: {
+                temperature,
+                maxOutputTokens: 4096,
+            },
+            tools: [{ googleSearchRetrieval: {} } as any],
+        });
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Grounded request timed out')), 15000);
+        });
+
+        const apiPromise = genModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+
+        const result = await Promise.race([apiPromise, timeoutPromise]);
+        const response = result.response;
+        const text = response.text();
+
+        // Extract grounding metadata
+        const candidate = response.candidates?.[0] as any;
+        const groundingMeta = candidate?.groundingMetadata;
+
+        const groundingChunks: Array<{ uri?: string; title?: string }> = [];
+        if (groundingMeta?.groundingChunks) {
+            for (const chunk of groundingMeta.groundingChunks) {
+                if (chunk.web) {
+                    groundingChunks.push({ uri: chunk.web.uri, title: chunk.web.title });
+                }
+            }
+        }
+
+        const searchQueries: string[] = groundingMeta?.webSearchQueries || [];
+        const isGrounded = groundingChunks.length > 0;
+
+        const elapsed = Date.now() - startTime;
+        logger.info('[GeminiGrounded] Completion', {
+            elapsed,
+            textLength: text.length,
+            groundingChunks: groundingChunks.length,
+            isGrounded,
+            searchQueries: searchQueries.slice(0, 3),
+        });
+
+        return { text, groundingChunks, searchQueries, isGrounded };
+    } catch (err: any) {
+        logger.warn('[GeminiGrounded] Failed', { error: err?.message });
+        return { text: '', groundingChunks: [], searchQueries: [], isGrounded: false };
+    }
+}
+
+// ============================================================================
 // Utilities
 // ============================================================================
 

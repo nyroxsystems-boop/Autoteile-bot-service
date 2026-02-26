@@ -1,4 +1,4 @@
-// tecdocPartsouqFlow type not present in repo; use `any` for now to avoid missing import
+// OEM Resolver Types
 
 export interface OEMResolverRequest {
   orderId: string;
@@ -26,7 +26,7 @@ export interface OEMResolverRequest {
 export interface OEMCandidate {
   oem: string;
   brand?: string | null;
-  source: string; // e.g. "tecdoc_light", "shop_autodoc", "llm_inferred"
+  source: string; // e.g. "enterprise-database", "shop_autodoc", "llm_inferred"
   confidence: number; // 0.0–1.0
   meta?: Record<string, any>;
 }
@@ -36,7 +36,6 @@ export interface OEMResolverResult {
   candidates: OEMCandidate[];
   overallConfidence: number;
   notes?: string;
-  tecdocPartsouqResult?: any;
 
   // Deep OEM Resolution (10/10 Premium)
   deepResolution?: {
@@ -47,4 +46,14 @@ export interface OEMResolverResult {
     supersessionApplied?: boolean;
     originalOEM?: string; // If superseded, this was the original
   };
+
+  // 🔀 Variant Detection (10/10)
+  variantDetected?: boolean;
+  variants?: Array<{
+    oem: string;
+    description: string;
+    differentiator: string;
+    confidence: number;
+  }>;
+  variantQuestion?: string;
 }

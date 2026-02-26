@@ -1,5 +1,4 @@
-// import { TecDocVehicleLookup } from "./tecdocClient";
-export interface TecDocVehicleLookup {
+export interface VehicleLookup {
   make?: string;
   model?: string;
   year?: number;
@@ -8,6 +7,8 @@ export interface TecDocVehicleLookup {
   hsn?: string;
   tsn?: string;
 }
+/** @deprecated Use VehicleLookup instead */
+export type TecDocVehicleLookup = VehicleLookup;
 import { determineRequiredFields } from "./oemRequiredFieldsService";
 import { resolveOEM as resolveOEMUnified } from "./oemResolver";
 import { OEMResolverRequest, OEMResolverResult } from "./types";
@@ -22,7 +23,7 @@ export interface OemResolutionResult {
 }
 
 // Vereinfachte Legacy-Signatur: nutzt den neuen Web-Finder
-export async function resolveOEM(vehicle: TecDocVehicleLookup, part: string): Promise<OemResolutionResult> {
+export async function resolveOEM(vehicle: VehicleLookup, part: string): Promise<OemResolutionResult> {
   const missing = determineRequiredFields(vehicle);
   if (missing.length > 0) {
     return { success: false, requiredFields: missing, message: "Es fehlen Fahrzeugdaten." };
@@ -77,7 +78,7 @@ export async function resolveOEMForOrder(
   const normalizedPartText = partText || "";
   const suspectedArticle = extractSuspectedArticleNumber(normalizedPartText);
 
-  // Einheitlicher Multi-Source-Resolver (TecDoc + Web-Scrape + LLM), mit suspectedNumber als Hint
+  // Multi-Source-Resolver (Web-Scrape + DB + LLM), mit suspectedNumber als Hint
   const req: OEMResolverRequest = {
     orderId,
     vehicle: {
@@ -96,5 +97,5 @@ export async function resolveOEMForOrder(
   };
 
   const result = await resolveOEMUnified(req);
-  return { ...result, tecdocPartsouqResult: undefined };
+  return result;
 }

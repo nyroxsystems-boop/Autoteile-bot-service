@@ -28,11 +28,10 @@ export interface ValidationLayer {
 }
 
 export interface BacksearchResult {
-    tecdocHit: boolean;
-    autodocHit: boolean;
     dapartoHit: boolean;
+    hoodHit: boolean;
+    partsGatewayHit: boolean;
     ebayHit: boolean;
-    webHit: boolean;
     totalHits: number;
 }
 
@@ -55,7 +54,7 @@ const fetch = require('node-fetch');
  * 
  * Verschärft für 99% Accuracy:
  * - Minimum 3 Quellen für "Pass"
- * - Premium-Sources (TecDoc, Partsouq, Amayama) wiegen doppelt
+ * - Premium-Sources (Partsouq, Amayama, OEM Catalogs) wiegen doppelt
  * - Single-Source = automatisches Fail
  */
 export function validateLayer1_Consensus(
@@ -67,7 +66,7 @@ export function validateLayer1_Consensus(
     const sourceCount = uniqueSources.size;
 
     // 🏆 PREMIUM SOURCES (wiegen doppelt in der Bewertung)
-    const PREMIUM_SOURCES = ['tecdoc', 'partsouq', 'amayama', '7zap', 'tecdoc_light'];
+    const PREMIUM_SOURCES = ['partsouq', 'amayama', '7zap', 'realoem', 'mercedes_epc', 'vag_etka'];
     const hasPremiumSource = matchingCandidates.some(c =>
         PREMIUM_SOURCES.some(p => c.source.toLowerCase().includes(p))
     );

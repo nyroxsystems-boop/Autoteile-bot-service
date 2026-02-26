@@ -48,22 +48,69 @@ const BMW_MODEL_CODES: Record<string, string[]> = {
 };
 
 // Part category to RealOEM group mapping
+// BMW uses numeric group codes in their catalog structure
 const CATEGORY_GROUPS: Record<string, string[]> = {
-    'bremsscheibe': ['34'],      // Brakes
-    'brake': ['34'],
-    'bremsen': ['34'],
-    'bremsbelag': ['34'],
-    'ölfilter': ['11'],          // Engine
-    'oil filter': ['11'],
-    'luftfilter': ['13'],        // Fuel system
-    'air filter': ['13'],
-    'zündkerze': ['12'],         // Ignition
-    'spark plug': ['12'],
-    'stoßdämpfer': ['33'],       // Suspension
-    'shock': ['33'],
-    'federbein': ['31', '33'],
-    'querlenker': ['31'],        // Front axle
-    'control arm': ['31'],
+    // Brakes (Group 34)
+    'bremsscheibe': ['34'], 'brake disc': ['34'],
+    'bremsen': ['34'], 'brake': ['34'],
+    'bremsbelag': ['34'], 'brake pad': ['34'],
+    'bremssattel': ['34'], 'brake caliper': ['34'],
+    'bremssensor': ['34'], 'handbremse': ['34'],
+    // Engine (Group 11)
+    'ölfilter': ['11'], 'oil filter': ['11'],
+    'wasserpumpe': ['11'], 'water pump': ['11'],
+    'thermostat': ['11'], 'dichtung': ['11'],
+    'zahnriemen': ['11'], 'timing belt': ['11'],
+    'keilriemen': ['11'], 'steuerkette': ['11'],
+    'timing chain': ['11'], 'ventildeckel': ['11'],
+    'turbolader': ['11'], 'turbo': ['11'],
+    // Fuel system (Group 13, 16)
+    'luftfilter': ['13'], 'air filter': ['13'],
+    'kraftstofffilter': ['13', '16'], 'fuel filter': ['13', '16'],
+    'einspritzventil': ['13'], 'injector': ['13'],
+    // Ignition / Electrical (Group 12, 61)
+    'zündkerze': ['12'], 'spark plug': ['12'],
+    'lichtmaschine': ['12'], 'alternator': ['12'],
+    'anlasser': ['12'], 'starter': ['12'],
+    'sensor': ['12', '61'], 'lambda': ['12'],
+    // Cooling (Group 17)
+    'kühler': ['17'], 'radiator': ['17'],
+    'kühlmittel': ['17'], 'coolant': ['17'],
+    'lüfter': ['17'], 'fan': ['17'],
+    // Clutch (Group 21)
+    'kupplung': ['21'], 'clutch': ['21'],
+    'schwungrad': ['21'], 'flywheel': ['21'],
+    'kupplungssatz': ['21'], 'ausrücklager': ['21'],
+    // Exhaust (Group 18)
+    'auspuff': ['18'], 'exhaust': ['18'],
+    'katalysator': ['18'], 'catalytic converter': ['18'],
+    'dpf': ['18'], 'partikelfilter': ['18'],
+    'lambda sonde': ['18'],
+    // Steering (Group 32)
+    'lenkung': ['32'], 'steering': ['32'],
+    'spurstange': ['32'], 'tie rod': ['32'],
+    'lenkgetriebe': ['32'], 'servo': ['32'],
+    // Front/Rear Axle (Group 31, 33)
+    'stoßdämpfer': ['33'], 'shock': ['33'],
+    'federbein': ['31', '33'], 'strut': ['31', '33'],
+    'querlenker': ['31'], 'control arm': ['31'],
+    'stabilisator': ['31'], 'sway bar': ['31'],
+    'koppelstange': ['31'], 'drop link': ['31'],
+    'radlager': ['31', '33'], 'wheel bearing': ['31', '33'],
+    'antriebswelle': ['33'], 'drive shaft': ['33'],
+    'achsmanschette': ['33'], 'cv boot': ['33'],
+    'traggelenk': ['31'], 'ball joint': ['31'],
+    // AC (Group 64)
+    'klimakompressor': ['64'], 'ac compressor': ['64'],
+    'klima': ['64'], 'klimaanlage': ['64'],
+    // Lights (Group 63)
+    'scheinwerfer': ['63'], 'headlight': ['63'],
+    'rücklicht': ['63'], 'tail light': ['63'],
+    'blinker': ['63'], 'nebelscheinwerfer': ['63'],
+    // Body (Group 41, 51)
+    'spiegel': ['51'], 'mirror': ['51'],
+    'fensterheber': ['51'], 'window regulator': ['51'],
+    'türschloss': ['51'], 'door lock': ['51'],
 };
 
 async function fetchWithScraperApi(url: string): Promise<string> {

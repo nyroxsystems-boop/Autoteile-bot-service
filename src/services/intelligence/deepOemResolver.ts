@@ -16,7 +16,7 @@ import { logger } from "@utils/logger";
 import { OEMResolverRequest, OEMCandidate } from "./types";
 
 // Import all deep resolution modules
-import { decodeVIN, extractVAGMotorcode, isVAGVehicle } from "./vinDecoder";
+import { decodeVIN, decodeVinEnriched, extractVAGMotorcode, isVAGVehicle } from "./vinDecoder";
 import { resolveByPRCode, detectPartCategory, suggestPRCodes } from "./prCodeResolver";
 import { resolveByMotorcode, detectEnginePartCategory, findMotorcodesForModel } from "./motorcodeResolver";
 import { detectFacelift, isFaceliftSensitivePart } from "./faceliftDetector";
@@ -73,7 +73,8 @@ export async function performDeepResolution(
     // Step 1: VIN Decoding
     // =========================================================================
     if (req.vehicle.vin) {
-        const vinResult = decodeVIN(req.vehicle.vin);
+        // Use NHTSA-enriched VIN decoding (local + free US government API)
+        const vinResult = await decodeVinEnriched(req.vehicle.vin);
 
         if (vinResult.valid) {
             metadata.vinDecoded = true;
@@ -86,7 +87,27 @@ export async function performDeepResolution(
                 enrichedRequest.vehicle.year = vinResult.year;
             }
 
-            // Extract motorcode for VAG vehicles
+            // NHTSA enrichment: extract engine data from government API
+            if (vinResult.nhtsa) {
+                if (!enrichedRequest.vehicle.motorcode && vinResult.nhtsa.engineModel) {
+                    enrichedRequest.vehicle.motorcode = vinResult.nhtsa.engineModel;
+                    logger.info("[Deep OEM] NHTSA engine model extracted", {
+                        engine: vinResult.nhtsa.engineModel,
+                        cylinders: vinResult.nhtsa.engineCylinders,
+                        displacement: vinResult.nhtsa.displacementL,
+                    });
+                }
+                // Log additional enrichment data
+                logger.info("[Deep OEM] NHTSA VIN enrichment", {
+                    make: vinResult.nhtsa.make,
+                    model: vinResult.nhtsa.model,
+                    year: vinResult.nhtsa.year,
+                    fuelType: vinResult.nhtsa.fuelType,
+                    driveType: vinResult.nhtsa.driveType,
+                });
+            }
+
+            // Extract motorcode for VAG vehicles (fallback if NHTSA didn't provide)
             if (vinResult.isVAG && !enrichedRequest.vehicle.motorcode) {
                 const motorcode = extractVAGMotorcode(req.vehicle.vin);
                 if (motorcode) {

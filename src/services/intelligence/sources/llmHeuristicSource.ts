@@ -1,6 +1,7 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { OEMSource, clampConfidence, logSourceResult } from "./baseSource";
 import { generateChatCompletion } from "../geminiService";
+import { verifyOemViaGoogle } from "./aiVerificationSource";
 import { logger } from "@utils/logger";
 
 /**
@@ -9,10 +10,11 @@ import { logger } from "@utils/logger";
  * Uses Gemini AI with comprehensive automotive knowledge to:
  * 1. Understand the exact part requested
  * 2. Map to known OEM schemas for each brand
- * 3. Cross-reference with TecDoc/aftermarket knowledge
- * 4. Return high-confidence OEM candidates
+ * 3. Return candidates as LOW-CONFIDENCE HINTS (max 0.45)
  * 
- * This is the CORE fallback when web scrapers fail (403/404)
+ * ⚠️ IMPORTANT: LLMs can know OEM number FORMATS but cannot reliably recall
+ * specific OEM numbers. All AI-generated OEMs are capped at 0.45 confidence
+ * and must be validated by web sources or backsearch before acceptance.
  */
 
 // ============================================================================
@@ -84,47 +86,30 @@ const OEM_SCHEMA_KNOWLEDGE = `
 `;
 
 const COMMON_BRAKE_OEMS = `
-## BEKANNTE BREMSTEILE-OEMs (REFERENZ)
+## BREMSTEILE OEM-FORMATE (NUR SCHEMA, KEINE KONKRETEN NUMMERN)
 
-### BMW 3er (G20/G21) 2019+
-- Bremssattel VL: 34 11 6 860 264
-- Bremssattel VR: 34 11 6 860 263
-- Bremssattel HL: 34 21 6 860 253
-- Bremssattel HR: 34 21 6 860 254
-- Bremsscheibe vorne: 34 11 6 860 910
-- Bremsscheibe hinten: 34 21 6 860 912
-- Bremsbeläge vorne: 34 10 6 888 459
-- Bremsbeläge hinten: 34 20 6 888 458
+⚠️ DU DARFST KEINE KONKRETEN OEM-NUMMERN ERRATEN!
+Nutze nur das FORMAT-Wissen um Kandidaten aus Web-Quellen zu VALIDIEREN.
 
-### BMW 3er (F30/F31) 2012-2019
-- Bremssattel VL: 34 11 6 850 931
-- Bremssattel VR: 34 11 6 850 932
-- Bremsscheibe vorne: 34 11 6 792 217
-- Bremsbeläge vorne: 34 11 6 850 568
+### BMW Bremsteile
+- Schema: 34 xx x xxx xxx (11-stellig, Gruppe 34 = Bremsen)
+- 34 1x = Vorderachse, 34 2x = Hinterachse
+- Position: 1 = links, 2 = rechts
 
-### BMW 5er (G30/G31) 2017+
-- Bremsscheibe vorne: 34 11 6 878 876
-- Bremsscheibe hinten: 34 21 6 878 878
+### VAG (VW/Audi/Skoda/Seat) Bremsteile  
+- Schema: xKx xxx xxx xx (z.B. 1K0, 5Q0, 8V0)
+- Prefix = Plattform (1K = Golf 5/6, 5Q = Golf 7, 8V = Audi A3)
+- 615 = Bremsscheibe, 698 = Bremsbelag
 
-### VW Golf 5/6 (1K/5K)
-- Bremsbeläge vorne: 1K0 698 151 A
-- Bremsscheibe vorne: 1K0 615 301 AA
-- Bremssattel VL: 1K0 615 123 E
+### Mercedes Bremsteile
+- Schema: A xxx xxx xx xx (Buchstabe + 10 Ziffern)
+- Prefix A = PKW-Teile
+- Gruppen: 004 420 = Bremsbelag, 205 421 = Bremsscheibe
 
-### VW Golf 7 (5G)
-- Bremsbeläge vorne: 5Q0 698 151 A
-- Bremsscheibe vorne: 5Q0 615 301 B
-
-### Audi A4 (B8/B9)
-- Bremsbeläge vorne: 8K0 698 151 J
-- Bremsscheibe vorne: 4G0 615 301 AH
-
-### Mercedes C-Klasse (W205)
-- Bremsscheibe vorne: A 205 421 10 12
-- Bremsbeläge vorne: A 004 420 52 20
-
-### Mercedes E-Klasse (W213)
-- Bremsscheibe vorne: A 000 421 11 12
+### Allgemein
+- OEM-Nummern sind IMMER herstellerspezifisch
+- Gleiche Scheibe hat bei BMW, VW, Mercedes je eigenes Format
+- Aftermarket-Nummern (z.B. Brembo, TRW) sind KEINE OEM-Nummern
 `;
 
 const PART_CATEGORIES = `
@@ -186,8 +171,9 @@ export const llmHeuristicSource: OEMSource = {
     const brand = req.vehicle.make?.toUpperCase() || "UNBEKANNT";
 
     // Build comprehensive prompt
-    const systemPrompt = `Du bist ein PREMIUM KFZ-Teilekatalog-Experte mit vollständigem TecDoc und ETKA/ETK Wissen.
-Du kennst ALLE OEM-Nummern für europäische und japanische Fahrzeuge.
+    const systemPrompt = `Du bist ein KFZ-Teilekatalog-Experte mit Wissen über OEM-Nummernformate und Fahrzeugmodelle.
+Du kennst die OEM-Nummern-SCHEMATA für europäische und japanische Fahrzeuge.
+Deine Antworten sind VORSCHLÄGE die verifiziert werden müssen — keine garantierten Treffer.
 ${OEM_SCHEMA_KNOWLEDGE}
 ${COMMON_BRAKE_OEMS}
 ${PART_CATEGORIES}
@@ -258,24 +244,196 @@ WICHTIG:
 
       const parsed = JSON.parse(raw.slice(start, end + 1)) as any[];
 
+      const MAX_AI_CONFIDENCE = 0.45; // Base cap — AI cannot guarantee OEM numbers
       const candidates: OEMCandidate[] = parsed.map(p => ({
         oem: normalizeOem(p.oem, brand),
         brand: p.brand || brand,
         source: this.name,
-        confidence: clampConfidence(Number(p.confidence || 0.5)),
+        confidence: clampConfidence(Math.min(Number(p.confidence || 0.3), MAX_AI_CONFIDENCE)),
         meta: {
           description: p.description,
           position: p.position,
           reasoning: p.reasoning,
-          source_type: "ai_inference",
+          source_type: "ai_inference_unverified",
           priority: 1,
+          warning: "AI-generated OEM — requires web/backsearch validation",
         }
       })).filter(c => c.oem.length >= 5);
+
+      // =================================================================
+      // 🔒 TRIPLE-LOCK: Cross-validate with 2 additional AI calls
+      // =================================================================
+      if (candidates.length > 0) {
+        const topOem = candidates[0].oem;
+
+        try {
+          // CALL 2: Format Validation — Does this OEM match the brand schema?
+          const validatePrompt = `Ist "${topOem}" eine gültige ${brand} OEM-Nummer?
+Prüfe:
+1. Hat sie das richtige Format für ${brand}?
+2. Passt die Nummerngruppe zum Teil "${partQuery}"?
+3. Ist das Schema konsistent?
+
+Antworte NUR mit JSON: {"valid": true/false, "reasoning": "...", "formatScore": 0.0-1.0}`;
+
+          const validateRaw = await generateChatCompletion({
+            messages: [
+              { role: "system", content: "Du validierst OEM-Nummernformate." },
+              { role: "user", content: validatePrompt }
+            ],
+            temperature: 0,
+          });
+
+          const validateResult = JSON.parse(
+            validateRaw.replace(/```json/g, '').replace(/```/g, '').trim()
+          );
+
+          // CALL 3: Variant Discovery — Are there multiple variants?
+          const variantPrompt = `Für ${brand} ${req.vehicle.model || ''} ${req.vehicle.year || ''}:
+Gibt es verschiedene Varianten für "${partQuery}"?
+Z.B. verschiedene Größen, Positionen, oder Ausstattungslinien?
+
+Antworte NUR mit JSON: {"hasVariants": true/false, "variants": [{"oem": "...", "description": "..."}]}
+Wenn keine Varianten bekannt: {"hasVariants": false, "variants": []}`;
+
+          const variantRaw = await generateChatCompletion({
+            messages: [
+              { role: "system", content: "Du kennst OEM-Varianten für Autoteile." },
+              { role: "user", content: variantPrompt }
+            ],
+            temperature: 0,
+          });
+
+          const variantResult = JSON.parse(
+            variantRaw.replace(/```json/g, '').replace(/```/g, '').trim()
+          );
+
+          // CROSS-VALIDATION: Boost confidence based on agreement
+          const formatValid = validateResult.valid === true;
+          const formatScore = Number(validateResult.formatScore || 0);
+
+          if (formatValid && formatScore >= 0.7) {
+            // Call 1 + Call 2 agree → boost to 0.60
+            candidates[0].confidence = clampConfidence(0.60);
+            candidates[0].meta!.tripleLock = 'call1+call2_match';
+
+            // Check if Call 3 also confirms
+            if (variantResult.variants?.length > 0) {
+              const variantOems = variantResult.variants
+                .map((v: any) => normalizeOem(v.oem, brand))
+                .filter((o: string) => o.length >= 5);
+
+              if (variantOems.includes(topOem)) {
+                // All 3 calls agree → boost to 0.75
+                candidates[0].confidence = clampConfidence(0.75);
+                candidates[0].meta!.tripleLock = 'all_three_match';
+              }
+
+              // Add variant OEMs as additional candidates
+              for (const v of variantResult.variants) {
+                const vOem = normalizeOem(v.oem, brand);
+                if (vOem && vOem !== topOem && vOem.length >= 5) {
+                  candidates.push({
+                    oem: vOem,
+                    brand,
+                    source: this.name,
+                    confidence: clampConfidence(0.45),
+                    meta: {
+                      description: v.description || '',
+                      source_type: 'ai_variant_discovery',
+                      priority: 1,
+                    },
+                  });
+                }
+              }
+            }
+
+            logger.info('[Premium AI OEM] Triple-Lock result', {
+              oem: topOem,
+              formatValid,
+              formatScore,
+              variantCount: variantResult.variants?.length || 0,
+              finalConfidence: candidates[0].confidence,
+              lockLevel: candidates[0].meta!.tripleLock,
+            });
+          }
+        } catch (lockErr: any) {
+          logger.warn('[Premium AI OEM] Triple-Lock validation failed (using base confidence)', {
+            error: lockErr?.message,
+            topOem: candidates[0]?.oem,
+            baseConfidence: candidates[0]?.confidence,
+          });
+        }
+      } else {
+        logger.info('[Premium AI OEM] Triple-Lock skipped — Call 1 returned 0 candidates', {
+          brand,
+          part: partQuery.substring(0, 50),
+        });
+      }
+
+      // =================================================================
+      // 🌐 WEB VERIFICATION: Verify top AI candidates via Google
+      // This is the GAME-CHANGER: AI + Web = high-confidence OEM
+      // =================================================================
+      if (candidates.length > 0) {
+        const topToVerify = candidates.slice(0, 2); // Verify top 2
+        const model = req.vehicle.model || '';
+
+        for (const candidate of topToVerify) {
+          try {
+            const verification = await verifyOemViaGoogle(
+              candidate.oem,
+              brand,
+              model,
+              partQuery,
+            );
+
+            if (verification.verified) {
+              // WEB VERIFIED! Boost confidence significantly
+              candidate.confidence = clampConfidence(
+                candidate.confidence + verification.confidenceBoost
+              );
+              candidate.meta = {
+                ...candidate.meta,
+                webVerified: true,
+                verificationHits: verification.hitCount,
+                verificationSites: verification.hitSites,
+                source_type: 'ai_web_verified',
+                priority: 8, // Boost priority from 1 to 8
+              };
+
+              logger.info('[Premium AI OEM] 🌐 WEB VERIFIED!', {
+                oem: candidate.oem,
+                oldConfidence: candidate.confidence - verification.confidenceBoost,
+                newConfidence: candidate.confidence,
+                hitCount: verification.hitCount,
+                sites: verification.hitSites.slice(0, 3),
+              });
+            } else if (verification.confidenceBoost > 0) {
+              // Partial verification — small boost
+              candidate.confidence = clampConfidence(
+                candidate.confidence + verification.confidenceBoost
+              );
+              candidate.meta = {
+                ...candidate.meta,
+                webPartialVerify: true,
+                source_type: 'ai_partial_verified',
+              };
+            }
+          } catch (verifyErr: any) {
+            logger.warn('[Premium AI OEM] Web verification failed', {
+              oem: candidate.oem,
+              error: verifyErr?.message,
+            });
+          }
+        }
+      }
 
       logger.info("[Premium AI OEM] Success", {
         candidateCount: candidates.length,
         topOEM: candidates[0]?.oem,
         topConf: candidates[0]?.confidence,
+        webVerified: candidates[0]?.meta?.webVerified || false,
       });
 
       logSourceResult(this.name, candidates.length);

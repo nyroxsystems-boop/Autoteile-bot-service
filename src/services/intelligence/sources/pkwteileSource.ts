@@ -58,8 +58,8 @@ export const pkwteileSource: OEMSource = {
             return allOems.map(oem => ({
                 oem,
                 source: "Pkwteile",
-                confidence: 0.82,
-                metadata: { url }
+                confidence: 0.60,
+                meta: { url, priority: 3, note: 'pkwteile scrape' }
             }));
 
         } catch (error: any) {

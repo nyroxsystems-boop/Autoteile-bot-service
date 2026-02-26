@@ -46,6 +46,58 @@ export function calculateConsensus(
         };
     }
 
+    // ================================================================
+    // Source Group Deduplication
+    // Sources that scrape the same website are counted as ONE group
+    // to prevent fake consensus (e.g., 2 websites counted as 5 sources)
+    // ================================================================
+    const SOURCE_GROUPS: Record<string, string> = {
+        // 7zap group: vagEtkaSource + webScrapeSource(7zap) scrape same site
+        'vag_etka': 'group_7zap',
+        '7zap_web': 'group_7zap',
+        'web_scrape:7zap': 'group_7zap',
+        // Autodoc group: autodocWebSource + webScrapeSource(autodoc) scrape same site
+        'autodoc_web': 'group_autodoc',
+        'web_scrape:autodoc': 'group_autodoc',
+        // Independent groups (each is unique)
+        'enterprise-database': 'group_database',
+        'enterprise-database-fts': 'group_database',
+        'realoem': 'group_realoem',
+        'web_scrape:realoem': 'group_realoem',
+        'mercedes_epc': 'group_mercedes',
+        'premium_ai_oem_resolver': 'group_ai',
+        'Gemini-Vision': 'group_ai',
+        // OCR group: direct image extraction
+        'Document-OCR': 'group_ocr',
+        // Aftermarket groups
+        'Kfzteile24': 'group_kfzteile24',
+        'Pkwteile': 'group_pkwteile',
+        'Oscaro': 'group_oscaro',
+        'Daparto_Search': 'group_daparto',
+        // NEW: Super-sources (each independent)
+        'google_search': 'group_google',
+        'ebay_oem_mining': 'group_ebay',
+        // 🏆 TecDoc (industry standard — highest priority independent group)
+        'tecdoc_catalog': 'group_tecdoc',
+        // 🌐 Gemini Grounded (AI with live web search — independent)
+        'gemini_grounded': 'group_gemini_grounded',
+        // 🆓 Free fallback (independent from ScraperAPI sources)
+        'direct_fetch_free': 'group_direct_free',
+        // 🔄 Aftermarket reverse cascade
+        'aftermarket_crossref': 'group_aftermarket_crossref',
+    };
+
+    function getSourceGroup(sourceName: string): string {
+        // Check exact match first
+        if (SOURCE_GROUPS[sourceName]) return SOURCE_GROUPS[sourceName];
+        // Check prefix match for composite source names like "web_scrape:partsouq"
+        for (const [key, group] of Object.entries(SOURCE_GROUPS)) {
+            if (sourceName.startsWith(key) || sourceName.includes(key)) return group;
+        }
+        // Unknown source = its own unique group
+        return `group_${sourceName}`;
+    }
+
     // Group candidates by normalized OEM
     const oemGroups = new Map<string, OEMCandidate[]>();
 
@@ -70,13 +122,15 @@ export function calculateConsensus(
 
     for (const [oem, group] of oemGroups.entries()) {
         const uniqueSources = [...new Set(group.map(c => c.source))];
-        const sourceCount = uniqueSources.length;
+        // Deduplicated: count unique SOURCE GROUPS, not individual source names
+        const uniqueGroups = [...new Set(uniqueSources.map(s => getSourceGroup(s)))];
+        const sourceCount = uniqueGroups.length; // Real independent source count
 
         // Calculate average confidence
         const avgConfidence = group.reduce((sum, c) => sum + c.confidence, 0) / group.length;
 
         // Calculate average priority (from source meta, default 5)
-        // Priority tiers: OEM Catalogs = 10, DB/TecDoc = 8, Aftermarket shops = 3, LLM = 1
+        // Priority tiers: OEM Catalogs = 10, DB = 8, Aftermarket shops = 3, LLM = 1
         const avgPriority = group.reduce((sum, c) => {
             const priority = c.meta?.priority || 5;
             return sum + priority;

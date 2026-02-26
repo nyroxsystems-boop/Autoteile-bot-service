@@ -70,8 +70,8 @@ export const kfzteile24Source: OEMSource = {
             return allOems.map(oem => ({
                 oem,
                 source: "Kfzteile24",
-                confidence: 0.85, // High confidence for established source
-                metadata: { url }
+                confidence: 0.65,
+                meta: { url, priority: 5, note: 'kfzteile24 scrape' }
             }));
 
         } catch (error: any) {
