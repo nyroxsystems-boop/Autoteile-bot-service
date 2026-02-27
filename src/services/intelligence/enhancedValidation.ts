@@ -43,7 +43,8 @@ export interface EnhancedValidationResult {
     reasoning: string;
 }
 
-const fetch = require('node-fetch');
+// AUDIT FIX: Changed from CJS require() to ESM import
+import fetch from 'node-fetch';
 
 // ============================================================================
 // LAYER 1: MULTI-SOURCE CONSENSUS

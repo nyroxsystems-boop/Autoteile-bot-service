@@ -4,6 +4,7 @@ import { BOT_QUEUE_NAME, BotJobData } from "./botQueue";
 import { handleIncomingBotMessage } from "../services/core/botLogicService";
 import { insertMessage } from "../services/adapters/supabaseService";
 import { recordActivity, startSessionTimeoutChecker } from "../services/core/sessionTimeout";
+import { withGeminiBudget } from "../services/intelligence/geminiBudget";
 import twilio from "twilio";
 import { logger } from "@utils/logger";
 
@@ -99,11 +100,11 @@ async function sendTwilioReply(
 // ============================================================================
 async function sendTypingIndicator(messageSid: string | undefined): Promise<void> {
     if (!messageSid || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) return;
-    
+
     try {
         const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages/${messageSid}/UserDefinedMessages.json`;
         const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-        
+
         // Send read receipt + typing indicator via Twilio UserDefinedMessages
         const response = await fetch(url, {
             method: 'POST',
@@ -145,7 +146,7 @@ const worker = new Worker<BotJobData>(
         // recordActivity moved to after handleIncomingBotMessage (see below for language population)
 
         // Send typing indicator immediately (non-blocking)
-        sendTypingIndicator(messageSid).catch(() => {});
+        sendTypingIndicator(messageSid).catch(() => { });
 
         try {
             // ============================================================
@@ -164,12 +165,17 @@ const worker = new Worker<BotJobData>(
             };
 
             // 1. Process Logic — with callback for interim messages
-            const result = await handleIncomingBotMessage({
-                from,
-                text,
-                orderId: orderId || null,
-                mediaUrls
-            }, sendInterimReply);
+            // AUDIT FIX: Wrap with Gemini API budget (max 8 calls per message)
+            const GEMINI_BUDGET = parseInt(process.env.GEMINI_BUDGET_PER_REQUEST || '8', 10);
+            const result = await withGeminiBudget(GEMINI_BUDGET, () =>
+                handleIncomingBotMessage({
+                    from,
+                    text,
+                    orderId: orderId || null,
+                    mediaUrls
+                }, sendInterimReply),
+                job.id
+            );
 
             logger.info("🤖 BOT GENERATED REPLY", {
                 replyLength: result.reply?.length,
@@ -249,5 +255,20 @@ worker.on("failed", (job: Job | undefined, err: Error) => {
 startSessionTimeoutChecker(async (waId: string, message: string) => {
     await sendTwilioReply(waId, message);
 });
+
+// AUDIT FIX: Graceful shutdown — finish in-flight jobs before exit
+async function gracefulShutdown(signal: string) {
+    logger.info(`[BotWorker] ${signal} received — closing worker gracefully...`);
+    try {
+        await worker.close();
+        logger.info("[BotWorker] Worker closed successfully, all in-flight jobs finished");
+    } catch (err: any) {
+        logger.error("[BotWorker] Error during graceful shutdown", { error: err?.message });
+    }
+    process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 export { worker };

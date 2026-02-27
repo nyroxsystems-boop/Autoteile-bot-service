@@ -1,7 +1,7 @@
 import { OEMResolverRequest, OEMCandidate } from "../types";
 import { OEMSource, clampConfidence, logSourceResult } from "./baseSource";
 import { generateChatCompletion } from "../geminiService";
-import { verifyOemViaGoogle } from "./aiVerificationSource";
+// AUDIT FIX: Removed verifyOemViaGoogle import (was part of removed Triple-Lock)
 import { logger } from "@utils/logger";
 
 /**
@@ -260,180 +260,15 @@ WICHTIG:
         }
       })).filter(c => c.oem.length >= 5);
 
-      // =================================================================
-      // 🔒 TRIPLE-LOCK: Cross-validate with 2 additional AI calls
-      // =================================================================
-      if (candidates.length > 0) {
-        const topOem = candidates[0].oem;
-
-        try {
-          // CALL 2: Format Validation — Does this OEM match the brand schema?
-          const validatePrompt = `Ist "${topOem}" eine gültige ${brand} OEM-Nummer?
-Prüfe:
-1. Hat sie das richtige Format für ${brand}?
-2. Passt die Nummerngruppe zum Teil "${partQuery}"?
-3. Ist das Schema konsistent?
-
-Antworte NUR mit JSON: {"valid": true/false, "reasoning": "...", "formatScore": 0.0-1.0}`;
-
-          const validateRaw = await generateChatCompletion({
-            messages: [
-              { role: "system", content: "Du validierst OEM-Nummernformate." },
-              { role: "user", content: validatePrompt }
-            ],
-            temperature: 0,
-          });
-
-          const validateResult = JSON.parse(
-            validateRaw.replace(/```json/g, '').replace(/```/g, '').trim()
-          );
-
-          // CALL 3: Variant Discovery — Are there multiple variants?
-          const variantPrompt = `Für ${brand} ${req.vehicle.model || ''} ${req.vehicle.year || ''}:
-Gibt es verschiedene Varianten für "${partQuery}"?
-Z.B. verschiedene Größen, Positionen, oder Ausstattungslinien?
-
-Antworte NUR mit JSON: {"hasVariants": true/false, "variants": [{"oem": "...", "description": "..."}]}
-Wenn keine Varianten bekannt: {"hasVariants": false, "variants": []}`;
-
-          const variantRaw = await generateChatCompletion({
-            messages: [
-              { role: "system", content: "Du kennst OEM-Varianten für Autoteile." },
-              { role: "user", content: variantPrompt }
-            ],
-            temperature: 0,
-          });
-
-          const variantResult = JSON.parse(
-            variantRaw.replace(/```json/g, '').replace(/```/g, '').trim()
-          );
-
-          // CROSS-VALIDATION: Boost confidence based on agreement
-          const formatValid = validateResult.valid === true;
-          const formatScore = Number(validateResult.formatScore || 0);
-
-          if (formatValid && formatScore >= 0.7) {
-            // Call 1 + Call 2 agree → boost to 0.60
-            candidates[0].confidence = clampConfidence(0.60);
-            candidates[0].meta!.tripleLock = 'call1+call2_match';
-
-            // Check if Call 3 also confirms
-            if (variantResult.variants?.length > 0) {
-              const variantOems = variantResult.variants
-                .map((v: any) => normalizeOem(v.oem, brand))
-                .filter((o: string) => o.length >= 5);
-
-              if (variantOems.includes(topOem)) {
-                // All 3 calls agree → boost to 0.75
-                candidates[0].confidence = clampConfidence(0.75);
-                candidates[0].meta!.tripleLock = 'all_three_match';
-              }
-
-              // Add variant OEMs as additional candidates
-              for (const v of variantResult.variants) {
-                const vOem = normalizeOem(v.oem, brand);
-                if (vOem && vOem !== topOem && vOem.length >= 5) {
-                  candidates.push({
-                    oem: vOem,
-                    brand,
-                    source: this.name,
-                    confidence: clampConfidence(0.45),
-                    meta: {
-                      description: v.description || '',
-                      source_type: 'ai_variant_discovery',
-                      priority: 1,
-                    },
-                  });
-                }
-              }
-            }
-
-            logger.info('[Premium AI OEM] Triple-Lock result', {
-              oem: topOem,
-              formatValid,
-              formatScore,
-              variantCount: variantResult.variants?.length || 0,
-              finalConfidence: candidates[0].confidence,
-              lockLevel: candidates[0].meta!.tripleLock,
-            });
-          }
-        } catch (lockErr: any) {
-          logger.warn('[Premium AI OEM] Triple-Lock validation failed (using base confidence)', {
-            error: lockErr?.message,
-            topOem: candidates[0]?.oem,
-            baseConfidence: candidates[0]?.confidence,
-          });
-        }
-      } else {
-        logger.info('[Premium AI OEM] Triple-Lock skipped — Call 1 returned 0 candidates', {
-          brand,
-          part: partQuery.substring(0, 50),
-        });
-      }
-
-      // =================================================================
-      // 🌐 WEB VERIFICATION: Verify top AI candidates via Google
-      // This is the GAME-CHANGER: AI + Web = high-confidence OEM
-      // =================================================================
-      if (candidates.length > 0) {
-        const topToVerify = candidates.slice(0, 2); // Verify top 2
-        const model = req.vehicle.model || '';
-
-        for (const candidate of topToVerify) {
-          try {
-            const verification = await verifyOemViaGoogle(
-              candidate.oem,
-              brand,
-              model,
-              partQuery,
-            );
-
-            if (verification.verified) {
-              // WEB VERIFIED! Boost confidence significantly
-              candidate.confidence = clampConfidence(
-                candidate.confidence + verification.confidenceBoost
-              );
-              candidate.meta = {
-                ...candidate.meta,
-                webVerified: true,
-                verificationHits: verification.hitCount,
-                verificationSites: verification.hitSites,
-                source_type: 'ai_web_verified',
-                priority: 8, // Boost priority from 1 to 8
-              };
-
-              logger.info('[Premium AI OEM] 🌐 WEB VERIFIED!', {
-                oem: candidate.oem,
-                oldConfidence: candidate.confidence - verification.confidenceBoost,
-                newConfidence: candidate.confidence,
-                hitCount: verification.hitCount,
-                sites: verification.hitSites.slice(0, 3),
-              });
-            } else if (verification.confidenceBoost > 0) {
-              // Partial verification — small boost
-              candidate.confidence = clampConfidence(
-                candidate.confidence + verification.confidenceBoost
-              );
-              candidate.meta = {
-                ...candidate.meta,
-                webPartialVerify: true,
-                source_type: 'ai_partial_verified',
-              };
-            }
-          } catch (verifyErr: any) {
-            logger.warn('[Premium AI OEM] Web verification failed', {
-              oem: candidate.oem,
-              error: verifyErr?.message,
-            });
-          }
-        }
-      }
+      // AUDIT FIX: Removed Triple-Lock (Call 2 + 3) and verifyOemViaGoogle (Call 4)
+      // The MAX_AI_CONFIDENCE = 0.45 cap already prevents this source from dominating.
+      // Validation happens via consensus engine + enhanced validation layers.
+      // This reduces API cost from 5 Gemini calls to 1 per source invocation.
 
       logger.info("[Premium AI OEM] Success", {
         candidateCount: candidates.length,
         topOEM: candidates[0]?.oem,
         topConf: candidates[0]?.confidence,
-        webVerified: candidates[0]?.meta?.webVerified || false,
       });
 
       logSourceResult(this.name, candidates.length);

@@ -11,6 +11,7 @@
 
 import { GoogleGenerativeAI, GenerativeModel, Content, Part } from "@google/generative-ai";
 import { logger } from "../../utils/logger";
+import { acquireBudgetToken, getRemainingBudget } from './geminiBudget';
 
 // ============================================================================
 // Configuration
@@ -127,6 +128,15 @@ export async function generateChatCompletion(params: {
 }): Promise<string> {
     const { messages, model = DEFAULT_MODEL, responseFormat, temperature = 0.7 } = params;
     const startTime = Date.now();
+
+    // AUDIT FIX: Check API budget before making call
+    if (!acquireBudgetToken()) {
+        logger.warn('[Gemini] API budget exhausted, skipping call', {
+            remaining: getRemainingBudget(),
+            model,
+        });
+        return responseFormat === 'json_object' ? '{}' : '';
+    }
 
     // M5: Rate limiter
     await waitForRateToken();
@@ -413,6 +423,14 @@ export async function generateGroundedCompletion(params: {
     temperature?: number;
 }): Promise<GroundedResult> {
     const { prompt, systemInstruction, temperature = 0.3 } = params;
+
+    // AUDIT FIX: Check API budget before making grounded call
+    if (!acquireBudgetToken()) {
+        logger.warn('[GeminiGrounded] API budget exhausted, skipping grounded call', {
+            remaining: getRemainingBudget(),
+        });
+        return { text: '', groundingChunks: [], searchQueries: [], isGrounded: false };
+    }
 
     await waitForRateToken();
 

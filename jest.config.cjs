@@ -5,6 +5,10 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/src/test_legacy/'],
   verbose: true,
 
+  // AUDIT FIX: Prevent Jest worker OOM crashes
+  maxWorkers: 2,
+  workerIdleMemoryLimit: '512MB',
+
   // Path mappings matching tsconfig.json
   moduleNameMapper: {
     '^@services/(.*)$': '<rootDir>/src/services/$1',

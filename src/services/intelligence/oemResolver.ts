@@ -191,7 +191,14 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
         }
 
         try {
-          const res = await source.resolveCandidates(req);
+          // AUDIT FIX: Per-source timeout (5s) — prevents single slow scraper from blocking entire request
+          const SOURCE_TIMEOUT_MS = 5000;
+          const res = await Promise.race([
+            source.resolveCandidates(req),
+            new Promise<OEMCandidate[]>((_, reject) =>
+              setTimeout(() => reject(new Error(`Source ${sourceName} timed out after ${SOURCE_TIMEOUT_MS}ms`)), SOURCE_TIMEOUT_MS)
+            )
+          ]);
           recordSuccess(sourceName);
           // #14 FIX: Feed source health to scraperFallback strategy
           reportSourceHealth(sourceName, true);
