@@ -1,24 +1,31 @@
 /**
  * Bot Testing Routes
- * Admin-Dashboard OEM Bot Simulator - Bypasses Twilio
+ * Admin-Dashboard OEM Bot Simulator - 1:1 parity with real WhatsApp flow
+ *
+ * Uses the SAME logic as botWorker.ts:
+ * - sendInterimReply callback (interim messages stored in session)
+ * - withGeminiBudget wrapping (same cost control)
+ * - Structured logging (no console.log)
  */
 
 import { Router, Request, Response } from "express";
 import { handleIncomingBotMessage } from "../services/core/botLogicService";
 import { insertMessage } from "@adapters/supabaseService";
+import { withGeminiBudget } from "../services/intelligence/geminiBudget";
+import { logger } from "@utils/logger";
 import * as db from "../services/core/database";
 
 const router = Router();
 
 // In-memory store for test sessions
 const testSessions = new Map<string, {
-    messages: Array<{ role: 'user' | 'bot'; text: string; timestamp: Date }>;
+    messages: Array<{ role: 'user' | 'bot' | 'system'; text: string; timestamp: Date }>;
     orderId?: string;
 }>();
 
 /**
  * POST /api/bot-testing/chat
- * Send a message to the bot and get a response
+ * Send a message to the bot and get a response — 1:1 with real WhatsApp flow
  */
 router.post("/chat", async (req: Request, res: Response) => {
     const { from, text, imageBase64 } = req.body ?? {};
@@ -32,7 +39,7 @@ router.post("/chat", async (req: Request, res: Response) => {
     const sessionKey = `test:${normalizedFrom}`;
 
     try {
-        console.log("[BotTesting] Incoming message:", {
+        logger.info("[BotTesting] Incoming message", {
             from: normalizedFrom,
             text,
             hasImage: !!imageBase64,
@@ -49,20 +56,42 @@ router.post("/chat", async (req: Request, res: Response) => {
         session.messages.push({ role: 'user', text: text || '📷 Bild', timestamp: new Date() });
 
         // Build mediaUrls if image is provided
-        // For bot testing, we pass base64 directly as a data URL
         let mediaUrls: string[] | undefined;
         if (imageBase64) {
-            // Create a data URL from base64 - the bot logic can parse this
             mediaUrls = [`data:image/jpeg;base64,${imageBase64}`];
         }
 
-        // Call the actual bot logic
-        const result = await handleIncomingBotMessage({
-            from: normalizedFrom,
-            text: text || 'Fahrzeugschein-Bild',
-            orderId: session.orderId ?? null,
-            mediaUrls
-        });
+        // ============================================================
+        // 1:1 PARITY: sendInterimReply callback (same as botWorker.ts)
+        // Interim messages ("🔍 Ich suche...") are stored in session
+        // so the frontend can display them in real-time
+        // ============================================================
+        const interimMessages: string[] = [];
+        const sendInterimReply = async (message: string) => {
+            try {
+                interimMessages.push(message);
+                session.messages.push({ role: 'system', text: message, timestamp: new Date() });
+                logger.info("[BotTesting] Interim reply", { to: normalizedFrom, message: message.substring(0, 50) });
+            } catch (err: any) {
+                logger.warn("[BotTesting] Interim reply failed (non-blocking)", { error: err?.message });
+            }
+        };
+
+        // ============================================================
+        // 1:1 PARITY: Gemini Budget (same as botWorker.ts)
+        // Limits AI calls per request to prevent cost explosion
+        // ============================================================
+        const GEMINI_BUDGET = parseInt(process.env.GEMINI_BUDGET_PER_REQUEST || '8', 10);
+
+        const result = await withGeminiBudget(GEMINI_BUDGET, () =>
+            handleIncomingBotMessage({
+                from: normalizedFrom,
+                text: text || 'Fahrzeugschein-Bild',
+                orderId: session.orderId ?? null,
+                mediaUrls
+            }, sendInterimReply),
+            `bot-testing-${normalizedFrom}`
+        );
 
         // Update session with order ID
         if (result.orderId) {
@@ -72,35 +101,54 @@ router.post("/chat", async (req: Request, res: Response) => {
         // Store bot response
         session.messages.push({ role: 'bot', text: result.reply, timestamp: new Date() });
 
+        // Persist reply in DB (same as botWorker.ts)
+        try {
+            await insertMessage(normalizedFrom, result.reply, "OUT" as any);
+        } catch (dbErr: any) {
+            logger.warn("[BotTesting] Failed to persist outgoing message", { error: dbErr?.message });
+        }
+
+        // Persist lastBotMessage for orchestrator context (same as botWorker.ts)
+        try {
+            const { updateOrderData } = await import("../services/adapters/supabaseService");
+            if (result.orderId) {
+                await updateOrderData(result.orderId, { lastBotMessage: result.reply });
+            }
+        } catch (_) { /* non-critical */ }
+
         // Get order details for debugging
         let orderDetails = null;
         if (result.orderId) {
             try {
-                // Simplified query - vehicle data is stored in order_data JSON
                 orderDetails = await db.get<any>(
                     `SELECT * FROM orders WHERE id = ?`,
                     [result.orderId]
                 );
-            } catch (e) {
-                console.error("Failed to fetch order details:", e);
+            } catch (e: any) {
+                logger.warn("[BotTesting] Failed to fetch order details", { error: e?.message });
             }
         }
 
-        console.log("[BotTesting] Bot response:", { orderId: result.orderId, reply: result.reply.substring(0, 100) + '...' });
+        logger.info("[BotTesting] Bot response", {
+            orderId: result.orderId,
+            reply: result.reply.substring(0, 100),
+            interimCount: interimMessages.length
+        });
 
         return res.json({
             reply: result.reply,
             orderId: result.orderId,
             orderDetails,
+            interimMessages,  // Frontend can display these
             messageCount: session.messages.length,
             session: {
                 from: normalizedFrom,
-                history: session.messages.slice(-10) // Last 10 messages
+                history: session.messages.slice(-20) // Last 20 messages
             }
         });
 
     } catch (err: any) {
-        console.error("[BotTesting] Error:", err);
+        logger.error("[BotTesting] Error", { error: err?.message, from: normalizedFrom });
         return res.status(500).json({
             error: "Bot testing failed",
             details: err?.message ?? String(err)
@@ -126,10 +174,7 @@ router.post("/reset", async (req: Request, res: Response) => {
         // Clear session
         testSessions.delete(sessionKey);
 
-        // Optionally clear orders for this test number
-        // await db.run("DELETE FROM orders WHERE customer_contact = ?", [normalizedFrom]);
-
-        console.log("[BotTesting] Session reset for:", normalizedFrom);
+        logger.info("[BotTesting] Session reset", { from: normalizedFrom });
 
         return res.json({
             success: true,
@@ -186,13 +231,12 @@ router.get("/session/:from", async (req: Request, res: Response) => {
     let orderDetails = null;
     if (session.orderId) {
         try {
-            // Simplified query - vehicle data is stored in order_data JSON
             orderDetails = await db.get<any>(
                 `SELECT * FROM orders WHERE id = ?`,
                 [session.orderId]
             );
-        } catch (e) {
-            console.error("Failed to fetch order details:", e);
+        } catch (e: any) {
+            logger.warn("[BotTesting] Failed to fetch order details", { error: e?.message });
         }
     }
 
@@ -206,10 +250,11 @@ router.get("/session/:from", async (req: Request, res: Response) => {
 
 /**
  * GET /api/bot-testing/oem-stats
- * Get OEM resolution statistics
+ * Get OEM resolution statistics (SQLite-compatible)
  */
 router.get("/oem-stats", async (_req: Request, res: Response) => {
     try {
+        // SQLite-compatible: datetime('now', '-7 days') instead of PostgreSQL NOW() - INTERVAL
         const stats = await db.get<any>(`
             SELECT 
                 COUNT(*) as total_orders,
@@ -218,7 +263,7 @@ router.get("/oem-stats", async (_req: Request, res: Response) => {
                 SUM(CASE WHEN status = 'COLLECTING_INFO' THEN 1 ELSE 0 END) as collecting_info,
                 SUM(CASE WHEN status = 'OFFER_PRESENTED' THEN 1 ELSE 0 END) as offer_presented
             FROM orders
-            WHERE created_at > NOW() - INTERVAL '7 days'
+            WHERE created_at > datetime('now', '-7 days')
         `);
 
         const resolutionRate = stats?.total_orders > 0
@@ -232,6 +277,7 @@ router.get("/oem-stats", async (_req: Request, res: Response) => {
         });
 
     } catch (err: any) {
+        logger.error("[BotTesting] OEM stats query failed", { error: err?.message });
         return res.status(500).json({ error: err?.message ?? String(err) });
     }
 });
