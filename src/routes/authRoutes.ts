@@ -11,15 +11,31 @@ function generateToken(): string {
     return randomUUID() + '-' + Date.now().toString(36);
 }
 
+// Ensure user_sessions table exists for device tracking
+async function ensureUserSessionsTable() {
+    await db.run(`
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            token TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+}
+
 /**
  * POST /api/auth/login
- * Login endpoint for dashboard
+ * Login endpoint for dashboard with device limit enforcement
  */
 router.post("/login", async (req: Request, res: Response) => {
-    const { email, username, password, tenant } = req.body;
-    // Accept 'email' or 'username' field, or a combined 'login' field if the frontend sends that.
-    // Dashboard sends 'email' field currently even if it's a username in the UI placeholder.
+    const { email, username, password, tenant, device_id } = req.body;
     const loginIdentifier = email || username;
+    const deviceId = device_id || req.headers['x-device-id'] || `unknown-${Date.now()}`;
 
     if (!loginIdentifier || !password) {
         return res.status(400).json({ error: "Email/Username and password are required" });
@@ -27,8 +43,6 @@ router.post("/login", async (req: Request, res: Response) => {
 
     try {
         // Find user by email OR username
-        // We compare lowercase for email, and strict or lowercase for username?
-        // Let's safe-bet: check both.
         const user = await db.get<any>(
             'SELECT * FROM users WHERE (email = ? OR username = ?) AND is_active = 1',
             [loginIdentifier.toLowerCase().trim(), loginIdentifier.trim()]
@@ -38,14 +52,56 @@ router.post("/login", async (req: Request, res: Response) => {
             return res.status(401).json({ error: "Invalid email/username or password" });
         }
 
-        // Verify password using bcrypt (matches how passwords are stored)
+        // Verify password using bcrypt
         const passwordValid = await bcrypt.compare(password, user.password_hash);
-
         if (!passwordValid) {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        // Create session
+        // ── Device Limit Check ──────────────────────────────────────
+        await ensureUserSessionsTable();
+
+        const merchantId = user.merchant_id;
+
+        if (merchantId) {
+            // Get tenant limits
+            let maxDevices = 2; // default
+            try {
+                const settings = await db.get<any>(
+                    'SELECT max_devices FROM tenant_settings WHERE tenant_id = ?',
+                    [String(merchantId)]
+                );
+                if (settings) maxDevices = settings.max_devices || 2;
+            } catch { /* table might not exist yet */ }
+
+            // Count active devices for this tenant (excluding this device if already registered)
+            const activeDevicesResult = await db.get<any>(
+                `SELECT COUNT(DISTINCT device_id) as count FROM user_sessions
+                 WHERE user_id IN (SELECT id FROM users WHERE merchant_id = ?)
+                 AND is_active = 1 AND device_id != ?`,
+                [String(merchantId), deviceId]
+            );
+            const activeDeviceCount = activeDevicesResult?.count || 0;
+
+            // If this device is NEW and would exceed the limit → block
+            const existingDevice = await db.get<any>(
+                'SELECT id FROM user_sessions WHERE device_id = ? AND is_active = 1',
+                [deviceId]
+            );
+
+            if (!existingDevice && activeDeviceCount >= maxDevices) {
+                console.log(`⛔ Device limit reached for tenant ${merchantId}: ${activeDeviceCount}/${maxDevices}`);
+                return res.status(403).json({
+                    error: "DEVICE_LIMIT_REACHED",
+                    message: "Gerätelimit erreicht. Kontaktieren Sie Ihren Verkäufer für weitere Zugänge.",
+                    current_devices: activeDeviceCount,
+                    max_devices: maxDevices,
+                    code: "DEVICE_LIMIT_REACHED"
+                });
+            }
+        }
+
+        // ── Create Session ──────────────────────────────────────────
         const sessionId = `session-${randomUUID()}`;
         const token = generateToken();
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -56,16 +112,49 @@ router.post("/login", async (req: Request, res: Response) => {
             [sessionId, user.id, token, expiresAt.toISOString(), now]
         );
 
+        // ── Track Device ────────────────────────────────────────────
+        try {
+            // Upsert device session
+            await db.run(
+                `INSERT INTO user_sessions (id, user_id, device_id, token, ip_address, user_agent, last_seen, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                 ON CONFLICT(id) DO UPDATE SET last_seen = ?, is_active = 1, token = ?`,
+                [
+                    `ds-${deviceId}`,
+                    user.id,
+                    deviceId,
+                    token,
+                    req.ip || '',
+                    req.headers['user-agent'] || '',
+                    now,
+                    now,
+                    token
+                ]
+            );
+        } catch (err) {
+            // Device tracking is best-effort, don't fail login
+            console.warn('Device tracking failed:', err);
+        }
+
         // Update last login
-        await db.run(
-            'UPDATE users SET last_login = ? WHERE id = ?',
-            [now, user.id]
-        );
+        await db.run('UPDATE users SET last_login = ? WHERE id = ?', [now, user.id]);
+
+        // Get tenant name from company (not hardcoded)
+        let tenantName = 'Dashboard';
+        try {
+            const companyUsers = await db.all<any>(
+                'SELECT DISTINCT name FROM users WHERE merchant_id = ? LIMIT 1',
+                [String(merchantId)]
+            );
+            if (companyUsers && companyUsers.length > 0) {
+                tenantName = companyUsers[0]?.name || tenantName;
+            }
+        } catch { /* fallback to default */ }
 
         // Return session data
         const response = {
             access: token,
-            refresh: token, // Using same token for simplicity
+            refresh: token,
             user: {
                 id: user.id,
                 email: user.email,
@@ -75,12 +164,12 @@ router.post("/login", async (req: Request, res: Response) => {
             },
             tenant: {
                 id: user.merchant_id || 'dealer-demo-001',
-                name: 'AutoTeile Müller GmbH',
+                name: tenantName,
                 role: user.role
             }
         };
 
-        console.log(`✅ User logged in: ${user.email} (${user.role})`);
+        console.log(`✅ User logged in: ${user.email} (${user.role}) on device ${deviceId}`);
         return res.status(200).json(response);
 
     } catch (error: any) {
@@ -94,7 +183,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/logout
- * Logout endpoint
+ * Logout endpoint — also deactivates device session
  */
 router.post("/logout", async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
@@ -105,7 +194,13 @@ router.post("/logout", async (req: Request, res: Response) => {
         try {
             // Delete session
             await db.run('DELETE FROM sessions WHERE token = ?', [token]);
-            console.log('✅ User logged out');
+
+            // Deactivate device session
+            try {
+                await db.run('UPDATE user_sessions SET is_active = 0 WHERE token = ?', [token]);
+            } catch { /* best effort */ }
+
+            console.log('✅ User logged out, device session deactivated');
         } catch (error) {
             console.error("Error deleting session:", error);
         }

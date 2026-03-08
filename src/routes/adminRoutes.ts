@@ -32,6 +32,34 @@ router.post("/users", async (req: Request, res: Response) => {
     if (!email) {
         return res.status(400).json({ error: "Email is required." });
     }
+
+    // ── User Limit Check ──────────────────────────────────────
+    if (tenant_id) {
+        try {
+            await ensureTenantSettingsTable();
+            const settings = await db.get<any>(
+                'SELECT max_users FROM tenant_settings WHERE tenant_id = ?',
+                [String(tenant_id)]
+            );
+            const maxUsers = settings?.max_users || 10;
+
+            const currentCount = await db.get<any>(
+                'SELECT COUNT(*) as count FROM users WHERE merchant_id = ? AND is_active = 1',
+                [String(tenant_id)]
+            );
+
+            if ((currentCount?.count || 0) >= maxUsers) {
+                return res.status(403).json({
+                    error: "USER_LIMIT_REACHED",
+                    message: "Benutzerlimit erreicht. Kontaktieren Sie Ihren Verkäufer für weitere Zugänge.",
+                    current_users: currentCount?.count || 0,
+                    max_users: maxUsers,
+                    code: "USER_LIMIT_REACHED"
+                });
+            }
+        } catch { /* limit check is best-effort */ }
+    }
+
     const id = randomUUID();
     const createdAt = new Date().toISOString();
 
@@ -39,13 +67,12 @@ router.post("/users", async (req: Request, res: Response) => {
     if (password) {
         passwordHash = await hashPassword(password);
     } else {
-        // Generate secure default password
         const defaultPassword = generateSecurePassword();
         passwordHash = await hashPassword(defaultPassword);
     }
 
-    const username = providedUsername || email.split('@')[0]; // Use provided or derive from email
-    const userName = name || username; // Use name if provided, otherwise username
+    const username = providedUsername || email.split('@')[0];
+    const userName = name || username;
 
     try {
         const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, is_active, username, merchant_id) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`;
