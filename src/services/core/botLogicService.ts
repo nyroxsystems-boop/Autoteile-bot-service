@@ -1212,7 +1212,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
         }
 
         case "confirm_vehicle": {
-          const isYes = userText.toLowerCase().match(/^(ja|yes|jo|jup|correct|korrekt|stimmt|y)$/);
+          const isYes = userText.toLowerCase().match(/^(ja|yes|jo|jup|jupp|correct|korrekt|stimmt|richtig|genau|jawohl|passt|ok|okay|jap|jaa|y|si|evet|erê|tak)$/);
           if (isYes) {
             try {
               await updateOrderData(order.id, { vehicleConfirmed: true });
