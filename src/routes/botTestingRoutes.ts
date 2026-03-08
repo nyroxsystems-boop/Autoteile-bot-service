@@ -254,7 +254,7 @@ router.get("/session/:from", async (req: Request, res: Response) => {
  */
 router.get("/oem-stats", async (_req: Request, res: Response) => {
     try {
-        // SQLite-compatible: datetime('now', '-7 days') instead of PostgreSQL NOW() - INTERVAL
+        // PostgreSQL syntax: NOW() - INTERVAL '7 days'
         const stats = await db.get<any>(`
             SELECT 
                 COUNT(*) as total_orders,
@@ -263,7 +263,7 @@ router.get("/oem-stats", async (_req: Request, res: Response) => {
                 SUM(CASE WHEN status = 'COLLECTING_INFO' THEN 1 ELSE 0 END) as collecting_info,
                 SUM(CASE WHEN status = 'OFFER_PRESENTED' THEN 1 ELSE 0 END) as offer_presented
             FROM orders
-            WHERE created_at > datetime('now', '-7 days')
+            WHERE created_at > NOW() - INTERVAL '7 days'
         `);
 
         const resolutionRate = stats?.total_orders > 0
