@@ -1,4 +1,8 @@
 "use strict";
+// =================================================================
+// Bot Logic Service — Main orchestrator for the WhatsApp Bot.
+// Helper functions are in: nluService.ts, vehicleOcrService.ts, botHelpers.ts
+// =================================================================
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -32,475 +36,71 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.downloadFromTwilio = downloadFromTwilio;
-exports.extractVehicleDataFromImage = extractVehicleDataFromImage;
-exports.understandUserText = understandUserText;
-exports.parseUserMessage = parseUserMessage;
+exports.verifyOemWithAi = exports.shortOrderLabel = exports.runCollectPartBrain = exports.answerGeneralQuestion = exports.calculateEstimatedDeliveryRange = exports.calculateEndPrice = exports.mergePartInfo = exports.hasSufficientPartInfo = exports.detectNoVehicleDocument = exports.partRequiredFields = exports.buildPartFollowUpQuestion = exports.buildVehicleFollowUpQuestion = exports.needsVehicleDocumentHint = exports.buildSmalltalkReply = exports.callOrchestrator = exports.isVehicleSufficientForOem = exports.determineMissingVehicleFields = exports.understandUserText = exports.safeParseVehicleJson = exports.extractVehicleDataFromImage = exports.downloadFromTwilio = exports.downloadImageBuffer = exports.pickLanguageFromChoice = exports.parseUserMessage = exports.detectIntent = exports.hasVehicleHints = exports.extractVinHsnTsn = exports.sanitizeText = exports.detectAbusive = exports.detectSmalltalk = exports.detectLanguageFromText = exports.detectLanguageSelection = void 0;
 exports.handleIncomingBotMessage = handleIncomingBotMessage;
-// Gemini AI Service
-const node_fetch_1 = __importDefault(require("node-fetch"));
 const supabaseService_1 = require("@adapters/supabaseService");
 const oemRequiredFieldsService_1 = require("../intelligence/oemRequiredFieldsService");
 const oemService = __importStar(require("@intelligence/oemService"));
 const logger_1 = require("@utils/logger");
 const scrapingService_1 = require("../scraping/scrapingService");
-const generalQaPrompt_1 = require("../../prompts/generalQaPrompt");
-const textNluPrompt_1 = require("../../prompts/textNluPrompt");
-const collectPartBrainPrompt_1 = require("../../prompts/collectPartBrainPrompt");
-const httpClient_1 = require("../../utils/httpClient");
-const orchestratorPrompt_1 = require("../../prompts/orchestratorPrompt");
 const geminiService_1 = require("../intelligence/geminiService");
 const vehicleGuard_1 = require("../intelligence/vehicleGuard");
 const botResponses_1 = require("./botResponses");
-const fs = __importStar(require("fs/promises"));
 const featureFlags_1 = require("./featureFlags");
 const phoneMerchantMapper_1 = require("../adapters/phoneMerchantMapper");
+const lockService_1 = require("./lockService");
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require("../adapters/supabaseService");
 }
-/**
- * Berechnet den Endpreis für den Kunden inkl. Händler-Marge.
- */
-function calculateEndPrice(buyingPrice, margin) {
-    const m = margin ? (1 + margin / 100) : (Number(process.env.DEALER_MARGIN) || 1.25);
-    return Math.round(buyingPrice * m * 100) / 100;
-}
-function calculateEstimatedDeliveryRange(days) {
-    const today = new Date();
-    const min = new Date();
-    min.setDate(today.getDate() + days);
-    const max = new Date();
-    max.setDate(today.getDate() + days + 2);
-    const fmt = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-    return `${fmt(min)} - ${fmt(max)}`;
-}
-// Gemini is initialized in geminiService.ts
-async function answerGeneralQuestion(params) {
-    const { userText, language, missingVehicleInfo, knownVehicleSummary } = params;
-    let missingInfoSentence = "";
-    if (missingVehicleInfo.length > 0) {
-        missingInfoSentence = (0, botResponses_1.tWith)('qa_missing_info', language, { fields: missingVehicleInfo.join(', ') });
-    }
-    const userPrompt = [
-        `User message: "${userText}"`,
-        `Known vehicle data: ${knownVehicleSummary}`,
-        `Missing info: ${missingVehicleInfo.join(", ") || "none"}`,
-        `IMPORTANT: Answer in ${language === 'de' ? 'German' : language === 'tr' ? 'Turkish' : language === 'ku' ? 'Kurdish (Kurmanji)' : language === 'pl' ? 'Polish' : 'English'}. Be helpful and concise.`
-    ].join("\n");
-    try {
-        const text = await (0, geminiService_1.generateChatCompletion)({
-            messages: [
-                { role: "system", content: generalQaPrompt_1.GENERAL_QA_SYSTEM_PROMPT },
-                { role: "user", content: userPrompt }
-            ],
-            temperature: 0.2
-        });
-        return (text?.trim() || "") + missingInfoSentence;
-    }
-    catch (err) {
-        logger_1.logger.error("General QA failed", { error: err?.message });
-        return (0, botResponses_1.t)('qa_error', language);
-    }
-}
-async function runCollectPartBrain(params) {
-    const payload = {
-        userText: sanitizeText(params.userText, 1000),
-        parsed: params.parsed,
-        orderData: params.orderData || {},
-        language: params.language,
-        currentStatus: "collect_part",
-        lastQuestionType: params.lastQuestionType
-    };
-    try {
-        const rawText = await (0, geminiService_1.generateChatCompletion)({
-            messages: [
-                { role: "system", content: collectPartBrainPrompt_1.COLLECT_PART_BRAIN_PROMPT },
-                { role: "user", content: JSON.stringify(payload) }
-            ],
-            responseFormat: "json_object",
-            temperature: 0.2
-        });
-        const start = rawText.indexOf("{");
-        const end = rawText.lastIndexOf("}");
-        const jsonString = start !== -1 && end !== -1 && end > start ? rawText.slice(start, end + 1) : rawText;
-        const raw = JSON.parse(jsonString);
-        return {
-            replyText: raw.replyText ?? "",
-            nextStatus: raw.nextStatus ?? "collect_part",
-            slotsToAsk: Array.isArray(raw.slotsToAsk) ? raw.slotsToAsk : [],
-            shouldApologize: Boolean(raw.shouldApologize),
-            detectedFrustration: Boolean(raw.detectedFrustration)
-        };
-    }
-    catch (error) {
-        logger_1.logger.error("runCollectPartBrain failed", { error: error?.message });
-        return {
-            replyText: (0, botResponses_1.t)('collect_part_fallback', params.language),
-            nextStatus: "collect_part",
-            slotsToAsk: [],
-            shouldApologize: false,
-            detectedFrustration: false
-        };
-    }
-}
-// Pflichtfelder pro Teilkategorie (Minimalanforderungen für OEM-Ermittlung)
-const partRequiredFields = {
-    brake_caliper: ["position"],
-    brake_disc: ["position", "disc_diameter"],
-    brake_pad: ["position"],
-    shock_absorber: ["position"]
-};
-// ------------------------------
-// Hilfsfunktionen
-// ------------------------------
-function detectLanguageSelection(text) {
-    if (!text)
-        return null;
-    const t = text.trim().toLowerCase();
-    if (["1", "de", "deutsch", "german", "ger"].includes(t))
-        return "de";
-    if (["2", "en", "english", "englisch", "eng"].includes(t))
-        return "en";
-    if (["3", "tr", "türkçe", "turkce", "turkish", "türkisch"].includes(t))
-        return "tr";
-    if (["4", "ku", "kurdî", "kurdi", "kurdisch", "kurdish"].includes(t))
-        return "ku";
-    if (["5", "pl", "polski", "polnisch", "polish"].includes(t))
-        return "pl";
-    return null;
-}
-function detectLanguageFromText(text) {
-    const t = text?.toLowerCase() ?? "";
-    const germanHints = ["hallo", "moin", "servus", "grüß", "danke", "tschau", "bitte"];
-    const englishHints = ["hello", "hi", "hey", "thanks", "thank you", "cheers"];
-    if (germanHints.some((w) => t.includes(w)))
-        return "de";
-    if (englishHints.some((w) => t.includes(w)))
-        return "en";
-    return null;
-}
-function needsVehicleDocumentHint(order) {
-    return order?.status === "choose_language" || order?.status === "collect_vehicle";
-}
-function detectSmalltalk(text) {
-    const t = text?.toLowerCase() ?? "";
-    if (!t)
-        return null;
-    const greetings = ["hallo", "hi", "hello", "hey", "moin", "servus", "guten tag", "good morning", "good evening"];
-    const thanks = ["danke", "vielen dank", "thx", "thanks", "thank you"];
-    const botQuestions = ["bist du ein bot", "are you a bot", "echter mensch", "real person"];
-    if (greetings.some((g) => t.includes(g)))
-        return "greeting";
-    if (thanks.some((w) => t.includes(w)))
-        return "thanks";
-    if (botQuestions.some((b) => t.includes(b)))
-        return "bot_question";
-    return null;
-}
-async function verifyOemWithAi(params) {
-    if (!process.env.GEMINI_API_KEY)
-        return true;
-    try {
-        const prompt = "Prüfe, ob die OEM-Nummer zum Fahrzeug und Teil plausibel ist. Antworte NUR mit JSON: {\"ok\":true|false,\"reason\":\"...\"}.\n" +
-            `Fahrzeug: ${JSON.stringify(params.vehicle)}\nTeil: ${params.part}\nOEM: ${params.oem}\n` +
-            "Setze ok=false nur wenn OEM offensichtlich nicht zum Fahrzeug/Teil passen kann.";
-        const raw = await (0, geminiService_1.generateChatCompletion)({
-            messages: [{ role: "user", content: prompt }],
-            responseFormat: "json_object",
-            temperature: 0
-        });
-        const start = raw.indexOf("{");
-        const end = raw.lastIndexOf("}");
-        const jsonString = start !== -1 && end !== -1 && end > start ? raw.slice(start, end + 1) : raw;
-        const parsed = JSON.parse(jsonString);
-        return parsed.ok !== false;
-    }
-    catch (err) {
-        logger_1.logger.warn("OEM AI verification skipped", { error: err?.message });
-        return true;
-    }
-}
-/**
- * Detects obviously abusive or insulting messages with a simple word list.
- * Returns true when the message should be treated as abuse (and not advance the flow).
- */
-function detectAbusive(text) {
-    if (!text)
-        return false;
-    const t = text.toLowerCase();
-    // Short list of strong insults / slurs commonly used in German and English.
-    // This is intentionally conservative — tune/extend as needed.
-    const abusive = [
-        "hurensohn",
-        "arschloch",
-        "fotze",
-        "verpiss",
-        "scheiss",
-        "scheiße",
-        "fuck",
-        "bitch",
-        "shit",
-        "idiot",
-        "dummkopf"
-    ];
-    return abusive.some((w) => t.includes(w));
-}
-async function callOrchestrator(payload) {
-    const startTime = Date.now();
-    // NOTE: LangChain agent path removed — was dead code (stub returned null).
-    // Orchestrator now goes directly to Gemini.
-    try {
-        const userContent = JSON.stringify(payload);
-        // LOG: Calling Gemini
-        logger_1.logger.info("🤖 Calling Orchestrator", {
-            payloadSize: userContent.length,
-            status: payload.conversation?.status,
-            language: payload.conversation?.language,
-            hasOCR: !!payload.ocr,
-            messagePreview: payload.latestMessage?.substring(0, 100)
-        });
-        // #5 FIX: Use Gemini for orchestrator (single provider, lower cost)
-        const raw = await (0, geminiService_1.generateChatCompletion)({
-            messages: [
-                { role: "system", content: orchestratorPrompt_1.ORCHESTRATOR_PROMPT },
-                { role: "user", content: userContent }
-            ],
-            temperature: 0,
-            responseFormat: 'json_object'
-        });
-        const elapsed = Date.now() - startTime;
-        // LOG: Raw AI response
-        logger_1.logger.info("✅ Orchestrator raw response received", {
-            elapsed,
-            responseLength: raw?.length || 0,
-            responsePreview: raw?.substring(0, 200)
-        });
-        // Try to parse JSON
-        let parsed;
-        try {
-            parsed = JSON.parse(raw);
-            logger_1.logger.info("✅ JSON parsed successfully", {
-                hasAction: !!parsed.action,
-                action: parsed.action,
-                hasReply: !!parsed.reply,
-                hasSlotsCount: Object.keys(parsed.slots || {}).length
-            });
-        }
-        catch (parseErr) {
-            logger_1.logger.error("❌ JSON parsing failed", {
-                error: parseErr.message,
-                rawResponse: raw,
-                responseType: typeof raw
-            });
-            return null;
-        }
-        // Validate required fields
-        if (!parsed.action) {
-            logger_1.logger.error("❌ Orchestrator response missing 'action' field", {
-                parsed,
-                rawPreview: raw.slice(0, 500)
-            });
-            return null;
-        }
-        logger_1.logger.info("✅ Orchestrator succeeded", {
-            action: parsed.action,
-            confidence: parsed.confidence,
-            slotsCount: Object.keys(parsed.slots || {}).length,
-            totalElapsed: Date.now() - startTime
-        });
-        return {
-            action: parsed.action,
-            reply: parsed.reply ?? "",
-            slots: parsed.slots ?? {},
-            required_slots: Array.isArray(parsed.required_slots) ? parsed.required_slots : [],
-            confidence: typeof parsed.confidence === "number" ? parsed.confidence : 1
-        };
-    }
-    catch (err) {
-        const elapsed = Date.now() - startTime;
-        // Structured error logging - no console.error
-        logger_1.logger.error("Orchestrator call FAILED", {
-            error: err?.message,
-            errorType: err?.constructor?.name,
-            errorCode: err?.code,
-            statusCode: err?.status || err?.statusCode,
-            elapsed,
-            stack: err?.stack?.split('\n').slice(0, 5).join('\n'),
-            isGeminiError: err?.constructor?.name?.includes('Gemini') || err?.message?.includes('Gemini'),
-            isNetworkError: err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND'
-        });
-        return null;
-    }
-}
-function buildSmalltalkReply(kind, lang, stage) {
-    const needsVehicleDoc = stage === "awaiting_vehicle_document";
-    const needsVehicleData = stage === "collecting_vehicle_data";
-    const needsPartData = stage === "collecting_part_data";
-    if (kind === "thanks") {
-        return lang === "de"
-            ? "Gern geschehen! Melden Sie sich einfach, wenn Sie noch ein Teil oder mehr Infos brauchen."
-            : "You’re welcome! Let me know if you need a part or any other help.";
-    }
-    if (kind === "bot_question") {
-        return lang === "de"
-            ? "Ich bin Ihr Teile-Assistent und helfe Ihnen, das richtige Ersatzteil zu finden. Schicken Sie mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
-            : "I’m your parts assistant and can help you find the right part. Send me the car brand/model/year or a photo of the registration document.";
-    }
-    // greeting
-    if (needsVehicleDoc) {
-        return lang === "de"
-            ? "Hi! 👋 Schicken Sie mir am besten zuerst ein Foto Ihres Fahrzeugscheins. Wenn Sie keins haben, nennen Sie mir bitte Marke, Modell, Baujahr und falls möglich Motor/HSN/TSN."
-            : "Hi there! 👋 Please send a photo of your vehicle registration first. If you don’t have one, tell me brand, model, year and, if possible, engine/HSN/TSN.";
-    }
-    if (needsVehicleData) {
-        return lang === "de"
-            ? "Hallo! 👋 Welche Fahrzeugdaten haben Sie für mich? Marke, Modell, Baujahr und Motor helfen mir am meisten."
-            : "Hello! 👋 Which vehicle details do you have for me? Brand, model, year, and engine help the most.";
-    }
-    if (needsPartData) {
-        return lang === "de"
-            ? "Hey! 👋 Um Ihnen das richtige Teil zu finden, sagen Sie mir bitte, um welches Teil es geht und vorne/hinten, links/rechts."
-            : "Hey! 👋 To find the right part, tell me which part you need and whether it’s front/rear, left/right.";
-    }
-    return lang === "de"
-        ? "Hallo! 👋 Wie kann ich Ihnen helfen? Suchen Sie ein Ersatzteil? Dann schicken Sie mir Marke/Modell/Baujahr oder ein Foto vom Fahrzeugschein."
-        : "Hi! 👋 How can I help? Looking for a part? Share the car brand/model/year or send a photo of the registration.";
-}
-/**
- * Simpler Heuristik-Check, ob der Kunde sagt, dass er keinen Fahrzeugschein hat.
- */
-function detectNoVehicleDocument(text) {
-    if (!text)
-        return false;
-    const t = text.toLowerCase();
-    const patterns = [
-        "kein fahrzeugschein", "keinen fahrzeugschein",
-        "brief nicht da", "brief habe ich nicht",
-        "hab den schein nicht", "hab kein schein", "hab keinen schein",
-        "keine papiere", "papiere nicht da",
-        "no registration", "no vehicle document", "lost my papers"
-    ];
-    return patterns.some(p => t.includes(p));
-}
-/**
- * Ermittelt, ob die Teilinfos vollständig genug sind, um OEM zu starten.
- */
-function hasSufficientPartInfo(parsed, orderData) {
-    // 1) Haben wir ein Teil?
-    const normalizedPartName = parsed.normalizedPartName || orderData?.requestedPart || orderData?.partText || null;
-    if (!normalizedPartName) {
-        return { ok: false, missing: ["part_name"] };
-    }
-    // 2) Braucht dieses Teil eine Position?
-    const category = parsed.partCategory || orderData?.partCategory || null;
-    // Aus der NLU-Kategorie ableiten, ob eine Position typischerweise nötig ist
-    const positionNeededFromCategory = category === "brake_component" || category === "suspension_component" || category === "body_component";
-    const positionNeeded = parsed.positionNeeded === true || positionNeededFromCategory;
-    // 3) Wenn Position nötig, aber (noch) keine vorhanden → nachfragen
-    if (positionNeeded) {
-        const position = parsed.position || orderData?.partPosition || null;
-        if (!position) {
-            return { ok: false, missing: ["position"] };
-        }
-    }
-    return { ok: true, missing: [] };
-}
-/**
- * Baut eine Rückfrage für fehlende Fahrzeug-Felder.
- */
-function buildVehicleFollowUpQuestion(missingFields, lang) {
-    if (!missingFields || missingFields.length === 0)
-        return null;
-    const qDe = {
-        make: "Welche Automarke ist es?",
-        model: "Welches Modell genau?",
-        year: "Welches Baujahr hat Ihr Fahrzeug?",
-        engine: "Welche Motorisierung ist verbaut (kW oder Motorkennbuchstabe)?",
-        vin: "Haben Sie die Fahrgestellnummer (VIN) für mich?",
-        hsn: "Haben Sie die HSN (Feld 2.1 im Fahrzeugschein)?",
-        tsn: "Haben Sie die TSN (Feld 2.2 im Fahrzeugschein)?",
-        vin_or_hsn_tsn_or_engine: "Haben Sie VIN oder HSN/TSN oder die Motorisierung (kW/MKB)?"
-    };
-    const qEn = {
-        make: "What is the brand of your car?",
-        model: "What is the exact model?",
-        year: "What is the model year of your car?",
-        engine: "Which engine is installed (kW or engine code)?",
-        vin: "Do you have the VIN (vehicle identification number)?",
-        hsn: "Do you have the HSN (field 2.1 on the registration)?",
-        tsn: "Do you have the TSN (field 2.2 on the registration)?",
-        vin_or_hsn_tsn_or_engine: "Do you have VIN or HSN/TSN or at least the engine (kW/engine code)?"
-    };
-    const key = missingFields[0];
-    const map = lang === "de" ? qDe : qEn;
-    return map[key] || null;
-}
-/**
- * Baut eine Rückfrage für fehlende Teil-Felder.
- */
-function buildPartFollowUpQuestion(missingFields, lang) {
-    if (!missingFields || missingFields.length === 0)
-        return null;
-    const field = missingFields[0];
-    if (field === "part_name") {
-        return (0, botResponses_1.t)('collect_part', lang);
-    }
-    if (field === "position") {
-        return (0, botResponses_1.t)('collect_part_position', lang);
-    }
-    return null;
-}
-/**
- * Merges newly parsed part info into the existing part info stored in order_data.
- * Fields are only overwritten when new values are provided.
- */
-function mergePartInfo(existing, parsed) {
-    const merged = {
-        ...existing,
-        partDetails: { ...(existing?.partDetails || {}) }
-    };
-    // Kategorie übernehmen (z.B. brake_component, ignition_component ...)
-    if (parsed.partCategory) {
-        merged.partCategory = parsed.partCategory;
-    }
-    // Position (front / rear / front_left / ...)
-    if (parsed.position) {
-        merged.partPosition = parsed.position;
-    }
-    // Alte Detail-Felder bleiben für Bremsscheiben/Fahrwerk (falls du sie später wieder nutzt)
-    if (parsed.partDetails?.discDiameter !== undefined && parsed.partDetails?.discDiameter !== null) {
-        merged.partDetails.discDiameter = parsed.partDetails.discDiameter;
-    }
-    if (parsed.partDetails?.suspensionType) {
-        merged.partDetails.suspensionType = parsed.partDetails.suspensionType;
-    }
-    // NEU: Part-Text aus normalizedPartName / userPartText / (legacy) parsed.part
-    const candidatePartTexts = [
-        parsed.normalizedPartName,
-        parsed.userPartText,
-        parsed.part
-    ];
-    for (const candidate of candidatePartTexts) {
-        if (candidate && candidate.trim()) {
-            merged.partText = merged.partText ? `${merged.partText}\n${candidate.trim()}` : candidate.trim();
-            break;
-        }
-    }
-    return merged;
-}
-async function runOemLookupAndScraping(orderId, language, parsed, orderData, partDescription, 
-// Optional override vehicle (e.g. OCR result) — used when DB upsert failed but OCR provided enough data
-vehicleOverride) {
-    // P0 #1: Zwischennachricht — Tell user we're searching (eliminates dead silence)
-    // We return a search-indicator as a "pre-reply" that the caller can send immediately
-    // while the actual OEM resolution runs. For the current architecture, we log it as
-    // a hint. The actual pre-reply is sent by the botWorker via sendTwilioReply.
+// =================================================================
+// RE-EXPORTS from extracted modules (backwards compatibility)
+// =================================================================
+var nluService_1 = require("./nluService");
+Object.defineProperty(exports, "detectLanguageSelection", { enumerable: true, get: function () { return nluService_1.detectLanguageSelection; } });
+Object.defineProperty(exports, "detectLanguageFromText", { enumerable: true, get: function () { return nluService_1.detectLanguageFromText; } });
+Object.defineProperty(exports, "detectSmalltalk", { enumerable: true, get: function () { return nluService_1.detectSmalltalk; } });
+Object.defineProperty(exports, "detectAbusive", { enumerable: true, get: function () { return nluService_1.detectAbusive; } });
+Object.defineProperty(exports, "sanitizeText", { enumerable: true, get: function () { return nluService_1.sanitizeText; } });
+Object.defineProperty(exports, "extractVinHsnTsn", { enumerable: true, get: function () { return nluService_1.extractVinHsnTsn; } });
+Object.defineProperty(exports, "hasVehicleHints", { enumerable: true, get: function () { return nluService_1.hasVehicleHints; } });
+Object.defineProperty(exports, "detectIntent", { enumerable: true, get: function () { return nluService_1.detectIntent; } });
+Object.defineProperty(exports, "parseUserMessage", { enumerable: true, get: function () { return nluService_1.parseUserMessage; } });
+Object.defineProperty(exports, "pickLanguageFromChoice", { enumerable: true, get: function () { return nluService_1.pickLanguageFromChoice; } });
+var vehicleOcrService_1 = require("./vehicleOcrService");
+Object.defineProperty(exports, "downloadImageBuffer", { enumerable: true, get: function () { return vehicleOcrService_1.downloadImageBuffer; } });
+Object.defineProperty(exports, "downloadFromTwilio", { enumerable: true, get: function () { return vehicleOcrService_1.downloadFromTwilio; } });
+Object.defineProperty(exports, "extractVehicleDataFromImage", { enumerable: true, get: function () { return vehicleOcrService_1.extractVehicleDataFromImage; } });
+Object.defineProperty(exports, "safeParseVehicleJson", { enumerable: true, get: function () { return vehicleOcrService_1.safeParseVehicleJson; } });
+Object.defineProperty(exports, "understandUserText", { enumerable: true, get: function () { return vehicleOcrService_1.understandUserText; } });
+Object.defineProperty(exports, "determineMissingVehicleFields", { enumerable: true, get: function () { return vehicleOcrService_1.determineMissingVehicleFields; } });
+Object.defineProperty(exports, "isVehicleSufficientForOem", { enumerable: true, get: function () { return vehicleOcrService_1.isVehicleSufficientForOem; } });
+var botHelpers_1 = require("./botHelpers");
+Object.defineProperty(exports, "callOrchestrator", { enumerable: true, get: function () { return botHelpers_1.callOrchestrator; } });
+Object.defineProperty(exports, "buildSmalltalkReply", { enumerable: true, get: function () { return botHelpers_1.buildSmalltalkReply; } });
+Object.defineProperty(exports, "needsVehicleDocumentHint", { enumerable: true, get: function () { return botHelpers_1.needsVehicleDocumentHint; } });
+Object.defineProperty(exports, "buildVehicleFollowUpQuestion", { enumerable: true, get: function () { return botHelpers_1.buildVehicleFollowUpQuestion; } });
+Object.defineProperty(exports, "buildPartFollowUpQuestion", { enumerable: true, get: function () { return botHelpers_1.buildPartFollowUpQuestion; } });
+Object.defineProperty(exports, "partRequiredFields", { enumerable: true, get: function () { return botHelpers_1.partRequiredFields; } });
+Object.defineProperty(exports, "detectNoVehicleDocument", { enumerable: true, get: function () { return botHelpers_1.detectNoVehicleDocument; } });
+Object.defineProperty(exports, "hasSufficientPartInfo", { enumerable: true, get: function () { return botHelpers_1.hasSufficientPartInfo; } });
+Object.defineProperty(exports, "mergePartInfo", { enumerable: true, get: function () { return botHelpers_1.mergePartInfo; } });
+Object.defineProperty(exports, "calculateEndPrice", { enumerable: true, get: function () { return botHelpers_1.calculateEndPrice; } });
+Object.defineProperty(exports, "calculateEstimatedDeliveryRange", { enumerable: true, get: function () { return botHelpers_1.calculateEstimatedDeliveryRange; } });
+Object.defineProperty(exports, "answerGeneralQuestion", { enumerable: true, get: function () { return botHelpers_1.answerGeneralQuestion; } });
+Object.defineProperty(exports, "runCollectPartBrain", { enumerable: true, get: function () { return botHelpers_1.runCollectPartBrain; } });
+Object.defineProperty(exports, "shortOrderLabel", { enumerable: true, get: function () { return botHelpers_1.shortOrderLabel; } });
+Object.defineProperty(exports, "verifyOemWithAi", { enumerable: true, get: function () { return botHelpers_1.verifyOemWithAi; } });
+// Local imports for use in this file
+const nluService_2 = require("./nluService");
+const vehicleOcrService_2 = require("./vehicleOcrService");
+const botHelpers_2 = require("./botHelpers");
+// =================================================================
+// OEM Lookup Handler (kept inline — deeply coupled to DB operations)
+// =================================================================
+async function runOemLookupAndScraping(orderId, language, parsed, orderData, partDescription, vehicleOverride) {
     logger_1.logger.info('[OEMLookup] Starting OEM resolution', { orderId, language });
     const vehicle = vehicleOverride ?? (await (0, supabaseService_1.getVehicleForOrder)(orderId));
     const engineVal = vehicle?.engineCode ?? vehicle?.engine ?? undefined;
@@ -516,53 +116,32 @@ vehicleOverride) {
     };
     const missingVehicleFields = (0, oemRequiredFieldsService_1.determineRequiredFields)(vehicleForOem);
     if (missingVehicleFields.length > 0) {
-        const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
-        return {
-            replyText: q ||
-                (0, botResponses_1.t)('vehicle_need_more', language),
-            nextStatus: "collect_vehicle"
-        };
+        const q = (0, botHelpers_2.buildVehicleFollowUpQuestion)(missingVehicleFields, language ?? "de");
+        return { replyText: q || (0, botResponses_1.t)('vehicle_need_more', language), nextStatus: "collect_vehicle" };
     }
-    const partText = parsed.part ||
-        orderData?.requestedPart ||
-        orderData?.partText ||
-        partDescription ||
-        (0, botResponses_1.t)('part_mentioned', language);
+    const partText = parsed.part || orderData?.requestedPart || orderData?.partText || partDescription || (0, botResponses_1.t)('part_mentioned', language);
     try {
-        // Prefer the modern `resolveOEMForOrder` if provided by the module.
-        // Some tests/mock setups stub `resolveOEM` only, so fall back to that shape.
         let oemResult;
         if (typeof oemService.resolveOEMForOrder === "function") {
             oemResult = await oemService.resolveOEMForOrder(orderId, {
-                make: vehicleForOem.make ?? null,
-                model: vehicleForOem.model ?? null,
-                year: vehicleForOem.year ?? null,
-                engine: vehicleForOem.engine ?? null,
-                engineKw: vehicle?.engineKw ?? null,
-                vin: vehicleForOem.vin ?? null,
-                hsn: vehicleForOem.hsn ?? null,
-                tsn: vehicleForOem.tsn ?? null
+                make: vehicleForOem.make ?? null, model: vehicleForOem.model ?? null,
+                year: vehicleForOem.year ?? null, engine: vehicleForOem.engine ?? null,
+                engineKw: vehicle?.engineKw ?? null, vin: vehicleForOem.vin ?? null,
+                hsn: vehicleForOem.hsn ?? null, tsn: vehicleForOem.tsn ?? null
             }, partText);
         }
         else if (typeof oemService.resolveOEM === "function") {
-            // legacy adapter: resolveOEM(order, part) -> OemResolutionResult
             try {
                 const legacy = await oemService.resolveOEM({
-                    make: vehicleForOem.make ?? undefined,
-                    model: vehicleForOem.model ?? undefined,
-                    year: vehicleForOem.year ?? undefined,
-                    engine: vehicleForOem.engine ?? undefined,
-                    engineKw: vehicle?.engineKw ?? undefined,
-                    vin: vehicleForOem.vin ?? undefined,
-                    hsn: vehicleForOem.hsn ?? undefined,
-                    tsn: vehicleForOem.tsn ?? undefined
+                    make: vehicleForOem.make, model: vehicleForOem.model, year: vehicleForOem.year,
+                    engine: vehicleForOem.engine, engineKw: vehicle?.engineKw,
+                    vin: vehicleForOem.vin, hsn: vehicleForOem.hsn, tsn: vehicleForOem.tsn
                 }, partText);
                 oemResult = {
                     primaryOEM: legacy.oemNumber ?? (legacy.oem ?? undefined),
                     overallConfidence: legacy.success ? 0.85 : 0,
                     candidates: legacy.oemData?.candidates ?? [],
-                    notes: legacy.message ?? undefined,
-                    tecdocPartsouqResult: undefined
+                    notes: legacy.message ?? undefined
                 };
             }
             catch (err) {
@@ -576,18 +155,15 @@ vehicleOverride) {
         }
         try {
             await (0, supabaseService_1.updateOrderData)(orderId, {
-                oemNumber: oemResult.primaryOEM ?? null,
-                oemConfidence: oemResult.overallConfidence ?? null,
-                oemNotes: oemResult.notes ?? null,
-                oemCandidates: oemResult.candidates ?? [],
+                oemNumber: oemResult.primaryOEM ?? null, oemConfidence: oemResult.overallConfidence ?? null,
+                oemNotes: oemResult.notes ?? null, oemCandidates: oemResult.candidates ?? [],
                 oemTecdocPartsouq: oemResult.tecdocPartsouqResult ?? null
             });
             try {
                 await (0, supabaseService_1.updateOrderOEM)(orderId, {
                     oemStatus: oemResult.primaryOEM ? "resolved" : "not_found",
                     oemError: oemResult.primaryOEM ? null : oemResult.notes ?? null,
-                    oemData: oemResult,
-                    oemNumber: oemResult.primaryOEM ?? null
+                    oemData: oemResult, oemNumber: oemResult.primaryOEM ?? null
                 });
             }
             catch (err) {
@@ -597,528 +173,56 @@ vehicleOverride) {
         catch (err) {
             logger_1.logger.warn("Failed to persist OEM resolver output", { orderId, error: err?.message });
         }
-        // 🔀 BUG A FIX: Handle variant detection — ask customer instead of escalating
         if (oemResult.variantDetected && oemResult.variantQuestion && oemResult.variants?.length) {
-            logger_1.logger.info('[OEMLookup] Variants detected — asking customer', {
-                orderId,
-                variantCount: oemResult.variants.length,
-                variants: oemResult.variants.map((v) => v.oem),
-            });
-            // Persist variants so we can retrieve the selected OEM when customer replies
+            logger_1.logger.info('[OEMLookup] Variants detected', { orderId, variantCount: oemResult.variants.length });
             try {
-                await (0, supabaseService_1.updateOrderData)(orderId, {
-                    pendingVariants: oemResult.variants,
-                    oemCandidates: oemResult.candidates ?? [],
-                });
+                await (0, supabaseService_1.updateOrderData)(orderId, { pendingVariants: oemResult.variants, oemCandidates: oemResult.candidates ?? [] });
             }
             catch (err) {
                 logger_1.logger.warn('Failed to persist variant data', { orderId, error: err?.message });
             }
-            return {
-                replyText: oemResult.variantQuestion,
-                nextStatus: "awaiting_variant_selection"
-            };
+            return { replyText: oemResult.variantQuestion, nextStatus: "awaiting_variant_selection" };
         }
         if (oemResult.primaryOEM && oemResult.overallConfidence >= 0.7) {
             const cautious = oemResult.overallConfidence < 0.9;
             try {
                 const scrapeResult = await (0, scrapingService_1.scrapeOffersForOrder)(orderId, oemResult.primaryOEM);
-                if (scrapeResult && scrapeResult.jobId) {
-                    try {
-                        if (typeof supabaseService_1.persistScrapeResult === "function") {
-                            await (0, supabaseService_1.persistScrapeResult)(orderId, {
-                                scrapeTaskId: scrapeResult.jobId,
-                                scrapeStatus: "started",
-                                scrapeResult: scrapeResult
-                            });
-                        }
-                        else if (typeof supabaseService_1.updateOrderScrapeTask === "function") {
-                            await (0, supabaseService_1.updateOrderScrapeTask)(orderId, {
-                                scrapeTaskId: scrapeResult.jobId,
-                                scrapeStatus: "started",
-                                scrapeResult: scrapeResult
-                            });
-                        }
-                    }
-                    catch (uErr) {
-                        logger_1.logger.warn("Failed to persist scrape job id", { orderId, error: uErr?.message ?? uErr });
-                    }
+                try {
+                    const scrapeData = { scrapeStatus: (scrapeResult && scrapeResult.jobId) ? "started" : ((scrapeResult && scrapeResult.ok) ? "done" : "unknown"), scrapeResult: scrapeResult ?? null };
+                    if (scrapeResult?.jobId)
+                        scrapeData.scrapeTaskId = scrapeResult.jobId;
+                    if (typeof supabaseService_1.persistScrapeResult === "function")
+                        await (0, supabaseService_1.persistScrapeResult)(orderId, scrapeData);
+                    else if (typeof supabaseService_1.updateOrderScrapeTask === "function")
+                        await (0, supabaseService_1.updateOrderScrapeTask)(orderId, scrapeData);
                 }
-                else {
-                    try {
-                        if (typeof supabaseService_1.persistScrapeResult === "function") {
-                            await (0, supabaseService_1.persistScrapeResult)(orderId, {
-                                scrapeStatus: (scrapeResult && scrapeResult.ok) ? "done" : "unknown",
-                                scrapeResult: scrapeResult ?? null
-                            });
-                        }
-                        else if (typeof supabaseService_1.updateOrderScrapeTask === "function") {
-                            await (0, supabaseService_1.updateOrderScrapeTask)(orderId, {
-                                scrapeStatus: (scrapeResult && scrapeResult.ok) ? "done" : "unknown",
-                                scrapeResult: scrapeResult ?? null
-                            });
-                        }
-                    }
-                    catch (uErr) {
-                        logger_1.logger.warn("Failed to persist scrape result", { orderId, error: uErr?.message ?? uErr });
-                    }
+                catch (uErr) {
+                    logger_1.logger.warn("Failed to persist scrape", { orderId, error: uErr?.message });
                 }
                 const cautionNote = cautious ? (0, botResponses_1.t)('caution_check', language) : "";
-                const reply = `${(0, botResponses_1.t)('oem_product_found', language)}${cautionNote}`;
-                return {
-                    replyText: reply,
-                    nextStatus: "show_offers"
-                };
+                return { replyText: `${(0, botResponses_1.t)('oem_product_found', language)}${cautionNote}`, nextStatus: "show_offers" };
             }
             catch (err) {
                 logger_1.logger.error("Scrape after OEM failed", { error: err?.message, orderId });
-                return {
-                    replyText: (0, botResponses_1.t)('oem_scrape_failed', language),
-                    nextStatus: "needs_human"
-                };
+                return { replyText: (0, botResponses_1.t)('oem_scrape_failed', language), nextStatus: "needs_human" };
             }
         }
-        return {
-            replyText: (0, botResponses_1.t)('oem_product_uncertain', language),
-            nextStatus: "needs_human"
-        };
+        return { replyText: (0, botResponses_1.t)('oem_product_uncertain', language), nextStatus: "needs_human" };
     }
     catch (err) {
         logger_1.logger.error("resolveOEM failed", { error: err?.message, orderId });
-        return {
-            replyText: (0, botResponses_1.t)('oem_tech_error', language),
-            nextStatus: "oem_lookup" // #8 FIX: was collect_vehicle (loop), now stays in oem_lookup for human escalation
-        };
+        return { replyText: (0, botResponses_1.t)('oem_tech_error', language), nextStatus: "oem_lookup" };
     }
 }
-async function downloadImageBuffer(url) {
-    const resp = await (0, node_fetch_1.default)(url);
-    if (!resp.ok) {
-        throw new Error(`Failed to download image: ${resp.status} ${resp.statusText}`);
-    }
-    const arrayBuffer = await resp.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-}
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-async function downloadFromTwilio(mediaUrl) {
-    // Allow local dev/test without Twilio by accepting data: and file: URLs
-    if (mediaUrl.startsWith("data:")) {
-        const base64 = mediaUrl.substring(mediaUrl.indexOf(",") + 1);
-        return Buffer.from(base64, "base64");
-    }
-    if (mediaUrl.startsWith("file:")) {
-        const filePath = mediaUrl.replace("file://", "");
-        return fs.readFile(filePath);
-    }
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-        throw new Error("Missing Twilio credentials (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)");
-    }
-    const authHeader = "Basic " + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
-    const res = await (0, httpClient_1.fetchWithTimeoutAndRetry)(mediaUrl, {
-        headers: {
-            Authorization: authHeader
-        },
-        timeoutMs: Number(process.env.MEDIA_DOWNLOAD_TIMEOUT_MS || 10000),
-        retry: Number(process.env.MEDIA_DOWNLOAD_RETRY_COUNT || 2)
-    });
-    if (!res.ok) {
-        throw new Error(`Failed to download image: ${res.status} ${res.statusText}`);
-    }
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-}
-async function extractVehicleDataFromImage(imageBuffer) {
-    const base64 = imageBuffer.toString("base64");
-    const imageUrl = `data:image/jpeg;base64,${base64}`;
-    const systemPrompt = "You are an expert OCR and data extractor for German vehicle registration documents (Zulassungsbescheinigung Teil I, old Fahrzeugschein). " +
-        "Be robust to rotated, blurred, dark, skewed, partially occluded images. Always return strict JSON for the requested fields.";
-    const userPrompt = `
-Lies dieses Bild (deutscher Fahrzeugschein, Zulassungsbescheinigung Teil I oder altes Fahrzeugschein-Formular).
-Berücksichtige:
-- Bild kann gedreht (90/180°), perspektivisch verzerrt, unscharf, dunkel oder teilweise verdeckt sein.
-- Erkenne Ausrichtung selbst, lies so viel Text wie möglich.
-Felder, die du extrahieren sollst (wenn unsicher → null):
-- make (Hersteller, Feld D.1 oder Klartext, z.B. "BMW" / "BAYER. MOT. WERKE")
-- model (Typ/Handelsbezeichnung, Feld D.2/D.3, z.B. "316ti")
-- vin (Fahrgestellnummer, Feld E)
-- hsn (Herstellerschlüsselnummer, Feld "zu 2.1")
-- tsn (Typschlüsselnummer, Feld "zu 2.2")
-- year (Erstzulassung/Herstellungsjahr, Feld B, als Zahl, z.B. 2002)
-- engineKw (Leistung in kW, Feld P.2)
-- fuelType (Kraftstoff, Feld P.3, z.B. "Benzin", "Diesel")
-- emissionClass (z.B. "EURO 4")
-Gib als Ergebnis NUR folgendes JSON (ohne zusätzlichen Text) zurück:
-{
-  "make": "...",
-  "model": "...",
-  "vin": "...",
-  "hsn": "...",
-  "tsn": "...",
-  "year": 2002,
-  "engineKw": 85,
-  "fuelType": "...",
-  "emissionClass": "...",
-  "rawText": "Vollständiger erkannter Text"
-}
-Fülle unbekannte Felder mit null. rawText soll den gesamten erkannten Text enthalten (oder "" falls nichts erkannt).
-`;
-    try {
-        const fullPrompt = systemPrompt + "\n\n" + userPrompt;
-        const content = await (0, geminiService_1.generateVisionCompletion)({
-            prompt: fullPrompt,
-            imageBase64: base64,
-            mimeType: "image/jpeg",
-            temperature: 0
-        });
-        const parsed = safeParseVehicleJson(content);
-        return parsed;
-    }
-    catch (err) {
-        logger_1.logger.error("Gemini Vision OCR failed", { error: err?.message });
-        return {
-            make: null,
-            model: null,
-            vin: null,
-            hsn: null,
-            tsn: null,
-            year: null,
-            engineKw: null,
-            fuelType: null,
-            emissionClass: null,
-            rawText: ""
-        };
-    }
-}
-function safeParseVehicleJson(text) {
-    const empty = {
-        make: null,
-        model: null,
-        vin: null,
-        hsn: null,
-        tsn: null,
-        year: null,
-        engineKw: null,
-        fuelType: null,
-        emissionClass: null,
-        rawText: ""
-    };
-    if (!text)
-        return empty;
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    const jsonString = start !== -1 && end !== -1 && end > start ? text.slice(start, end + 1) : text;
-    try {
-        const obj = JSON.parse(jsonString);
-        return {
-            make: obj.make ?? null,
-            model: obj.model ?? null,
-            vin: obj.vin ?? null,
-            hsn: obj.hsn ?? null,
-            tsn: obj.tsn ?? null,
-            year: obj.year ?? null,
-            engineKw: obj.engineKw ?? null,
-            fuelType: obj.fuelType ?? null,
-            emissionClass: obj.emissionClass ?? null,
-            rawText: obj.rawText ?? ""
-        };
-    }
-    catch {
-        return empty;
-    }
-}
-async function understandUserText(text, currentVehicle, currentOrder) {
-    const system = `
-Du bist ein Assistent für einen Autoteile-WhatsApp-Bot.
-Aufgaben:
-- Intention erkennen: ASK_PART (Nutzer fragt nach Teil), GIVE_VEHICLE_DATA (Nutzer gibt Fahrzeugdaten), SMALLTALK, OTHER.
-- Fahrzeugdaten aus dem Text extrahieren (make, model, year, vin, hsn, tsn, engineKw, fuelType). Nur setzen, wenn sicher erkennbar oder explizit korrigiert.
-- requestedPart füllen, falls ein Teil erwähnt wird (inkl. Positionshinweisen wie vorne/hinten/links/rechts).
-- Falls unklar, clarificationQuestion setzen, sonst null.
-Gib NUR eine JSON-Antwort im Format:
-{
-  "intent": "ASK_PART" | "GIVE_VEHICLE_DATA" | "SMALLTALK" | "OTHER",
-  "requestedPart": string | null,
-  "vehiclePatch": { "make": string, "model": string, "year": number, "vin": string, "hsn": string, "tsn": string, "engineKw": number, "fuelType": string },
-  "clarificationQuestion": string | null
-}
-Fehlende/unsichere Felder: weglassen oder null. Keine freien Texte außerhalb des JSON.`;
-    const user = `
-Aktuelle Nachricht: """${text}"""
-Bereits bekanntes Fahrzeug: ${JSON.stringify(currentVehicle)}
-Bereits angefragtes Teil: ${currentOrder?.requestedPart ?? null}
-Extrahiere neue Infos aus der Nachricht. Überschreibe bekannte Felder nur, wenn der Nutzer sie explizit korrigiert.`;
-    try {
-        const content = await (0, geminiService_1.generateChatCompletion)({
-            messages: [
-                { role: "system", content: system },
-                { role: "user", content: user }
-            ],
-            responseFormat: "json_object",
-            temperature: 0
-        });
-        return safeParseNlpJson(content);
-    }
-    catch (err) {
-        logger_1.logger.error("Gemini text understanding failed", { error: err?.message });
-        return {
-            intent: "OTHER",
-            requestedPart: null,
-            vehiclePatch: {},
-            clarificationQuestion: null
-        };
-    }
-}
-function safeParseNlpJson(text) {
-    const empty = {
-        intent: "OTHER",
-        requestedPart: null,
-        vehiclePatch: {},
-        clarificationQuestion: null
-    };
-    if (!text)
-        return empty;
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    const jsonString = start !== -1 && end !== -1 && end > start ? text.slice(start, end + 1) : text;
-    try {
-        const obj = JSON.parse(jsonString);
-        return {
-            intent: obj.intent ?? "OTHER",
-            requestedPart: obj.requestedPart ?? null,
-            vehiclePatch: obj.vehiclePatch ?? {},
-            clarificationQuestion: obj.clarificationQuestion ?? null
-        };
-    }
-    catch {
-        return empty;
-    }
-}
-function determineMissingVehicleFields(vehicle) {
-    const missing = [];
-    if (!vehicle?.make)
-        missing.push("make");
-    if (!vehicle?.model)
-        missing.push("model");
-    if (!vehicle?.year)
-        missing.push("year");
-    const hasVin = !!vehicle?.vin;
-    const hasHsnTsn = !!vehicle?.hsn && !!vehicle?.tsn;
-    const hasPower = !!vehicle?.engine || !!vehicle?.engineKw;
-    if (!hasVin && !hasHsnTsn && !hasPower) {
-        missing.push("vin_or_hsn_tsn_or_engine");
-    }
-    return missing;
-}
-function isVehicleSufficientForOem(vehicle) {
-    if (!vehicle)
-        return false;
-    const hasBasics = !!vehicle.make && !!vehicle.model && !!vehicle.year;
-    const hasId = !!vehicle.vin || (!!vehicle.hsn && !!vehicle.tsn);
-    const hasPower = vehicle.engine || vehicle.engineKw;
-    return hasBasics && (hasId || hasPower);
-}
-// ------------------------------
-// Schritt 1: Nutzertext analysieren (NLU via Gemini)
-// ------------------------------
-async function parseUserMessage(text) {
-    try {
-        if (!process.env.GEMINI_API_KEY) {
-            throw new Error("GEMINI_API_KEY is not set");
-        }
-        const sanitized = sanitizeText(text);
-        const rawText = await (0, geminiService_1.generateChatCompletion)({
-            messages: [
-                { role: "system", content: textNluPrompt_1.TEXT_NLU_PROMPT },
-                { role: "user", content: sanitized }
-            ],
-            responseFormat: "json_object",
-            temperature: 0
-        });
-        const start = rawText.indexOf("{");
-        const end = rawText.lastIndexOf("}");
-        const jsonString = start !== -1 && end !== -1 && end > start ? rawText.slice(start, end + 1) : rawText;
-        const raw = JSON.parse(jsonString);
-        // Merge regex-preparsed VIN/HSN/TSN if NLU missed them
-        const regexVehicle = extractVinHsnTsn(sanitized);
-        if (regexVehicle.vin && !raw.vin)
-            raw.vin = regexVehicle.vin;
-        if (regexVehicle.hsn && !raw.hsn)
-            raw.hsn = regexVehicle.hsn;
-        if (regexVehicle.tsn && !raw.tsn)
-            raw.tsn = regexVehicle.tsn;
-        const intent = raw.intent === "greeting" ||
-            raw.intent === "send_vehicle_doc" ||
-            raw.intent === "request_part" ||
-            raw.intent === "describe_symptoms" ||
-            raw.intent === "other"
-            ? raw.intent
-            : "unknown";
-        const result = {
-            intent,
-            make: raw.vehicle?.make ?? raw.make ?? null,
-            model: raw.vehicle?.model ?? raw.model ?? null,
-            year: raw.vehicle?.year ?? raw.year ?? null,
-            engine: raw.engine ?? null,
-            engineCode: raw.engineCode ?? null,
-            engineKw: raw.engineKw ?? null,
-            fuelType: raw.fuelType ?? null,
-            emissionClass: raw.emissionClass ?? null,
-            hsn: raw.hsn ?? null,
-            tsn: raw.tsn ?? null,
-            vin: raw.vin ?? null,
-            isAutoPart: raw.is_auto_part ?? false,
-            userPartText: raw.user_part_text ?? null,
-            normalizedPartName: raw.normalized_part_name ?? null,
-            partCategory: raw.part_category ?? null,
-            position: raw.position ?? null,
-            positionNeeded: raw.position_needed ?? false,
-            sideNeeded: raw.side_needed ?? false,
-            quantity: raw.quantity ?? null,
-            symptoms: raw.symptoms ?? null,
-            smalltalkType: raw.smalltalkType ?? null,
-            smalltalkReply: raw.smalltalkReply ?? null
-        };
-        return result;
-    }
-    catch (error) {
-        logger_1.logger.error("parseUserMessage failed", { error: error?.message, text });
-        // Fallback: Intent unknown
-        return {
-            intent: "unknown",
-            isAutoPart: false,
-            userPartText: null,
-            normalizedPartName: null,
-            partCategory: null,
-            position: null,
-            positionNeeded: false,
-            sideNeeded: false,
-            quantity: null,
-            symptoms: null,
-            smalltalkType: null,
-            smalltalkReply: null
-        };
-    }
-}
-// Distributed locking: use lockService instead of in-memory Map
-// Supports Redis in production, in-memory for development
-const lockService_1 = require("./lockService");
-// Helper: detect explicit language choice in the language selection step
-function pickLanguageFromChoice(text) {
-    const t = text.toLowerCase();
-    if (t.includes("1") || t.includes("deutsch"))
-        return "de";
-    if (t.includes("2") || t.includes("english"))
-        return "en";
-    if (t.includes("3") || t.includes("türk"))
-        return "tr";
-    if (t.includes("4") || t.includes("kurdi"))
-        return "ku";
-    if (t.includes("5") || t.includes("polsk"))
-        return "pl";
-    return null;
-}
-function extractVinHsnTsn(text) {
-    const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/i; // VIN excludes I,O,Q
-    // AUDIT FIX: HSN/TSN regex was too broad — matched any 4-digit number (e.g. "2019")
-    // Now only matches when user explicitly provides "HSN: XXXX" or "TSN: XXX" format
-    const hsnRegex = /(?:hsn|hersteller)[:\s]*([0-9]{4})\b/i;
-    const tsnRegex = /(?:tsn|typ(?:schl[uü]ssel)?)[:\s]*([A-Z0-9]{3,8})\b/i;
-    const vinMatch = text.match(vinRegex);
-    const hsnMatch = text.match(hsnRegex);
-    const tsnMatch = text.match(tsnRegex);
-    const vin = vinMatch ? vinMatch[1].toUpperCase() : undefined;
-    const hsn = hsnMatch ? hsnMatch[1] : undefined;
-    const tsn = tsnMatch ? tsnMatch[1].toUpperCase() : undefined;
-    return { vin, hsn, tsn };
-}
-// Helper: detect if user text contains vehicle hints (brand/model/year)
-function hasVehicleHints(text) {
-    const t = text.toLowerCase();
-    const brands = ["bmw", "audi", "vw", "volkswagen", "mercedes", "benz", "ford", "opel", "skoda", "seat", "toyota", "honda", "hyundai", "kia"];
-    const yearPattern = /\b(19|20)\d{2}\b/;
-    return brands.some((b) => t.includes(b)) || yearPattern.test(t);
-}
-// Sanitizes free text to avoid control chars and overly long inputs.
-function sanitizeText(input, maxLen = 500) {
-    if (!input)
-        return "";
-    const trimmed = input.trim().slice(0, maxLen);
-    return trimmed.replace(/[\u0000-\u001F\u007F]/g, " ");
-}
-// Legacy compat — returns null since extractedOem is now in IntentResult
-// AUDIT FIX: getLastExtractedOem removed — was dead code after IntentResult refactor
-// AUDIT FIX: Returns IntentResult instead of just MessageIntent to avoid global mutable state
-function detectIntent(text, hasVehicleImage) {
-    if (hasVehicleImage)
-        return { intent: "new_order" };
-    const t = text.toLowerCase();
-    // Abort/cancel detection - user wants to stop current order
-    const abortKeywords = [
-        "abbrechen", "stornieren", "cancel", "nein doch nicht", "vergiss es",
-        "stopp", "halt", "aufhören", "nicht mehr", "egal", "lassen wir"
-    ];
-    if (abortKeywords.some((k) => t.includes(k)))
-        return { intent: "abort_order" };
-    // Continue with same vehicle for different part
-    const continueKeywords = [
-        "noch was", "auch noch", "außerdem", "zusätzlich", "dazu", "weiteres teil",
-        "gleiches auto", "selbes fahrzeug", "same car", "another part"
-    ];
-    if (continueKeywords.some((k) => t.includes(k)))
-        return { intent: "continue_order" };
-    // New order with different vehicle
-    const newOrderKeywords = [
-        "anderes auto", "anderen wagen", "neues fahrzeug", "zweites auto",
-        "other car", "different vehicle", "mein anderes"
-    ];
-    if (newOrderKeywords.some((k) => t.includes(k)))
-        return { intent: "new_order" };
-    const statusKeywords = [
-        "liefer", "zustellung", "wann", "abholung", "abholen", "zahlen", "zahlung",
-        "vorkasse", "status", "wo bleibt", "retoure", "liefertermin", "tracking", "order", "bestellung"
-    ];
-    if (statusKeywords.some((k) => t.includes(k)))
-        return { intent: "status_question" };
-    // #7 FIX: OEM Direct Input Detection — pro users send OEM numbers directly
-    // VAG (1K0615301AC), BMW (34116792219), Mercedes (A0044206920), generic
-    const oemPatterns = [
-        /\b([0-9]{1,2}[A-Z][0-9]{3,6}[A-Z]{0,3})\b/i, // VAG: 1K0615301AC
-        /\b([0-9]{11})\b/, // BMW: 34116792219
-        /\b(A[0-9]{10,12})\b/i, // Mercedes: A0044206920
-        /\b([A-Z]{1,3}[-]?[0-9]{3,8}[-]?[A-Z0-9]{0,4})\b/i, // Generic: XX-12345-AB
-    ];
-    const stripped = text.replace(/\s+/g, '');
-    if (stripped.length >= 7 && stripped.length <= 15) {
-        for (const p of oemPatterns) {
-            const match = text.match(p);
-            if (match && match[1]) {
-                return {
-                    intent: "oem_direct",
-                    extractedOem: match[1].toUpperCase().replace(/[-\s]/g, '')
-                };
-            }
-        }
-    }
-    return { intent: "unknown" };
-}
-function shortOrderLabel(o) {
-    const idShort = o.id.slice(0, 8);
-    const vehicle = o.vehicle_description || o.part_description || "Anfrage";
-    return `${idShort} (${vehicle.slice(0, 40)})`;
-}
-// ------------------------------
-// Hauptlogik – zustandsbasierter Flow
-// ------------------------------
 async function handleIncomingBotMessage(payload, sendInterimReply) {
     return (0, lockService_1.withConversationLock)(payload.from, async () => {
-        const userText = sanitizeText(payload.text || "", 1000);
+        const userText = (0, nluService_2.sanitizeText)(payload.text || "", 1000);
         const hasVehicleImage = Array.isArray(payload.mediaUrls) && payload.mediaUrls.length > 0;
         const vehicleImageNote = hasVehicleImage && payload.mediaUrls
             ? payload.mediaUrls.map((url, idx) => `[REGISTRATION_IMAGE_${idx + 1}]: ${url}`).join("\n")
             : null;
         // Intent + mögliche offene Orders vor dem Erstellen ermitteln
-        const intentResult = detectIntent(userText, hasVehicleImage);
+        const intentResult = (0, nluService_2.detectIntent)(userText, hasVehicleImage);
         const intent = intentResult.intent;
         let activeOrders = [];
         if (typeof supabaseService_1.listActiveOrdersByContact === "function") {
@@ -1134,7 +238,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
         }
         // Falls Frage und mehrere offene Tickets → Auswahl erfragen
         if (intent === "status_question" && activeOrders.length > 1 && !payload.orderId) {
-            const options = activeOrders.slice(0, 3).map(shortOrderLabel).join(" | ");
+            const options = activeOrders.slice(0, 3).map(botHelpers_2.shortOrderLabel).join(" | ");
             return {
                 reply: "Zu welcher Anfrage haben Sie die Frage? Bitte nennen Sie die Ticket-ID.\nOptionen: " +
                     options,
@@ -1245,7 +349,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
         // Only accept explicit language choice (1 / 2 / de / en). Do NOT auto-persist language based on free text
         // to avoid incorrect auto-detections that break the flow.
         if (!language) {
-            const detectedLang = detectLanguageSelection(userText); // explicit choices only
+            const detectedLang = (0, nluService_2.detectLanguageSelection)(userText); // explicit choices only
             if (detectedLang) {
                 language = detectedLang;
                 languageChanged = true;
@@ -1281,7 +385,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
         }
         // Early abuse detection: if the message is insulting, short-circuit and don't advance the flow.
         try {
-            if (detectAbusive(userText)) {
+            if ((0, nluService_2.detectAbusive)(userText)) {
                 const reply = (0, botResponses_1.t)('abuse_warning', language);
                 return { reply, orderId: order.id };
             }
@@ -1309,11 +413,11 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     confidence: classification.confidence,
                     orderId: order.id,
                 });
-                const buf = await downloadFromTwilio(payload.mediaUrls[0]);
+                const buf = await (0, vehicleOcrService_2.downloadFromTwilio)(payload.mediaUrls[0]);
                 switch (classification.classification) {
                     case 'vehicle_document': {
                         // Route 1: Fahrzeugschein → existing OCR pipeline
-                        ocrResult = await extractVehicleDataFromImage(buf);
+                        ocrResult = await (0, vehicleOcrService_2.extractVehicleDataFromImage)(buf);
                         logger_1.logger.info('[ImageFlow] Vehicle document OCR complete', { orderId: order.id, ocr: ocrResult });
                         const hasData = ocrResult && (ocrResult.make || ocrResult.model || ocrResult.vin || ocrResult.hsn);
                         if (!hasData) {
@@ -1413,7 +517,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                     latestMessage: userText,
                     ocr: ocrResult
                 };
-                const orch = await callOrchestrator(orchestratorPayload);
+                const orch = await (0, botHelpers_2.callOrchestrator)(orchestratorPayload);
                 if (orch) {
                     // Handle simple orchestrator actions directly
                     if (orch.action === "abusive") {
@@ -1423,7 +527,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                     if (orch.action === "smalltalk") {
                         // do not change state, just reply
                         let reply = orch.reply || "";
-                        if (needsVehicleDocumentHint(order)) {
+                        if ((0, botHelpers_2.needsVehicleDocumentHint)(order)) {
                             const docHint = (0, botResponses_1.t)('doc_hint', order.language);
                             reply = reply ? `${reply} ${docHint}` : docHint;
                         }
@@ -1472,7 +576,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         orderData?.requestedPart ??
                         orderData?.partText ??
                         (userText && userText.length > 0 ? userText : null);
-                    if (statesForOrchestrator.includes(order.status) && isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
+                    if (statesForOrchestrator.includes(order.status) && (0, vehicleOcrService_2.isVehicleSufficientForOem)(vehicleCandidate) && partCandidate) {
                         if (!orderData?.vehicleConfirmed) {
                             const summary = `${vehicleCandidate.make} ${vehicleCandidate.model} (${vehicleCandidate.year})`;
                             const reply = (0, botResponses_1.tWith)('vehicle_confirm', language, { summary });
@@ -1481,7 +585,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         }
                     }
                     if (orch.action === "ask_slot") {
-                        if (isVehicleSufficientForOem(vehicleCandidate) && partCandidate) {
+                        if ((0, vehicleOcrService_2.isVehicleSufficientForOem)(vehicleCandidate) && partCandidate) {
                             // #3 FIX: REMOVED conv-intelligence doppelcall here.
                             // The orchestrator already decided ask_slot with sufficient data.
                             // Proceed directly to OEM lookup — saves ~300ms + AI costs.
@@ -1578,7 +682,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
             catch (err) {
                 logger_1.logger.error("Orchestrator flow failed, falling back to legacy NLU", { error: err?.message });
                 try {
-                    parsed = await parseUserMessage(userText);
+                    parsed = await (0, nluService_2.parseUserMessage)(userText);
                 }
                 catch (err2) {
                     logger_1.logger.error("parseUserMessage failed in fallback", { error: err2?.message });
@@ -1588,7 +692,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
         else {
             // For confirm_vehicle and other non-orchestrated states, use simple legacy parsing
             try {
-                parsed = await parseUserMessage(userText);
+                parsed = await (0, nluService_2.parseUserMessage)(userText);
             }
             catch (e) { }
         }
@@ -1620,7 +724,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
             const currentVehicle = await (0, supabaseService_1.getVehicleForOrder)(order.id);
             const knownVehicleSummary = JSON.stringify(currentVehicle ?? {});
             const lang = language ?? "de";
-            const reply = await answerGeneralQuestion({
+            const reply = await (0, botHelpers_2.answerGeneralQuestion)({
                 userText,
                 language: lang,
                 missingVehicleInfo: parsed.missingVehicleInfo ?? [],
@@ -1704,7 +808,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         // We will generate the greeting below
                         break;
                     }
-                    const chosen = pickLanguageFromChoice(userText); // require explicit choice
+                    const chosen = (0, nluService_2.pickLanguageFromChoice)(userText); // require explicit choice
                     if (chosen) {
                         language = chosen;
                         languageChanged = true;
@@ -1748,7 +852,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                             const buffers = [];
                             for (const url of payload.mediaUrls ?? []) {
                                 try {
-                                    const buf = await downloadFromTwilio(url);
+                                    const buf = await (0, vehicleOcrService_2.downloadFromTwilio)(url);
                                     buffers.push(buf);
                                     anyBufferDownloaded = true;
                                 }
@@ -1757,7 +861,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                                 }
                             }
                             if (buffers.length > 0) {
-                                const ocr = ocrResult || await extractVehicleDataFromImage(buffers[0]);
+                                const ocr = ocrResult || await (0, vehicleOcrService_2.extractVehicleDataFromImage)(buffers[0]);
                                 logger_1.logger.info("Vehicle OCR result", { orderId: order.id, ocr });
                                 ocrSucceeded = true;
                                 // Read current DB vehicle so we can continue even if upsert fails
@@ -1811,7 +915,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                                     tsn: ocr.tsn ?? dbVehicle?.tsn ?? null
                                 };
                                 // After OCR prüfen, ob genug Daten für OEM vorhanden sind
-                                const missingFieldsAfterOcr = determineMissingVehicleFields(combinedVehicle);
+                                const missingFieldsAfterOcr = (0, vehicleOcrService_2.determineMissingVehicleFields)(combinedVehicle);
                                 const partTextFromOrderAfterOcr = orderData?.partText || orderData?.requestedPart || partDescription || parsed.part || null;
                                 if (missingFieldsAfterOcr.length === 0 && partTextFromOrderAfterOcr) {
                                     const oemFlow = await runOemLookupAndScraping(order.id, language ?? "de", { ...parsed, part: partTextFromOrderAfterOcr }, orderData, partDescription ?? null, 
@@ -1870,7 +974,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         }
                         // Nach OCR prüfen, ob genug Daten für OEM vorhanden sind
                         const vehicle = await (0, supabaseService_1.getVehicleForOrder)(order.id);
-                        const missingFields = determineMissingVehicleFields(vehicle);
+                        const missingFields = (0, vehicleOcrService_2.determineMissingVehicleFields)(vehicle);
                         const partTextFromOrder = orderData?.partText ||
                             orderData?.requestedPart ||
                             partDescription ||
@@ -1943,7 +1047,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         tsn: vehicleText?.tsn
                     });
                     if (missingVehicleFields.length > 0) {
-                        const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
+                        const q = (0, botHelpers_2.buildVehicleFollowUpQuestion)(missingVehicleFields, language ?? "de");
                         replyText =
                             q ||
                                 (0, botResponses_1.t)('ask_vin_general', language);
@@ -1994,7 +1098,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         partDetails: orderData?.partDetails ?? {},
                         partText: orderData?.partText ?? null
                     };
-                    const mergedPartInfo = mergePartInfo(existingPartInfo, parsed);
+                    const mergedPartInfo = (0, botHelpers_2.mergePartInfo)(existingPartInfo, parsed);
                     partDescription = partDescription ? `${partDescription}\n${userText}` : userText;
                     // persistierte order_data aktualisieren
                     try {
@@ -2011,7 +1115,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         logger_1.logger.error("Failed to update order_data with part info", { error: err?.message, orderId: order.id });
                     }
                     const vehicleForBrain = await (0, supabaseService_1.getVehicleForOrder)(order.id);
-                    const brain = await runCollectPartBrain({
+                    const brain = await (0, botHelpers_2.runCollectPartBrain)({
                         userText,
                         parsed,
                         order,
@@ -2181,7 +1285,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         }
                         if (sorted.length === 1) {
                             const offer = sorted[0];
-                            const endPrice = calculateEndPrice(offer.price);
+                            const endPrice = (0, botHelpers_2.calculateEndPrice)(offer.price);
                             const delivery = offer.deliveryTimeDays ?? (0, botResponses_1.t)('na_text', language);
                             const bindingNote = (0, botResponses_1.t)('offer_binding_note', language);
                             // Beautiful offer formatting for WhatsApp (NO LINK, NO SHOP NAME for customer)
@@ -2219,7 +1323,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                             const isInStock = o.shopName === "H\u00e4ndler-Lager" || o.shopName === "Eigener Bestand";
                             const deliveryInfo = isInStock ? (0, botResponses_1.t)('offer_instant', language) : `🚚 ${o.deliveryTimeDays ?? (0, botResponses_1.t)('na_text', language)} ${language === 'de' ? 'Tage' : language === 'en' ? 'days' : language === 'tr' ? 'g\u00fcn' : language === 'pl' ? 'dni' : 'roj'}`;
                             return `*${idx + 1}.* 🏷️ ${o.brand ?? (0, botResponses_1.t)('na_text', language)}\n` +
-                                `   💰 ${calculateEndPrice(o.price)} ${o.currency} | ${deliveryInfo}`;
+                                `   💰 ${(0, botHelpers_2.calculateEndPrice)(o.price)} ${o.currency} | ${deliveryInfo}`;
                         });
                         const multiBindingNote = (0, botResponses_1.t)('offer_multi_binding', language);
                         replyText =
@@ -2285,7 +1389,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                             selectedOfferSummary: {
                                 shopName: chosen.shopName,
                                 brand: chosen.brand,
-                                price: calculateEndPrice(chosen.price),
+                                price: (0, botHelpers_2.calculateEndPrice)(chosen.price),
                                 currency: chosen.currency,
                                 deliveryTimeDays: chosen.deliveryTimeDays
                             }
@@ -2351,7 +1455,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                             selectedOfferSummary: {
                                 shopName: chosen.shopName,
                                 brand: chosen.brand,
-                                price: calculateEndPrice(chosen.price, merchantSettings?.marginPercent),
+                                price: (0, botHelpers_2.calculateEndPrice)(chosen.price, merchantSettings?.marginPercent),
                                 currency: chosen.currency,
                                 deliveryTimeDays: chosen.deliveryTimeDays
                             }
