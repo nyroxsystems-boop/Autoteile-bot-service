@@ -19,7 +19,7 @@ import { logger } from "@utils/logger";
 // ============================================================================
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514";
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-3-5-haiku-20241022";
 const CLAUDE_TIMEOUT_MS = 12000;
 
 let client: Anthropic | null = null;

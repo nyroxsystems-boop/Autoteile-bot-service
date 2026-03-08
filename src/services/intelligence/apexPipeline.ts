@@ -324,6 +324,30 @@ export async function resolveOemApex(req: OEMResolverRequest): Promise<OEMResolv
         part: req.partQuery.rawText.slice(0, 60),
     });
 
+    // Global timeout to prevent infinite waits
+    const timeoutPromise = new Promise<OEMResolverResult>((_, reject) =>
+        setTimeout(() => reject(new Error(`APEX pipeline timed out after ${PIPELINE_TIMEOUT_MS}ms`)), PIPELINE_TIMEOUT_MS)
+    );
+
+    const pipelinePromise = runPipelinePhases(req, pipelineStart);
+
+    try {
+        return await Promise.race([pipelinePromise, timeoutPromise]);
+    } catch (err: any) {
+        logger.error("[APEX] Pipeline timeout or error", {
+            error: err?.message,
+            elapsed: Date.now() - pipelineStart,
+        });
+        return {
+            primaryOEM: undefined,
+            candidates: [],
+            overallConfidence: 0,
+            notes: `APEX pipeline error: ${err?.message}`,
+        };
+    }
+}
+
+async function runPipelinePhases(req: OEMResolverRequest, pipelineStart: number): Promise<OEMResolverResult> {
     let finalOem: string | undefined;
     let finalConfidence = 0;
     let allCandidates: OEMCandidate[] = [];
@@ -398,7 +422,7 @@ export async function resolveOemApex(req: OEMResolverRequest): Promise<OEMResolv
         return buildResult(finalOem, finalConfidence, allCandidates, phaseResult, req);
 
     } catch (err: any) {
-        logger.error("[APEX] Pipeline error", {
+        logger.error("[APEX] Pipeline phase error", {
             error: err?.message,
             elapsed: Date.now() - pipelineStart,
         });
