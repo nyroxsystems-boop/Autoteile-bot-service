@@ -16,6 +16,7 @@ import { logger } from "@utils/logger";
 import { databaseSource } from "./sources/databaseSource";
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
 import { validateOemWithClaude, runDebateRound, isClaudeAvailable } from "./claudeService";
+import { reverseVerifyOem } from "./reverseOemVerification";
 import { validateOemPattern } from "./brandPatternRegistry";
 import { isAftermarketNumber } from "./aftermarketFilter";
 import { clampConfidence } from "./sources/baseSource";
@@ -397,9 +398,72 @@ async function runPipelinePhases(req: OEMResolverRequest, pipelineStart: number)
         }
 
         // ================================================================
+        // PHASE 2b: Reverse OEM Verification
+        // Searches the found OEM backwards to check if correct vehicle appears
+        // ================================================================
+        let reverseAdjustedCandidate = p2.topCandidate;
+        try {
+            const reverseResult = await reverseVerifyOem({
+                oem: p2.topCandidate.oem,
+                expectedBrand: req.vehicle.make || "",
+                expectedModel: req.vehicle.model || "",
+                expectedYear: req.vehicle.year,
+                expectedPart: req.partQuery.rawText,
+            });
+
+            // Apply confidence adjustment from reverse verification
+            const adjustedConf = clampConfidence(
+                p2.topCandidate.confidence + reverseResult.confidenceAdjustment
+            );
+
+            reverseAdjustedCandidate = {
+                ...p2.topCandidate,
+                confidence: adjustedConf,
+                meta: {
+                    ...p2.topCandidate.meta,
+                    reverseVerified: reverseResult.verified,
+                    reverseMatchScore: reverseResult.matchScore,
+                    reverseVehicles: reverseResult.foundVehicles.slice(0, 3),
+                    reverseConfAdj: reverseResult.confidenceAdjustment,
+                },
+            };
+
+            logger.info("[APEX P2b] 🔄 Reverse verification", {
+                oem: p2.topCandidate.oem,
+                verified: reverseResult.verified,
+                matchScore: Math.round(reverseResult.matchScore * 100) + "%",
+                confBefore: Math.round(p2.topCandidate.confidence * 100) + "%",
+                confAfter: Math.round(adjustedConf * 100) + "%",
+                adjustment: reverseResult.confidenceAdjustment > 0
+                    ? `+${reverseResult.confidenceAdjustment}`
+                    : String(reverseResult.confidenceAdjustment),
+            });
+
+            // If reverse verification completely fails the OEM, reject early
+            if (adjustedConf < 0.40) {
+                logger.warn("[APEX P2b] Reverse verification REJECTED OEM", {
+                    oem: p2.topCandidate.oem,
+                    reason: reverseResult.reason,
+                });
+                phaseResult = {
+                    phase: 2,
+                    phaseName: "reverse_rejected",
+                    oem: undefined,
+                    confidence: adjustedConf,
+                    source: "gemini_grounded_reverse_rejected",
+                    latencyMs: Date.now() - pipelineStart,
+                };
+                return buildResult(undefined, adjustedConf, allCandidates, phaseResult, req);
+            }
+        } catch (err: any) {
+            logger.debug("[APEX P2b] Reverse verification failed (non-critical)", { error: err?.message });
+            // Continue with original candidate if reverse verification fails
+        }
+
+        // ================================================================
         // PHASE 3: Claude Adversary
         // ================================================================
-        const p3 = await phase3ClaudeAdversary(req, p2.topCandidate, p2.candidates);
+        const p3 = await phase3ClaudeAdversary(req, reverseAdjustedCandidate, p2.candidates);
         finalOem = p3.finalOem;
         finalConfidence = p3.finalConfidence;
 

@@ -85,18 +85,24 @@ function buildGermanPrompt(req: OEMResolverRequest): string {
     const part = req.partQuery.rawText;
     const formatHint = BRAND_FORMAT_HINTS[brand.toUpperCase()] || '';
 
-    return `Finde die ORIGINALE OEM-Teilenummer (Herstellernummer) für:
+    return `Du bist ein Automobil-Recherche-Agent. Deine Aufgabe ist es, die ECHTE OEM-Teilenummer zu finden — nicht zu raten.
 
-Fahrzeug: ${vehicle}
-Teil: ${part}
+FAHRZEUG: ${vehicle}
+TEIL: ${part}
 
-WICHTIG:
-- NUR die OEM/OE-Nummer vom Hersteller ${brand}, KEINE Aftermarket-Nummern (nicht Brembo, TRW, Bosch etc.)
-- Suche auf autodoc.de, daparto.de, pkwteile.de oder Herstellerkatalogen
-${formatHint ? `- Erwartetes Format: ${formatHint}` : ''}
+STRATEGIE (in dieser Reihenfolge):
+1. Suche ZUERST auf Herstellerkatalogen: realoem.com (BMW), 7zap.com (VAG), catcar.info (Mercedes)
+2. Dann auf Teileshops: autodoc.de, daparto.de, pkwteile.de, kfzteile24.de
+3. Prüfe ob die gefundene Nummer zum Hersteller ${brand} passt
+${formatHint ? `4. Erwartetes Nummernformat: ${formatHint}` : ''}
+
+REGELN:
+- NUR OEM/OE-Nummern vom Hersteller ${brand}. KEINE Aftermarket (Brembo, TRW, Bosch, Febi, Meyle = FALSCH)
+- Wenn du KEINE sichere Nummer findest, antworte mit "oem_numbers": []
+- NIEMALS eine Nummer erfinden. Eine leere Antwort ist besser als eine falsche
 
 Antworte NUR als JSON:
-{"oem_numbers":[{"number":"OEM-NUMMER","description":"Beschreibung","confidence":"high/medium/low"}],"notes":""}`;
+{"oem_numbers":[{"number":"OEM-NUMMER","source_url":"URL wo du die Nummer gefunden hast","description":"Beschreibung","confidence":"high/medium/low"}],"notes":""}`;
 }
 
 function buildEnglishPrompt(req: OEMResolverRequest): string {
@@ -105,18 +111,24 @@ function buildEnglishPrompt(req: OEMResolverRequest): string {
     const part = req.partQuery.rawText;
     const formatHint = BRAND_FORMAT_HINTS[brand.toUpperCase()] || '';
 
-    return `Find the GENUINE OEM part number for:
+    return `You are an automotive parts research agent. Your task is to find the REAL OEM part number — not to guess.
 
-Vehicle: ${vehicle}
-Part: ${part}
+VEHICLE: ${vehicle}
+PART: ${part}
 
-IMPORTANT:
-- Only the ORIGINAL manufacturer (${brand}) part number, NOT aftermarket (not Brembo, TRW, Bosch etc.)
-- Search on parts websites for the exact OE/OEM reference number
-${formatHint ? `- Expected format: ${formatHint}` : ''}
+STRATEGY (in this order):
+1. Search manufacturer catalogs FIRST: realoem.com (BMW), 7zap.com (VAG), catcar.info (Mercedes)
+2. Then parts shops: autodoc.de, daparto.de, pkwteile24.de, rockauto.com
+3. Verify the number matches ${brand} format
+${formatHint ? `4. Expected number format: ${formatHint}` : ''}
+
+RULES:
+- ONLY genuine OEM/OE numbers from ${brand}. NO aftermarket (Brembo, TRW, Bosch, Febi, Meyle = WRONG)
+- If you cannot find a reliable number, respond with "oem_numbers": []
+- NEVER invent a number. An empty answer is better than a wrong one
 
 Reply ONLY as JSON:
-{"oem_numbers":[{"number":"OEM-NUMBER","description":"description","confidence":"high/medium/low"}],"notes":""}`;
+{"oem_numbers":[{"number":"OEM-NUMBER","source_url":"URL where you found it","description":"description","confidence":"high/medium/low"}],"notes":""}`;
 }
 
 // ============================================================================
@@ -263,7 +275,7 @@ export const geminiGroundedOemSource: OEMSource = {
             part: req.partQuery.rawText.substring(0, 50),
         });
 
-        const systemInstruction = `Du bist ein Automobil-Ersatzteil-Experte. Nutze Google-Suche um die korrekte OEM/OE-Nummer zu finden. Antworte NUR im JSON-Format. Keine Erklärungen.`;
+        const systemInstruction = `Du bist ein Automobil-Recherche-Agent. Finde OEM-Teilenummern durch gezielte Suche auf Herstellerkatalogen und Teileshops. Bevorzuge realoem.com, 7zap.com, catcar.info, autodoc.de. Antworte NUR im JSON-Format. ERFINDE NIEMALS eine Nummer — eine leere Antwort ist besser als eine falsche.`;
 
         // =====================================================================
         // PARALLEL MULTI-QUERY: 2 grounded calls for cross-validation
