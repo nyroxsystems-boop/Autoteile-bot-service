@@ -43,7 +43,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         try {
             // First check admin_sessions table
             const adminSession = await get<any>(
-                'SELECT * FROM admin_sessions WHERE token = ? AND expires_at > NOW()',
+                'SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
                 [token]
             );
 
@@ -56,7 +56,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
             // Then check regular sessions table (User Dashboard)
             const userSession = await get<any>(
-                'SELECT s.*, u.id as user_id, u.email, u.username, u.role, u.merchant_id FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > NOW()',
+                'SELECT s.*, u.id as user_id, u.email, u.username, u.role, u.merchant_id FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at::TIMESTAMP > NOW()',
                 [token]
             );
 
