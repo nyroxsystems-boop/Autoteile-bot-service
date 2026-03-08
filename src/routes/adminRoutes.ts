@@ -394,37 +394,36 @@ function generateSecurePassword(): string {
 
 router.get("/kpis", async (req: Request, res: Response) => {
     try {
-        // Tenants count from InvenTree
-        const tenants = await getCompanies({ is_customer: true });
-
-        // Optimized queries using COUNT instead of loading all data
-        const totalOrdersResult = await db.get<any>("SELECT COUNT(*) as count FROM orders");
-        const totalOrders = totalOrdersResult?.count || 0;
-
-        // Orders Today
+        // All queries in parallel — was sequential before, causing lag
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const ordersTodayResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE created_at > ?", [yesterday]);
+
+        const [
+            tenants,
+            totalOrdersResult,
+            ordersTodayResult,
+            revenueResult,
+            doneOrdersResult,
+            resolvedOemResult,
+            activeUsersResult,
+            messagesResult,
+        ] = await Promise.all([
+            getCompanies({ is_customer: true }),
+            db.get<any>("SELECT COUNT(*) as count FROM orders"),
+            db.get<any>("SELECT COUNT(*) as count FROM orders WHERE created_at > ?", [yesterday]),
+            db.get<any>("SELECT SUM(CAST(total AS REAL)) as revenue FROM orders WHERE status IN ('done', 'completed')"),
+            db.get<any>("SELECT COUNT(*) as count FROM orders WHERE status IN ('done', 'completed')"),
+            db.get<any>("SELECT COUNT(*) as count FROM orders WHERE oem_number IS NOT NULL AND oem_number != ''"),
+            db.get<any>("SELECT COUNT(*) as count FROM users"),
+            db.get<any>("SELECT COUNT(*) as count FROM messages"),
+        ]);
+
+        const totalOrders = totalOrdersResult?.count || 0;
         const ordersToday = ordersTodayResult?.count || 0;
-
-        // Revenue (Sum of 'total' for done orders)
-        const revenueResult = await db.get<any>("SELECT SUM(CAST(total AS REAL)) as revenue FROM orders WHERE status IN ('done', 'completed')");
         const revenue = revenueResult?.revenue || 0;
-
-        // Conversion Rate
-        const doneOrdersResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE status IN ('done', 'completed')");
         const doneOrdersCount = doneOrdersResult?.count || 0;
         const conversionRate = totalOrders > 0 ? Math.round((doneOrdersCount / totalOrders) * 100) : 0;
-
-        // OEM Resolution
-        const resolvedOemResult = await db.get<any>("SELECT COUNT(*) as count FROM orders WHERE oem_number IS NOT NULL AND oem_number != ''");
         const resolvedOemCount = resolvedOemResult?.count || 0;
-
-        // Active Users (Team)
-        const activeUsersResult = await db.get<any>("SELECT COUNT(*) as count FROM users");
         const activeUsers = activeUsersResult?.count || 0;
-
-        // Messages
-        const messagesResult = await db.get<any>("SELECT COUNT(*) as count FROM messages");
         const messagesSent = messagesResult?.count || 0;
 
         // Mock history data for charts (last 6 months)
