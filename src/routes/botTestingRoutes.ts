@@ -158,7 +158,7 @@ router.post("/chat", async (req: Request, res: Response) => {
 
 /**
  * POST /api/bot-testing/reset
- * Reset a test conversation
+ * Reset a test conversation — clears in-memory session AND database state
  */
 router.post("/reset", async (req: Request, res: Response) => {
     const { from } = req.body ?? {};
@@ -171,14 +171,51 @@ router.post("/reset", async (req: Request, res: Response) => {
     const sessionKey = `test:${normalizedFrom}`;
 
     try {
-        // Clear session
+        // 1. Clear in-memory test session
         testSessions.delete(sessionKey);
 
-        logger.info("[BotTesting] Session reset", { from: normalizedFrom });
+        // 2. Mark all active DB orders for this contact as 'done' so bot starts fresh
+        let ordersReset = 0;
+        try {
+            const result = await db.all<any>(
+                `UPDATE orders SET status = 'done' WHERE customer_contact = ? AND status != 'done' RETURNING id`,
+                [normalizedFrom]
+            );
+            ordersReset = result?.length || 0;
+        } catch (dbErr: any) {
+            // Fallback: try without RETURNING (in case of older PG)
+            try {
+                await db.run(
+                    `UPDATE orders SET status = 'done' WHERE customer_contact = ? AND status != 'done'`,
+                    [normalizedFrom]
+                );
+                ordersReset = -1; // unknown count
+            } catch (_) { /* non-critical */ }
+            logger.warn("[BotTesting] DB order reset partial", { error: dbErr?.message });
+        }
+
+        // 3. Clear conversation history for this contact
+        try {
+            await db.run(
+                `DELETE FROM conversations WHERE contact_phone = ?`,
+                [normalizedFrom]
+            );
+        } catch (_) { /* table may not exist — non-critical */ }
+
+        // 4. Clear messages for this contact
+        try {
+            await db.run(
+                `DELETE FROM messages WHERE phone_number = ?`,
+                [normalizedFrom]
+            );
+        } catch (_) { /* non-critical */ }
+
+        logger.info("[BotTesting] Full session reset", { from: normalizedFrom, ordersReset });
 
         return res.json({
             success: true,
-            message: `Session reset for ${normalizedFrom}`
+            message: `Full reset for ${normalizedFrom}`,
+            ordersReset
         });
 
     } catch (err: any) {
