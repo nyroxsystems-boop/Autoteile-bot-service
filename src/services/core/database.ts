@@ -6,6 +6,25 @@ import * as crypto from 'crypto';
 import { runMigrations } from './migrations';
 import { seedDemoData } from './seedDemoData';
 
+// Retry helper for transient errors (DNS EAI_AGAIN, connection timeouts)
+async function withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err: any) {
+            const isTransient = err?.code === 'EAI_AGAIN' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT';
+            if (isTransient && attempt < maxRetries) {
+                const delay = attempt * 1000; // 1s, 2s, 3s
+                console.warn(`[DB] ${label} failed (attempt ${attempt}/${maxRetries}, retrying in ${delay}ms):`, err?.message);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+            }
+            throw err;
+        }
+    }
+    throw new Error('unreachable');
+}
+
 // Create connection pool
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -26,7 +45,8 @@ const generateId = () => crypto.randomUUID();
 export async function initDb(): Promise<void> {
     console.log("[DB] Initializing PostgreSQL database...");
 
-    try {
+    // Retry init up to 5 times — Railway DNS can be slow on cold start
+    await withRetry(async () => {
         await runMigrations(pool);
         console.log("[DB] Migrations completed successfully");
 
@@ -74,12 +94,8 @@ export async function initDb(): Promise<void> {
             await seedDemoData();
         }
 
-
         console.log("[DB] PostgreSQL database initialized successfully");
-    } catch (error) {
-        console.error("[DB] Failed to initialize database:", error);
-        throw error;
-    }
+    }, 'initDb', 5);
 }
 
 /**
@@ -93,14 +109,10 @@ export function getDb(): Pool {
  * Compatibility layer: run() - Execute INSERT, UPDATE, DELETE
  */
 export async function run(sql: string, params: any[] = []): Promise<void> {
-    try {
-        // Convert SQLite-style placeholders (?) to PostgreSQL ($1, $2, etc.)
+    return withRetry(async () => {
         const pgSql = convertPlaceholders(sql);
         await pool.query(pgSql, params);
-    } catch (error) {
-        console.error("[DB] Error in run():", error);
-        throw error;
-    }
+    }, 'run');
 }
 
 /**
@@ -120,21 +132,18 @@ export async function runRaw(sql: string, params: any[] = []): Promise<void> {
  * Compatibility layer: get() - Execute SELECT and return single row
  */
 export async function get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
-    try {
+    return withRetry(async () => {
         const pgSql = convertPlaceholders(sql);
         const result = await pool.query(pgSql, params);
         return result.rows[0] as T | undefined;
-    } catch (error) {
-        console.error("[DB] Error in get():", error);
-        throw error;
-    }
+    }, 'get');
 }
 
 /**
  * Compatibility layer: all() - Execute SELECT and return all rows
  */
 export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
-    try {
+    return withRetry(async () => {
         const pgSql = convertPlaceholders(sql);
         const result = await pool.query(pgSql, params);
 
@@ -149,10 +158,7 @@ export async function all<T>(sql: string, params: any[] = []): Promise<T[]> {
         }
 
         return result.rows as T[];
-    } catch (error) {
-        console.error("[DB] Error in all():", error);
-        throw error;
-    }
+    }, 'all');
 }
 
 /**
