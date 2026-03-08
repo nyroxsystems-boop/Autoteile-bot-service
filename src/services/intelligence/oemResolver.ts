@@ -1,81 +1,46 @@
 import { OEMResolverRequest, OEMResolverResult, OEMCandidate } from "./types";
 import { logger } from "@utils/logger";
-// REMOVED: cacheSource - always returns empty []
-// REMOVED: shopSearchSource - placeholder, always returns []
-import { webScrapeSource } from "./sources/webScrapeSource";
-import { llmHeuristicSource } from "./sources/llmHeuristicSource";
 import { filterByPartMatch, resolveAftermarketToOEM } from "./sources/partMatchHelper";
 import { clampConfidence } from "./sources/baseSource";
 import { detectVariants } from './variantDetector';
-import { backsearchOEM } from "./backsearch";
-// REMOVED: motointegratorSource - 35 lines, 0.6 flat conf, zero value
-// REMOVED: autodocSource - fake wrapper for webScrapeSource
-import { autodocWebSource } from "./sources/autodocWebSource";
-// DELETED: sepZapWebSource - copy-paste duplicate, 7zap covered by vagEtkaSource
-// PRODUCTION SOURCES (Schema-Fixed)
-import { kfzteile24Source } from "./sources/kfzteile24Source";
-import { oscaroSource } from "./sources/oscaroSource";
-import { pkwteileSource } from "./sources/pkwteileSource";
 // Document OCR pipeline (Fahrzeugschein + Part Labels via Gemini Vision)
 import { documentOcrSource } from "./sources/documentOcrSource";
 import { calculateConsensus, applyBrandPatternBoost } from "./consensusEngine";
 import { performEnhancedValidation } from "./enhancedValidation";
-// 10/10 Deep OEM Resolution
+// Deep OEM Resolution
 import { performDeepResolution, applySupersession } from "./deepOemResolver";
-// NEW: Premium OEM Catalog Sources
+// Premium OEM Catalog Sources
 import { realOemSource } from "./sources/realOemSource";
 import { mercedesEpcSource } from "./sources/mercedesEpcSource";
 import { vagEtkaSource } from "./sources/vagEtkaSource";
-// 🏆 ENTERPRISE: Database Source (Priority 1)
+// Enterprise Database
 import { databaseSource } from "./sources/databaseSource";
-// REMOVED: tecDocCrossRefSource - fake API endpoints, static 25-entry DB
-// 🛡️ P0: Aftermarket filter — removes known aftermarket numbers before consensus
+// Aftermarket filter
 import { filterAftermarketCandidates } from './aftermarketFilter';
 import { validateOemPatternInt } from './brandPatternRegistry';
-import { filterSourcesByMode, reportSourceHealth } from './scraperFallback';
 import { recordOemResolution } from './oemMetrics';
-// 🚨 P0: Alert tracking for OEM resolution failures
 import { trackOemResolutionResult } from "@core/alertService";
 import { learnFromResolution } from "./oemLearner";
-// NEW: Google Search + eBay OEM Mining (10/10 super-sources)
-import { googleSearchSource } from "./sources/googleSearchSource";
-import { ebayOemSource } from "./sources/ebayOemSource";
-// 🆓 FREE FALLBACK: Direct fetch when ScraperAPI down/exhausted
-import { directFetchSource } from "./sources/directFetchSource";
-// 📊 ACCURACY: Real measurement instead of guessing
+// Accuracy tracking
 import { trackResolution } from "./accuracyTracker";
-// 🏆 TECDOC: Industry-standard cross-reference database (optional, needs RapidAPI key)
+// TecDoc (optional)
 import { tecDocSource } from "./sources/tecDocSource";
-// 🌐 GEMINI GROUNDED: AI with live Google Search — 0 extra cost, replaces ScraperAPI
+// Gemini Grounded Search
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
 
+// ============================================================================
+// LEGACY RESOLVER — Emergency fallback for APEX pipeline failures only.
+// Primary OEM resolution is handled by apexPipeline.ts.
+// ============================================================================
 
-// PRODUCTION SOURCES ONLY - Fake/empty sources removed to prevent
-// Multi-Source confidence inflation
 const SOURCES = [
-  // 🏆 ENTERPRISE DATABASE (instant, highest priority)
-  databaseSource,            // SQLite database - 0ms response, 0.95+ confidence
-  // 🌐 GEMINI GROUNDED (AI + live Google Search — PRIMARY SOURCE for 96% accuracy)
-  geminiGroundedOemSource,   // Gemini searches web during inference, 0 extra API cost
-  // 🏆 TECDOC (optional, needs TECDOC_RAPIDAPI_KEY)
-  tecDocSource,              // TecDoc Catalog API via RapidAPI (optional)
-  // PREMIUM CATALOG SOURCES (brand-specific, high accuracy)
-  realOemSource,          // BMW OEM catalog (RealOEM.com)
-  mercedesEpcSource,      // Mercedes EPC catalog
-  vagEtkaSource,          // VAG ETKA catalog (VW/Audi/Skoda/Seat)
-  // GENERAL WEB SCRAPERS
-  webScrapeSource,        // Integrates oemWebFinder with 8 web scrapers
-  googleSearchSource,     // 🔍 Google as super-scraper (1 API call = all shops)
-  ebayOemSource,          // 🛒 eBay structured OEM/Vergleichsnummer extraction
-  llmHeuristicSource,     // AI OEM inference (Triple-Lock cross-validation)
-  autodocWebSource,       // Direct Autodoc scraper
-  kfzteile24Source,       // German platform
-  pkwteileSource,         // German platform
-  oscaroSource,           // French platform
-  // 🆓 FREE FALLBACK (no ScraperAPI needed)
-  directFetchSource,      // Direct fetch: daparto, autoteile-markt, teilehaber (0 credits)
-  // 🔬 DOCUMENT OCR (only activates when image data present)
-  documentOcrSource,     // Fahrzeugschein + Part Label OCR via Gemini Vision
+  databaseSource,            // SQLite database — instant, highest priority
+  geminiGroundedOemSource,   // Gemini + Google Search grounding
+  tecDocSource,              // TecDoc API (optional, needs key)
+  realOemSource,             // BMW catalog (realoem.com)
+  mercedesEpcSource,         // Mercedes EPC catalog
+  vagEtkaSource,             // VAG ETKA catalog
+  documentOcrSource,         // Fahrzeugschein + Part Label OCR
 ];
 
 const CONFIDENCE_THRESHOLD_VETTED = 0.90;
@@ -177,8 +142,7 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     // =========================================================================
     const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./sourceHealthMonitor');
 
-    // #6 FIX: Filter sources by current health mode (degraded → skip web scrapers)
-    const activeSources = filterSourcesByMode(SOURCES as any[]);
+    const activeSources = SOURCES;
 
     const results = await Promise.all(
       activeSources.map(async (source) => {
@@ -200,8 +164,6 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
             )
           ]);
           recordSuccess(sourceName);
-          // #14 FIX: Feed source health to scraperFallback strategy
-          reportSourceHealth(sourceName, true);
 
           // Apply confidence weight based on source health
           const weight = getConfidenceWeight(sourceName);
@@ -212,8 +174,6 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
           return res;
         } catch (err: any) {
           recordFailure(sourceName, err?.message || "Unknown error");
-          // #14 FIX: Feed source health to scraperFallback strategy
-          reportSourceHealth(sourceName, false);
           logger.warn("OEM source failed", {
             source: sourceName,
             error: err?.message
@@ -354,15 +314,9 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
         let currentConf = candidate.confidence;
         let currentNote = "";
 
-        // MANDATORY BACKSEARCH for Validation
         try {
-          const confirm = await backsearchOEM(candidate.oem, req);
-
-          // Map to enhanced validation format
-          const backsearchResult = {
-            ...confirm,
-            totalHits: Object.values(confirm).filter(v => v === true).length
-          };
+          // Simplified backsearch — APEX handles reverse verify in Phase 2b
+          const confirm = { found: false } as any;
 
           // Enhanced Validation (AI layer controlled by feature flag)
           const validation = await performEnhancedValidation(
@@ -371,7 +325,7 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
             req.vehicle.make || "",
             req.vehicle.model || "",
             req.partQuery.rawText,
-            backsearchResult,
+            confirm,
             {
               enableAIVerification: !!process.env.GEMINI_API_KEY,
               geminiApiKey: process.env.GEMINI_API_KEY,
