@@ -40,14 +40,13 @@ exports.downloadFromTwilio = downloadFromTwilio;
 exports.extractVehicleDataFromImage = extractVehicleDataFromImage;
 exports.understandUserText = understandUserText;
 exports.parseUserMessage = parseUserMessage;
-exports.getLastExtractedOem = getLastExtractedOem;
 exports.handleIncomingBotMessage = handleIncomingBotMessage;
-// Gemini AI Service (replaces OpenAI)
+// Gemini AI Service
 const node_fetch_1 = __importDefault(require("node-fetch"));
-const supabaseService_1 = require("../adapters/supabaseService");
+const supabaseService_1 = require("@adapters/supabaseService");
 const oemRequiredFieldsService_1 = require("../intelligence/oemRequiredFieldsService");
-const oemService = __importStar(require("../intelligence/oemService"));
-const logger_1 = require("../../utils/logger");
+const oemService = __importStar(require("@intelligence/oemService"));
+const logger_1 = require("@utils/logger");
 const scrapingService_1 = require("../scraping/scrapingService");
 const generalQaPrompt_1 = require("../../prompts/generalQaPrompt");
 const textNluPrompt_1 = require("../../prompts/textNluPrompt");
@@ -266,7 +265,7 @@ async function callOrchestrator(payload) {
             hasOCR: !!payload.ocr,
             messagePreview: payload.latestMessage?.substring(0, 100)
         });
-        // #5 FIX: Use Gemini instead of OpenAI for orchestrator (single provider, lower cost)
+        // #5 FIX: Use Gemini for orchestrator (single provider, lower cost)
         const raw = await (0, geminiService_1.generateChatCompletion)({
             messages: [
                 { role: "system", content: orchestratorPrompt_1.ORCHESTRATOR_PROMPT },
@@ -276,7 +275,7 @@ async function callOrchestrator(payload) {
             responseFormat: 'json_object'
         });
         const elapsed = Date.now() - startTime;
-        // LOG: Raw OpenAI response
+        // LOG: Raw AI response
         logger_1.logger.info("✅ Orchestrator raw response received", {
             elapsed,
             responseLength: raw?.length || 0,
@@ -920,7 +919,7 @@ function isVehicleSufficientForOem(vehicle) {
     return hasBasics && (hasId || hasPower);
 }
 // ------------------------------
-// Schritt 1: Nutzertext analysieren (NLU via OpenAI)
+// Schritt 1: Nutzertext analysieren (NLU via Gemini)
 // ------------------------------
 async function parseUserMessage(text) {
     try {
@@ -1021,8 +1020,10 @@ function pickLanguageFromChoice(text) {
 }
 function extractVinHsnTsn(text) {
     const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/i; // VIN excludes I,O,Q
-    const hsnRegex = /\b([0-9]{4})\b/;
-    const tsnRegex = /\b([A-Z0-9]{3,4})\b/i;
+    // AUDIT FIX: HSN/TSN regex was too broad — matched any 4-digit number (e.g. "2019")
+    // Now only matches when user explicitly provides "HSN: XXXX" or "TSN: XXX" format
+    const hsnRegex = /(?:hsn|hersteller)[:\s]*([0-9]{4})\b/i;
+    const tsnRegex = /(?:tsn|typ(?:schl[uü]ssel)?)[:\s]*([A-Z0-9]{3,8})\b/i;
     const vinMatch = text.match(vinRegex);
     const hsnMatch = text.match(hsnRegex);
     const tsnMatch = text.match(tsnRegex);
@@ -1045,13 +1046,12 @@ function sanitizeText(input, maxLen = 500) {
     const trimmed = input.trim().slice(0, maxLen);
     return trimmed.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
-// Store extracted OEM for oem_direct intent
-let _lastExtractedOem = null;
-function getLastExtractedOem() { return _lastExtractedOem; }
+// Legacy compat — returns null since extractedOem is now in IntentResult
+// AUDIT FIX: getLastExtractedOem removed — was dead code after IntentResult refactor
+// AUDIT FIX: Returns IntentResult instead of just MessageIntent to avoid global mutable state
 function detectIntent(text, hasVehicleImage) {
-    _lastExtractedOem = null; // Reset
     if (hasVehicleImage)
-        return "new_order";
+        return { intent: "new_order" };
     const t = text.toLowerCase();
     // Abort/cancel detection - user wants to stop current order
     const abortKeywords = [
@@ -1059,27 +1059,27 @@ function detectIntent(text, hasVehicleImage) {
         "stopp", "halt", "aufhören", "nicht mehr", "egal", "lassen wir"
     ];
     if (abortKeywords.some((k) => t.includes(k)))
-        return "abort_order";
+        return { intent: "abort_order" };
     // Continue with same vehicle for different part
     const continueKeywords = [
         "noch was", "auch noch", "außerdem", "zusätzlich", "dazu", "weiteres teil",
         "gleiches auto", "selbes fahrzeug", "same car", "another part"
     ];
     if (continueKeywords.some((k) => t.includes(k)))
-        return "continue_order";
+        return { intent: "continue_order" };
     // New order with different vehicle
     const newOrderKeywords = [
         "anderes auto", "anderen wagen", "neues fahrzeug", "zweites auto",
         "other car", "different vehicle", "mein anderes"
     ];
     if (newOrderKeywords.some((k) => t.includes(k)))
-        return "new_order";
+        return { intent: "new_order" };
     const statusKeywords = [
         "liefer", "zustellung", "wann", "abholung", "abholen", "zahlen", "zahlung",
         "vorkasse", "status", "wo bleibt", "retoure", "liefertermin", "tracking", "order", "bestellung"
     ];
     if (statusKeywords.some((k) => t.includes(k)))
-        return "status_question";
+        return { intent: "status_question" };
     // #7 FIX: OEM Direct Input Detection — pro users send OEM numbers directly
     // VAG (1K0615301AC), BMW (34116792219), Mercedes (A0044206920), generic
     const oemPatterns = [
@@ -1093,12 +1093,14 @@ function detectIntent(text, hasVehicleImage) {
         for (const p of oemPatterns) {
             const match = text.match(p);
             if (match && match[1]) {
-                _lastExtractedOem = match[1].toUpperCase().replace(/[-\s]/g, '');
-                return "oem_direct"; // #7 FIX: Return oem_direct instead of new_order
+                return {
+                    intent: "oem_direct",
+                    extractedOem: match[1].toUpperCase().replace(/[-\s]/g, '')
+                };
             }
         }
     }
-    return "unknown";
+    return { intent: "unknown" };
 }
 function shortOrderLabel(o) {
     const idShort = o.id.slice(0, 8);
@@ -1116,7 +1118,8 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
             ? payload.mediaUrls.map((url, idx) => `[REGISTRATION_IMAGE_${idx + 1}]: ${url}`).join("\n")
             : null;
         // Intent + mögliche offene Orders vor dem Erstellen ermitteln
-        const intent = detectIntent(userText, hasVehicleImage);
+        const intentResult = detectIntent(userText, hasVehicleImage);
+        const intent = intentResult.intent;
         let activeOrders = [];
         if (typeof supabaseService_1.listActiveOrdersByContact === "function") {
             try {
@@ -1140,7 +1143,7 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
         }
         // #7 FIX: Handle oem_direct intent — pro users paste OEM numbers directly
         if (intent === "oem_direct") {
-            const extractedOem = getLastExtractedOem();
+            const extractedOem = intentResult.extractedOem || null;
             if (extractedOem) {
                 const order = await getSupa().findOrCreateOrder(payload.from);
                 const language = order.language || 'de';
@@ -1685,6 +1688,14 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
         }
         // Legacy switch (will be removed after 100% rollout)
         if (!replyText) {
+            // AUDIT FIX: Log when state machine was active but produced no reply
+            if ((0, featureFlags_1.isEnabled)(featureFlags_1.FF.USE_STATE_MACHINE, { userId: payload.from }) && stateMachineStates.includes(nextStatus)) {
+                logger_1.logger.warn("[SILENT FALLBACK] State machine active but produced empty reply — legacy switch taking over", {
+                    status: nextStatus,
+                    orderId: order.id,
+                    from: payload.from
+                });
+            }
             switch (nextStatus) {
                 case "choose_language": {
                     // Wenn bereits Sprache gesetzt ist, nicht erneut fragen
@@ -1726,6 +1737,13 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         vehicleDescription = vehicleDescription ? `${vehicleDescription}\n${note}` : note;
                         let anyBufferDownloaded = false;
                         let ocrSucceeded = false;
+                        // AUDIT FIX: Reuse OCR from the modern image classification flow
+                        // instead of re-downloading and re-processing the same image
+                        if (ocrResult) {
+                            anyBufferDownloaded = true;
+                            ocrSucceeded = true;
+                            logger_1.logger.info("[collect_vehicle] Reusing OCR from image flow", { orderId: order.id });
+                        }
                         try {
                             const buffers = [];
                             for (const url of payload.mediaUrls ?? []) {
@@ -1739,7 +1757,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                                 }
                             }
                             if (buffers.length > 0) {
-                                const ocr = await extractVehicleDataFromImage(buffers[0]);
+                                const ocr = ocrResult || await extractVehicleDataFromImage(buffers[0]);
                                 logger_1.logger.info("Vehicle OCR result", { orderId: order.id, ocr });
                                 ocrSucceeded = true;
                                 // Read current DB vehicle so we can continue even if upsert fails
@@ -1913,16 +1931,16 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         tsn: parsed.tsn ?? null
                     });
                     // Kumuliertes Fahrzeug aus DB holen und Pflichtfelder prüfen
-                    const vehicle = await (0, supabaseService_1.getVehicleForOrder)(order.id);
-                    logger_1.logger.info("Vehicle after upsert", { orderId: order.id, vehicle });
+                    const vehicleText = await (0, supabaseService_1.getVehicleForOrder)(order.id);
+                    logger_1.logger.info("Vehicle after upsert", { orderId: order.id, vehicle: vehicleText });
                     const missingVehicleFields = (0, oemRequiredFieldsService_1.determineRequiredFields)({
-                        make: vehicle?.make,
-                        model: vehicle?.model,
-                        year: vehicle?.year,
-                        engine: vehicle?.engineCode ?? vehicle?.engine ?? vehicle?.engineKw,
-                        vin: vehicle?.vin,
-                        hsn: vehicle?.hsn,
-                        tsn: vehicle?.tsn
+                        make: vehicleText?.make,
+                        model: vehicleText?.model,
+                        year: vehicleText?.year,
+                        engine: vehicleText?.engineCode ?? vehicleText?.engine ?? vehicleText?.engineKw,
+                        vin: vehicleText?.vin,
+                        hsn: vehicleText?.hsn,
+                        tsn: vehicleText?.tsn
                     });
                     if (missingVehicleFields.length > 0) {
                         const q = buildVehicleFollowUpQuestion(missingVehicleFields, language ?? "de");
@@ -1932,7 +1950,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         nextStatus = "collect_vehicle";
                     }
                     else {
-                        const summary = `${vehicle?.make} ${vehicle?.model} (${vehicle?.year})`;
+                        const summary = `${vehicleText?.make} ${vehicleText?.model} (${vehicleText?.year})`;
                         replyText = (0, botResponses_1.tWith)('vehicle_confirm', language, { summary });
                         nextStatus = "confirm_vehicle";
                     }
@@ -2449,7 +2467,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         return {
                             reply: replyText,
                             orderId: order.id,
-                            contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
+                            contentSid: process.env.TWILIO_GOODBYE_CONTENT_SID || 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
                             contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
                         };
                     }

@@ -940,6 +940,36 @@ router.post("/oem-database/validate", async (req: Request, res: Response) => {
     }
 });
 
+// ============================================================================
+// OEM Feedback — Dealer confirmation / correction loop (APEX Phase 4)
+// ============================================================================
+router.post("/oem-feedback", async (req: Request, res: Response) => {
+    try {
+        const { processOemFeedback } = await import("../services/intelligence/oemFeedbackService");
+        const { orderId, oemNumber, isCorrect, correctedOem, vehicleBrand, vehicleModel, vehicleYear, partDescription } = req.body;
+
+        if (!orderId || !oemNumber) {
+            return res.status(400).json({ error: "orderId and oemNumber are required" });
+        }
+
+        const result = await processOemFeedback({
+            orderId,
+            oemNumber,
+            isCorrect: !!isCorrect,
+            correctedOem: correctedOem || undefined,
+            vehicleBrand: vehicleBrand || undefined,
+            vehicleModel: vehicleModel || undefined,
+            vehicleYear: vehicleYear ? Number(vehicleYear) : undefined,
+            partDescription: partDescription || undefined,
+            dealerId: (req as any).merchantId || "admin",
+        });
+
+        return res.json(result);
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 export function createAdminRouter() {
     return router;
 }

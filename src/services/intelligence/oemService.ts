@@ -13,6 +13,7 @@ import { determineRequiredFields } from "./oemRequiredFieldsService";
 import { resolveOEM as resolveOEMUnified } from "./oemResolver";
 import { OEMResolverRequest, OEMResolverResult } from "./types";
 import { findBestOemForVehicle, VehicleData, SearchContext } from "./oemWebFinder";
+import { resolveOemApex } from "./apexPipeline";
 
 export interface OemResolutionResult {
   success: boolean;
@@ -58,7 +59,8 @@ function extractSuspectedArticleNumber(text: string | null | undefined): string 
 }
 
 /**
- * Unified OEM resolver entry that delegates to the new resolver (multi-source/scoring).
+ * Unified OEM resolver entry — now uses APEX dual-AI pipeline.
+ * Falls back to old resolver if APEX pipeline is unavailable.
  * Bot flow should call ONLY this from now on.
  */
 export async function resolveOEMForOrder(
@@ -78,7 +80,6 @@ export async function resolveOEMForOrder(
   const normalizedPartText = partText || "";
   const suspectedArticle = extractSuspectedArticleNumber(normalizedPartText);
 
-  // Multi-Source-Resolver (Web-Scrape + DB + LLM), mit suspectedNumber als Hint
   const req: OEMResolverRequest = {
     orderId,
     vehicle: {
@@ -96,6 +97,15 @@ export async function resolveOEMForOrder(
     }
   };
 
-  const result = await resolveOEMUnified(req);
-  return result;
+  try {
+    // APEX: Dual-AI pipeline (Gemini + Claude)
+    const result = await resolveOemApex(req);
+    return result;
+  } catch (err: any) {
+    // Fallback: old multi-source resolver if APEX fails
+    console.warn("[OEMService] APEX pipeline failed, falling back to legacy resolver:", err?.message);
+    const result = await resolveOEMUnified(req);
+    return result;
+  }
 }
+

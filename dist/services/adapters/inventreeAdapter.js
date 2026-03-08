@@ -83,8 +83,8 @@ exports.updatePurchaseOrder = updatePurchaseOrder;
 exports.cancelPurchaseOrder = cancelPurchaseOrder;
 exports.receivePurchaseOrder = receivePurchaseOrder;
 exports.getReorderSuggestions = getReorderSuggestions;
-const logger_1 = require("../../utils/logger");
-const db = __importStar(require("../core/database"));
+const logger_1 = require("@utils/logger");
+const db = __importStar(require("@core/database"));
 const crypto_1 = require("crypto");
 function parseJsonField(value, fallback) {
     if (value === null || value === undefined)
@@ -253,7 +253,7 @@ async function updateOrder(orderId, patch) {
 async function updateOrderData(orderId, data) {
     // Atomic JSONB merge — avoids Read-Modify-Write race condition
     try {
-        const { runRaw } = await Promise.resolve().then(() => __importStar(require('../core/database')));
+        const { runRaw } = await Promise.resolve().then(() => __importStar(require('@core/database')));
         await runRaw(`UPDATE orders SET order_data = COALESCE(order_data, '{}')::jsonb || $1::jsonb WHERE id = $2`, [JSON.stringify(data), String(orderId)]);
     }
     catch (err) {
