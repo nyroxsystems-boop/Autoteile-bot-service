@@ -211,7 +211,7 @@ async function runOemLookupAndScraping(orderId, language, parsed, orderData, par
     }
     catch (err) {
         logger_1.logger.error("resolveOEM failed", { error: err?.message, orderId });
-        return { replyText: (0, botResponses_1.t)('oem_tech_error', language), nextStatus: "oem_lookup" };
+        return { replyText: (0, botResponses_1.t)('oem_retry_prompt', language), nextStatus: "oem_lookup" };
     }
 }
 async function handleIncomingBotMessage(payload, sendInterimReply) {
@@ -286,6 +286,15 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
         }
         // NEW: Handle abort_order intent - user wants to cancel current order
         if (intent === "abort_order" && activeOrders.length > 0) {
+            // FIX: If multiple orders, ask which one to cancel
+            if (activeOrders.length > 1) {
+                const lang = activeOrders[0].language || "de";
+                const options = activeOrders.slice(0, 5).map((o, i) => `*${i + 1}.* ${(0, botHelpers_2.shortOrderLabel)(o)}`).join("\n");
+                return {
+                    reply: (0, botResponses_1.tWith)('cancel_which_order', lang, { options }),
+                    orderId: activeOrders[0].id
+                };
+            }
             const orderToCancel = activeOrders[0];
             try {
                 await (0, supabaseService_1.updateOrder)(orderToCancel.id, { status: "cancelled" });
@@ -299,6 +308,37 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                 reply: (0, botResponses_1.t)('cancel_confirmed', lang),
                 orderId: orderToCancel.id
             };
+        }
+        // BACK COMMAND: Let user go back one step
+        const backKeywords = ["zurück", "back", "geri", "paş", "wstecz", "nochmal", "restart", "neu anfangen"];
+        const isBackCommand = backKeywords.some(k => userText.toLowerCase().includes(k));
+        if (isBackCommand && activeOrders.length > 0) {
+            const currentOrder = activeOrders[0];
+            const currentStatus = currentOrder.status;
+            const backMap = {
+                "confirm_vehicle": "collect_vehicle",
+                "collect_part": "collect_vehicle",
+                "oem_lookup": "collect_part",
+                "show_offers": "collect_part",
+                "await_offer_choice": "show_offers",
+                "await_offer_confirmation": "show_offers",
+                "collect_delivery_preference": "show_offers",
+                "collect_address": "collect_delivery_preference",
+            };
+            const prevStatus = backMap[currentStatus];
+            if (prevStatus) {
+                try {
+                    await (0, supabaseService_1.updateOrder)(currentOrder.id, { status: prevStatus });
+                }
+                catch (err) {
+                    logger_1.logger.error("Failed to go back", { orderId: currentOrder.id, error: err?.message });
+                }
+                const lang = currentOrder.language || "de";
+                return {
+                    reply: (0, botResponses_1.t)('back_command', lang),
+                    orderId: currentOrder.id
+                };
+            }
         }
         // NEW: Handle continue_order intent - user wants another part for same vehicle
         if (intent === "continue_order" && activeOrders.length > 0) {
@@ -328,6 +368,15 @@ async function handleIncomingBotMessage(payload, sendInterimReply) {
                     orderId: newOrder.id
                 };
             }
+        }
+        // FIX: Multi-order routing — if >1 active orders and no explicit orderId, ask user
+        if (activeOrders.length > 1 && !payload.orderId && intent !== "new_order" && intent !== "status_question" && intent !== "abort_order" && intent !== "continue_order" && intent !== "oem_direct") {
+            const lang = activeOrders[0].language || "de";
+            const options = activeOrders.slice(0, 5).map((o, i) => `*${i + 1}.* ${(0, botHelpers_2.shortOrderLabel)(o)}`).join("\n");
+            return {
+                reply: (0, botResponses_1.tWith)('multi_order_ask', lang, { count: String(activeOrders.length), options }),
+                orderId: activeOrders[0].id
+            };
         }
         // Ziel-Order bestimmen
         let forceNewOrder = false;
@@ -1278,11 +1327,27 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         });
                         logger_1.logger.info("Show offers", { orderId: order.id, offersCount: sorted.length });
                         if (!sorted || sorted.length === 0) {
-                            replyText =
-                                (0, botResponses_1.t)('offer_collecting', language);
+                            // FIX: Track how many times we've shown "collecting" to avoid infinite loop
+                            const collectAttempts = (orderData?.offerCollectAttempts ?? 0) + 1;
+                            try {
+                                await (0, supabaseService_1.updateOrderData)(order.id, { offerCollectAttempts: collectAttempts });
+                            }
+                            catch (_) { }
+                            if (collectAttempts >= 3) {
+                                // After 3 attempts, escalate to human
+                                replyText = (0, botResponses_1.t)('offers_escalate', language);
+                                nextStatus = "needs_human";
+                                break;
+                            }
+                            replyText = (0, botResponses_1.t)('offer_collecting', language);
                             nextStatus = "show_offers";
                             break;
                         }
+                        // Reset counter on success
+                        try {
+                            await (0, supabaseService_1.updateOrderData)(order.id, { offerCollectAttempts: 0 });
+                        }
+                        catch (_) { }
                         if (sorted.length === 1) {
                             const offer = sorted[0];
                             const endPrice = (0, botHelpers_2.calculateEndPrice)(offer.price);
@@ -1360,13 +1425,12 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                 case "await_offer_choice": {
                     const txt = (userText || "").trim().toLowerCase();
                     let choiceIndex = null;
-                    if (txt.includes("1"))
-                        choiceIndex = 0;
-                    else if (txt.includes("2"))
-                        choiceIndex = 1;
-                    else if (txt.includes("3"))
-                        choiceIndex = 2;
-                    logger_1.logger.info("User offer choice message", { orderId: order.id, text: userText });
+                    // FIX: Use strict regex to match only standalone numbers, not "320i" etc.
+                    const choiceMatch = txt.match(/^\s*([1-3])\s*[\.\)\:]?\s*/);
+                    if (choiceMatch) {
+                        choiceIndex = parseInt(choiceMatch[1], 10) - 1;
+                    }
+                    logger_1.logger.info("User offer choice message", { orderId: order.id, text: userText, choiceIndex });
                     const choiceIds = orderData?.offerChoiceIds;
                     if (choiceIndex === null || !choiceIds || choiceIndex < 0 || choiceIndex >= choiceIds.length) {
                         replyText =
@@ -1413,8 +1477,17 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                 }
                 case "await_offer_confirmation": {
                     const txt = (userText || "").trim().toLowerCase();
-                    const isYes = ["ja", "okay", "ok", "passt", "yes", "yep", "okey"].some((w) => txt.includes(w));
-                    const isNo = ["nein", "no", "nicht", "anders"].some((w) => txt.includes(w));
+                    // FIX: Stricter matching — require word boundaries to avoid false matches
+                    const yesWords = ["ja", "okay", "ok", "passt", "yes", "yep", "okey", "bestellen", "verbindlich"];
+                    const noWords = ["nein", "no", "nicht", "anders", "cancel", "abbrechen"];
+                    const isYes = yesWords.some((w) => {
+                        const re = new RegExp(`(^|\\s)${w}($|\\s|[!.,?])`, 'i');
+                        return re.test(txt);
+                    });
+                    const isNo = noWords.some((w) => {
+                        const re = new RegExp(`(^|\\s)${w}($|\\s|[!.,?])`, 'i');
+                        return re.test(txt);
+                    });
                     const candidateId = orderData?.selectedOfferCandidateId;
                     logger_1.logger.info("User offer confirmation", {
                         orderId: order.id,
@@ -1441,6 +1514,17 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         nextStatus = "show_offers";
                         break;
                     }
+                    // FIX: Show binding order confirmation before finalizing
+                    if (!orderData?.pendingBindingConfirmation) {
+                        try {
+                            await (0, supabaseService_1.updateOrderData)(order.id, { pendingBindingConfirmation: true });
+                        }
+                        catch (_) { }
+                        replyText = (0, botResponses_1.t)('binding_order_confirm', language);
+                        nextStatus = "await_offer_confirmation";
+                        // The next time user says "ja" with pendingBindingConfirmation=true, we'll process it
+                        break;
+                    }
                     const offers = await (0, supabaseService_1.listShopOffersByOrderId)(order.id);
                     const chosen = offers.find((o) => o.id === candidateId);
                     if (!chosen) {
@@ -1452,6 +1536,8 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                     try {
                         await (0, supabaseService_1.updateOrderData)(order.id, {
                             selectedOfferId: chosen.id,
+                            bindingConfirmed: true,
+                            bindingConfirmedAt: new Date().toISOString(),
                             selectedOfferSummary: {
                                 shopName: chosen.shopName,
                                 brand: chosen.brand,
@@ -1462,49 +1548,55 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         });
                         await (0, supabaseService_1.updateOrderStatus)(order.id, "ready");
                         if (merchantSettings?.allowDirectDelivery) {
-                            replyText = (0, botResponses_1.t)('delivery_or_pickup', language);
+                            replyText = (0, botResponses_1.t)('delivery_choose_exact', language);
                             nextStatus = "collect_delivery_preference";
                         }
                         else {
                             const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
-                            replyText = (0, botResponses_1.tWith)('pickup_location', language, { location: dealerLoc });
+                            replyText = (0, botResponses_1.tWith)('offer_confirmed', language, { orderId: order.id }) + "\n\n" + (0, botResponses_1.tWith)('pickup_location', language, { location: dealerLoc });
                             nextStatus = "done";
                         }
                     }
                     catch (err) {
                         logger_1.logger.error("Failed to store confirmed offer", { error: err?.message, orderId: order.id, candidateId });
                     }
-                    logger_1.logger.info("Offer selection stored", {
+                    logger_1.logger.info("Binding order confirmed", {
                         orderId: order.id,
                         selectedOfferId: chosen.id,
                         statusUpdatedTo: "ready"
                     });
-                    replyText =
-                        (0, botResponses_1.tWith)('offer_confirmed', language, { orderId: order.id });
-                    nextStatus = "done";
                     break;
                 }
                 case "collect_delivery_preference": {
-                    const choice = userText.toLowerCase();
-                    if (choice.includes("d") || choice.includes("liefer")) {
-                        replyText = (0, botResponses_1.t)('delivery_ask_address', language);
+                    const choice = userText.trim();
+                    // FIX: Use strict number matching (1/2) instead of includes("d") which matches "Danke"
+                    const deliveryMatch = choice.match(/^\s*([12])\s*$/);
+                    const isDelivery = deliveryMatch?.[1] === "1" || /^(liefer|deliver|teslimat|gihandin|dostaw)/i.test(choice);
+                    const isPickup = deliveryMatch?.[1] === "2" || /^(abhol|pickup|teslim al|wergirtin|odbi[oó]r)/i.test(choice);
+                    if (isDelivery) {
+                        replyText = (0, botResponses_1.t)('address_hint', language);
                         nextStatus = "collect_address";
                     }
-                    else if (choice.includes("p") || choice.includes("abhol")) {
+                    else if (isPickup) {
                         const dealerLoc = merchantSettings?.dealerAddress || "unseren Standort";
                         replyText = (0, botResponses_1.tWith)('pickup_location', language, { location: dealerLoc });
                         nextStatus = "done";
                     }
                     else {
-                        replyText = (0, botResponses_1.t)('delivery_or_pickup_ask', language);
+                        replyText = (0, botResponses_1.t)('delivery_choose_exact', language);
                         nextStatus = "collect_delivery_preference";
                     }
                     break;
                 }
                 case "collect_address": {
-                    if (userText.length > 10) {
+                    // FIX: Require minimum address pattern (something + number/comma) instead of just length
+                    const addressText = userText.trim();
+                    const hasStreet = /\d/.test(addressText); // must contain at least one number
+                    const hasMinLength = addressText.length >= 15; // "Str. 1, 12345 X" = 16 chars
+                    const hasCommaOrNewline = /[,\n]/.test(addressText); // must have structure
+                    if (hasStreet && hasMinLength && hasCommaOrNewline) {
                         try {
-                            await getSupa().saveDeliveryAddress(order.id, userText);
+                            await getSupa().saveDeliveryAddress(order.id, addressText);
                         }
                         catch (err) {
                             logger_1.logger.error("Failed to save delivery address", { orderId: order.id, error: err });
@@ -1513,32 +1605,55 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                         nextStatus = "done";
                     }
                     else {
-                        replyText = (0, botResponses_1.t)('address_invalid', language);
+                        replyText = (0, botResponses_1.t)('address_hint', language);
                         nextStatus = "collect_address";
                     }
                     break;
                 }
                 case "done": {
                     // Context-aware handling: detect what user wants to do next
-                    const txt = userText.toLowerCase();
-                    // Check if user wants another part for the same vehicle
-                    const newPartKeywords = ["brauche auch", "noch ein", "außerdem", "dazu noch", "zusätzlich",
-                        "another", "also need", "bremsbeläge", "scheiben", "filter", "zündkerzen", "kupplung"];
-                    const wantsNewPart = newPartKeywords.some(k => txt.includes(k)) ||
-                        (txt.length > 5 && !txt.includes("?") && !txt.includes("danke") && !txt.includes("thanks"));
+                    const txt = userText.toLowerCase().trim();
+                    // FIX: Check goodbye FIRST to avoid false "new part" detection
+                    const goodbyeKeywords = ["danke", "thanks", "thank you", "tschüss", "tschüs", "bye",
+                        "super", "perfekt", "toll", "great", "perfect", "alles klar", "passt",
+                        "ok", "okay", "gut", "prima", "klasse", "top", "👍", "🙏", "vielen dank",
+                        "merci", "teşekkür", "spas", "dziękuję", "dzięki"];
+                    const isGoodbye = goodbyeKeywords.some(k => txt.includes(k)) ||
+                        txt.length <= 5; // Very short messages in done state are likely acknowledgments
                     // Check if user wants to start completely fresh
-                    const freshStartKeywords = ["neues auto", "anderes auto", "new car", "different vehicle", "von vorn"];
+                    const freshStartKeywords = ["neues auto", "anderes auto", "anderes fahrzeug",
+                        "new car", "different vehicle", "von vorn", "von vorne", "neu starten",
+                        "yeni araç", "başka araç", "wesayîtek din", "nowy pojazd", "inny samochód"];
                     const wantsFreshStart = freshStartKeywords.some(k => txt.includes(k));
-                    // Check if it's just a thank you / goodbye
-                    const goodbyeKeywords = ["danke", "thanks", "tschüss", "bye", "super", "perfekt", "ok"];
-                    const isGoodbye = goodbyeKeywords.some(k => txt.includes(k));
-                    if (wantsFreshStart) {
-                        // User wants different vehicle
+                    // FIX: Only detect "new part" with EXPLICIT keywords, not "any text > 5 chars"
+                    const newPartKeywords = ["brauche auch", "noch ein teil", "außerdem", "dazu noch", "zusätzlich",
+                        "another part", "also need", "noch brauche", "ein weiteres", "gleich noch",
+                        "başka parça", "perçeyek din", "kolejna część"];
+                    const wantsNewPart = newPartKeywords.some(k => txt.includes(k));
+                    // Status question even in done state
+                    const statusKeywords = ["wo bleibt", "lieferung", "wann kommt", "status",
+                        "delivery", "where is", "tracking", "ne zaman", "kengê", "kiedy"];
+                    const isStatusQuestion = statusKeywords.some(k => txt.includes(k));
+                    if (isGoodbye) {
+                        replyText = (0, botResponses_1.t)('goodbye', language);
+                        return {
+                            reply: replyText,
+                            orderId: order.id,
+                            contentSid: process.env.TWILIO_GOODBYE_CONTENT_SID || 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
+                            contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
+                        };
+                    }
+                    else if (wantsFreshStart) {
                         nextStatus = "collect_vehicle";
                         replyText = (0, botResponses_1.t)('fresh_start', language);
                     }
+                    else if (isStatusQuestion) {
+                        const odata = order.order_data || {};
+                        const delivery = odata.selectedOfferSummary?.deliveryTimeDays ?? "n/a";
+                        replyText = (0, botResponses_1.tWith)('status_header', language, { orderId: order.id, status: order.status }) +
+                            (0, botResponses_1.t)('status_done', language);
+                    }
                     else if (wantsNewPart && order.vehicle_description) {
-                        // User wants another part for same vehicle - create new order with copied vehicle
                         try {
                             const newOrder = await getSupa().findOrCreateOrder(payload.from, null, { forceNew: true });
                             await (0, supabaseService_1.updateOrder)(newOrder.id, {
@@ -1558,22 +1673,9 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
                             nextStatus = "collect_part";
                         }
                     }
-                    else if (isGoodbye) {
-                        // User is saying goodbye
-                        replyText = (0, botResponses_1.t)('goodbye', language);
-                    }
                     else {
-                        // Default: order complete message
-                        replyText = (0, botResponses_1.t)('order_complete', language);
-                    }
-                    // Only use Content API for actual goodbye, not for follow-up parts
-                    if (isGoodbye) {
-                        return {
-                            reply: replyText,
-                            orderId: order.id,
-                            contentSid: process.env.TWILIO_GOODBYE_CONTENT_SID || 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
-                            contentVariables: JSON.stringify({ "1": order.id, "2": "Bestellung abgeschlossen" })
-                        };
+                        // Default: politely remind order is complete and offer options
+                        replyText = (0, botResponses_1.t)('order_complete', language) + "\n\n" + (0, botResponses_1.t)('order_another_part', language);
                     }
                     break;
                 }

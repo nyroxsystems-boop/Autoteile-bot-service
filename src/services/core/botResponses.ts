@@ -99,7 +99,15 @@ type ResponseKey =
     | 'status_multi_ticket'
     | 'global_fallback'
     | 'session_timeout'
-    | 'typing_indicator';
+    | 'typing_indicator'
+    | 'binding_order_confirm'
+    | 'cancel_which_order'
+    | 'back_command'
+    | 'oem_retry_prompt'
+    | 'offers_escalate'
+    | 'address_hint'
+    | 'multi_order_ask'
+    | 'delivery_choose_exact';
 
 const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
 
@@ -816,6 +824,70 @@ const responses: Record<ResponseKey, Record<SupportedLanguage, string>> = {
         tr: 'Lütfen VIN veya HSN/TSN paylaşın veya en azından marka/model/yıl bilgisi verin, aracınızı belirleyebileyim.',
         ku: 'Ji kerema xwe VIN an HSN/TSN parve bikin, an herî kêm marka/model/sal, da ku ez karibim wesayîta we nas bikim.',
         pl: 'Proszę podać VIN lub HSN/TSN, lub przynajmniej markę/model/rok, abym mógł zidentyfikować pojazd.',
+    },
+
+    binding_order_confirm: {
+        de: '⚠️ *VERBINDLICHE BESTELLUNG*\n\nSie bestellen hiermit verbindlich folgendes Teil. Die Bezahlung erfolgt direkt bei Ihrem Händler.\n\nBitte bestätigen Sie mit *"Ja, verbindlich bestellen"* oder brechen Sie mit *"Nein"* ab.',
+        en: '⚠️ *BINDING ORDER*\n\nYou are placing a binding order for this part. Payment will be made directly at your dealer.\n\nPlease confirm with *"Yes, place order"* or cancel with *"No"*.',
+        tr: '⚠️ *BAĞLAYICI SİPARİŞ*\n\nBu parça için bağlayıcı bir sipariş veriyorsunuz. Ödeme doğrudan bayinizde yapılacaktır.\n\nLütfen *"Evet, sipariş ver"* ile onaylayın veya *"Hayır"* ile iptal edin.',
+        ku: '⚠️ *FERMANA GIRÊDAYÎ*\n\nHûn ji bo vê perçeyê fermanek girêdayî didin. Dravdayîn dê rasterast li firoşkarê we were kirin.\n\nJi kerema xwe bi *"Erê, ferman bide"* piştrast bikin an bi *"Na"* betal bikin.',
+        pl: '⚠️ *ZAMÓWIENIE WIĄŻĄCE*\n\nSkładasz wiążące zamówienie na tę część. Płatność nastąpi bezpośrednio u dealera.\n\nPotwierdź *"Tak, zamawiam"* lub anuluj *"Nie"*.',
+    },
+
+    cancel_which_order: {
+        de: 'Sie haben mehrere offene Anfragen. Welche möchten Sie stornieren?\n\n{options}\n\nBitte antworten Sie mit der Nummer.',
+        en: 'You have multiple open requests. Which one would you like to cancel?\n\n{options}\n\nPlease reply with the number.',
+        tr: 'Birden fazla açık talebiniz var. Hangisini iptal etmek istiyorsunuz?\n\n{options}\n\nLütfen numara ile yanıtlayın.',
+        ku: 'Gelek daxwaziyên we yên vekirî hene. Kîjanê hûn dixwazin betal bikin?\n\n{options}\n\nJi kerema xwe bi jimarê bersiv bidin.',
+        pl: 'Masz kilka otwartych zapytań. Które chcesz anulować?\n\n{options}\n\nOdpowiedz numerem.',
+    },
+
+    back_command: {
+        de: '↩️ Kein Problem! Ich gehe einen Schritt zurück. Was möchten Sie ändern?',
+        en: '↩️ No problem! Going back one step. What would you like to change?',
+        tr: '↩️ Sorun değil! Bir adım geriye gidiyorum. Neyi değiştirmek istiyorsunuz?',
+        ku: '↩️ Pirsgirêk tune! Ez gavekê paş de diçim. Hûn dixwazin çi biguhezînin?',
+        pl: '↩️ Nie ma problemu! Cofam się o krok. Co chcesz zmienić?',
+    },
+
+    oem_retry_prompt: {
+        de: '❌ Leider ist bei der Teilesuche ein technischer Fehler aufgetreten.\n\nMöchten Sie es nochmal versuchen? Antworten Sie mit *"Ja"* oder ich leite Ihre Anfrage an einen Experten weiter.',
+        en: '❌ A technical error occurred during the parts search.\n\nWould you like to try again? Reply with *"Yes"* or I\'ll forward your request to an expert.',
+        tr: '❌ Parça aramasında teknik bir hata oluştu.\n\nTekrar denemek ister misiniz? *"Evet"* ile yanıtlayın veya talebinizi bir uzmana yönlendireceğim.',
+        ku: '❌ Di lêgerîna perçeyan de çewtiya teknîkî çêbû.\n\nMa hûn dixwazin dîsa biceribînin? Bi *"Erê"* bersiv bidin an ez ê daxwaziya we ji pispor re bişînim.',
+        pl: '❌ Wystąpił błąd techniczny podczas wyszukiwania części.\n\nCzy chcesz spróbować ponownie? Odpowiedz *"Tak"* lub przekażę zapytanie do eksperta.',
+    },
+
+    offers_escalate: {
+        de: '😕 Leider konnte ich bisher keine passenden Angebote finden. Ich leite Ihre Anfrage an einen Experten weiter, der sich persönlich darum kümmert.',
+        en: '😕 I haven\'t been able to find matching offers yet. I\'m forwarding your request to an expert who will handle it personally.',
+        tr: '😕 Henüz uygun teklif bulamadım. Talebinizi kişisel olarak ilgilenecek bir uzmana yönlendiriyorum.',
+        ku: '😕 Hê nekarîm pêşniyarên guncav bibînim. Ez daxwaziya we ji pisporekî re dişînim ku ew ê bi xwe bi wê re mijûl bibe.',
+        pl: '😕 Nie udało mi się jeszcze znaleźć pasujących ofert. Przekazuję zapytanie do eksperta, który zajmie się nim osobiście.',
+    },
+
+    address_hint: {
+        de: 'Bitte geben Sie Ihre vollständige Lieferadresse an: Straße + Nr., PLZ, Stadt.\n\nBeispiel: Musterstr. 12, 12345 Berlin',
+        en: 'Please provide your full delivery address: Street + No., Zip, City.\n\nExample: 123 Main St, 10001 New York',
+        tr: 'Lütfen tam teslimat adresinizi girin: Sokak + No., Posta Kodu, Şehir.\n\nÖrnek: Atatürk Cad. 12, 34000 İstanbul',
+        ku: 'Ji kerema xwe navnîşana gihandina xwe ya tevahî binivîsin: Kolan + Jimar, Koda Postayê, Bajar.',
+        pl: 'Proszę podać pełny adres dostawy: Ulica + Nr, Kod pocztowy, Miasto.\n\nPrzykład: ul. Przykładowa 12, 00-001 Warszawa',
+    },
+
+    multi_order_ask: {
+        de: 'Sie haben {count} offene Anfragen. Zu welcher möchten Sie etwas sagen?\n\n{options}\n\nAntworten Sie mit der Nummer oder starten Sie mit *"Neue Bestellung"* eine neue Anfrage.',
+        en: 'You have {count} open requests. Which one is this about?\n\n{options}\n\nReply with the number or start a new request with *"New order"*.',
+        tr: '{count} açık talebiniz var. Hangisi hakkında?\n\n{options}\n\nNumara ile yanıtlayın veya *"Yeni sipariş"* ile yeni talep başlatın.',
+        ku: '{count} daxwaziyên we yên vekirî hene. Li ser kîjanê ye?\n\n{options}\n\nBi jimarê bersiv bidin an bi *"Fermana nû"* daxwaziya nû dest pê bikin.',
+        pl: 'Masz {count} otwartych zapytań. Którego dotyczy ta wiadomość?\n\n{options}\n\nOdpowiedz numerem lub zacznij nowe zapytanie wpisując *"Nowe zamówienie"*.',
+    },
+
+    delivery_choose_exact: {
+        de: 'Möchten Sie das Teil geliefert bekommen oder abholen?\n\n*1.* 🚚 Lieferung\n*2.* 🏪 Abholung beim Händler\n\nAntworten Sie mit *1* oder *2*.',
+        en: 'Would you like delivery or pickup?\n\n*1.* 🚚 Delivery\n*2.* 🏪 Pickup at dealer\n\nReply with *1* or *2*.',
+        tr: 'Teslimat mı yoksa teslim alma mı tercih edersiniz?\n\n*1.* 🚚 Teslimat\n*2.* 🏪 Bayiden teslim alma\n\n*1* veya *2* ile yanıtlayın.',
+        ku: 'Ma hûn gihandin an wergirtin dixwazin?\n\n*1.* 🚚 Gihandin\n*2.* 🏪 Wergirtin li firoşkar\n\nBi *1* an *2* bersiv bidin.',
+        pl: 'Chcesz dostawę czy odbiór?\n\n*1.* 🚚 Dostawa\n*2.* 🏪 Odbiór u dealera\n\nOdpowiedz *1* lub *2*.',
     },
 };
 
