@@ -1830,7 +1830,13 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
           nextStatus = "choose_language";
           language = null;
           replyText =
-            "Es ist ein interner Fehler im Status aufgetreten. Bitte beginnen wir neu: Wählen Sie Ihre Sprache (1-5).\nThere was an internal state error. Let’s restart: please choose your language (1-5).";
+            "Bitte wähle deine Sprache:\n" +
+            "1. Deutsch 🇩🇪\n" +
+            "2. English 🇬🇧\n" +
+            "3. Türkçe 🇹🇷\n" +
+            "4. Kurdî ☀️\n" +
+            "5. Polski 🇵🇱\n\n" +
+            "Please choose your language (1-5).";
         }
       } // END switch
     } // END if (!replyText) - state machine fallback wrapper
