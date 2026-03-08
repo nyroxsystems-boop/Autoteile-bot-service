@@ -8,7 +8,7 @@ import { generateChatCompletion } from "../geminiService";
  * 2. Search for that Aftermarket Number to finding the linked OEM.
  * 3. Return the linked OEM as a high-confidence candidate.
  * 
- * MIGRATED: OpenAI → Gemini (Feb 2026)
+ * Uses Gemini AI for part matching (Feb 2026)
  */
 export async function resolveAftermarketToOEM(req: OEMResolverRequest): Promise<OEMCandidate[]> {
   const prompt = `

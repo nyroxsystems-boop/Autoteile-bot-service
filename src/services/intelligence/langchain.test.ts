@@ -10,19 +10,18 @@
 
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 
-// Mock OpenAI before imports
-jest.mock("@langchain/openai", () => ({
-    ChatOpenAI: jest.fn().mockImplementation(() => ({
-        invoke: jest.fn().mockResolvedValue({
-            content: JSON.stringify({
-                action: "ask_slot",
-                reply: "Welche Automarke ist es?",
-                slots: {},
-                required_slots: ["make"],
-                confidence: 0.95,
-            }),
-        }),
-    })),
+// Mock Gemini service used by the agent
+jest.mock("./geminiService", () => ({
+    generateChatCompletion: jest.fn().mockResolvedValue(
+        JSON.stringify({
+            action: "ask_slot",
+            reply: "Welche Automarke ist es?",
+            slots: {},
+            required_slots: ["make"],
+            confidence: 0.95,
+        })
+    ),
+    generateVisionCompletion: jest.fn(),
 }));
 
 // Mock the tools
@@ -38,7 +37,7 @@ describe("LangChain Agent", () => {
     beforeEach(() => {
         jest.clearAllMocks();
         // Set test environment
-        process.env.OPENAI_API_KEY = "test-key";
+        process.env.GEMINI_API_KEY = "test-key";
         process.env.USE_LANGCHAIN_AGENT = "true";
     });
 
@@ -62,13 +61,13 @@ describe("LangChain Agent", () => {
 
     describe("getAgentStats", () => {
         it("returns correct agent configuration", async () => {
-            const { getAgentStats } = await import("../langchainAgent");
+            const { getAgentStats } = await import("./langchainAgent");
             const stats = getAgentStats();
 
             expect(stats).toHaveProperty("enabled");
             expect(stats).toHaveProperty("modelName");
             expect(stats).toHaveProperty("toolCount");
-            expect(stats.modelName).toBe("gpt-4o-mini");
+            expect(stats.modelName).toBe("gemini-2.0-flash");
         });
     });
 });

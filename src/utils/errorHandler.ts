@@ -11,7 +11,7 @@ import { logger } from "@utils/logger";
 export enum ErrorCategory {
     NETWORK = "NETWORK",           // Fetch/HTTP errors
     SCRAPING = "SCRAPING",         // Web scraping failures
-    AI_SERVICE = "AI_SERVICE",     // OpenAI/LLM errors
+    AI_SERVICE = "AI_SERVICE",     // LLM/AI service errors
     DATABASE = "DATABASE",         // DB connection/query errors
     VALIDATION = "VALIDATION",     // Input validation errors
     EXTERNAL_API = "EXTERNAL_API", // Third-party API errors

@@ -16,8 +16,8 @@ import { autodocWebSource } from "./sources/autodocWebSource";
 import { kfzteile24Source } from "./sources/kfzteile24Source";
 import { oscaroSource } from "./sources/oscaroSource";
 import { pkwteileSource } from "./sources/pkwteileSource";
-// RE-ENABLED: openaiVisionSource - now OCR pipeline (only runs with image data)
-import { openaiVisionSource } from "./sources/openaiVisionSource";
+// Document OCR pipeline (Fahrzeugschein + Part Labels via Gemini Vision)
+import { documentOcrSource } from "./sources/documentOcrSource";
 import { calculateConsensus, applyBrandPatternBoost } from "./consensusEngine";
 import { performEnhancedValidation } from "./enhancedValidation";
 // 10/10 Deep OEM Resolution
@@ -75,7 +75,7 @@ const SOURCES = [
   // 🆓 FREE FALLBACK (no ScraperAPI needed)
   directFetchSource,      // Direct fetch: daparto, autoteile-markt, teilehaber (0 credits)
   // 🔬 DOCUMENT OCR (only activates when image data present)
-  openaiVisionSource,     // Fahrzeugschein + Part Label OCR via Gemini Vision
+  documentOcrSource,     // Fahrzeugschein + Part Label OCR via Gemini Vision
 ];
 
 const CONFIDENCE_THRESHOLD_VETTED = 0.90;
@@ -373,8 +373,8 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
             req.partQuery.rawText,
             backsearchResult,
             {
-              enableAIVerification: !!process.env.OPENAI_API_KEY,
-              openaiApiKey: process.env.OPENAI_API_KEY,
+              enableAIVerification: !!process.env.GEMINI_API_KEY,
+              geminiApiKey: process.env.GEMINI_API_KEY,
               minConfidence: 0.97
             }
           );

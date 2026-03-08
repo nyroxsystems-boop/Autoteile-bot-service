@@ -210,7 +210,7 @@ export async function extractPartLabel(imageBase64: string, mimeType = 'image/jp
 // OEM Source Interface
 // ============================================================================
 
-export const openaiVisionSource: OEMSource = {
+export const documentOcrSource: OEMSource = {
     name: "Document-OCR",
 
     async resolveCandidates(req: any): Promise<OEMCandidate[]> {

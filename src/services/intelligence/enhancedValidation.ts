@@ -7,7 +7,7 @@
  * Layer 2: Brand Pattern Validation (Schema-Check)
  * Layer 3: Enhanced Backsearch (Multi-Platform)
  * Layer 4: Cross-Reference Validation (OEM ↔ Part Match)
- * Layer 5: AI-Powered Final Verification (GPT-4 Double-Check)
+ * Layer 5: AI-Powered Final Verification (Gemini Double-Check)
  * 
  * Jede Layer erhöht die Confidence schrittweise bis 95%+
  */
@@ -347,7 +347,7 @@ export async function performEnhancedValidation(
     backsearchResult: any,
     options: {
         enableAIVerification?: boolean;
-        openaiApiKey?: string;
+        geminiApiKey?: string;
         minConfidence?: number;
     } = {}
 ): Promise<EnhancedValidationResult> {
@@ -373,8 +373,8 @@ export async function performEnhancedValidation(
     // The AI has no access to OEM databases and introduces ~3s latency + -0.60 penalty risk.
     // Enable via env: FF_AI_TRIPLE_LOCK=true
     const aiTripleLockEnabled = process.env.FF_AI_TRIPLE_LOCK === 'true' || process.env.FF_AI_TRIPLE_LOCK === '1';
-    if (options.openaiApiKey && aiTripleLockEnabled) {
-        const l4 = await validateLayer5_AIVerification(primaryOEM, brand, model, partDescription, options.openaiApiKey);
+    if (options.geminiApiKey && aiTripleLockEnabled) {
+        const l4 = await validateLayer5_AIVerification(primaryOEM, brand, model, partDescription, options.geminiApiKey);
         layers.push(l4);
         totalConfidence += l4.confidence;
     }

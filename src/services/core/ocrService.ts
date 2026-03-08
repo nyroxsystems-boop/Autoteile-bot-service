@@ -1,10 +1,10 @@
 /**
  * 📷 OCR Service
  * 
- * Handles vehicle document OCR extraction using OpenAI Vision.
+ * Handles vehicle document OCR extraction using Gemini Vision.
  * Extracted from botLogicService.ts for modularity.
  */
-import OpenAI from "openai";
+import { generateVisionCompletion } from "../intelligence/geminiService";
 import { logger } from "@utils/logger";
 
 // ============================================================================
@@ -25,82 +25,61 @@ export interface VehicleOcrResult {
 }
 
 // ============================================================================
-// OCR CLIENT
-// ============================================================================
-
-const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || ""
-});
-
-// ============================================================================
 // OCR PROMPTS
 // ============================================================================
 
-const OCR_SYSTEM_PROMPT =
-    "You are an expert OCR and data extractor for German vehicle registration documents " +
-    "(Zulassungsbescheinigung Teil I, old Fahrzeugschein). " +
-    "Be robust to rotated, blurred, dark, skewed, partially occluded images. " +
-    "Always return strict JSON for the requested fields.";
-
-const OCR_USER_PROMPT = `
-Lies dieses Bild (deutscher Fahrzeugschein, Zulassungsbescheinigung Teil I oder altes Fahrzeugschein-Formular).
-Berücksichtige:
-- Bild kann gedreht (90/180°), perspektivisch verzerrt, unscharf, dunkel oder teilweise verdeckt sein.
-- Erkenne Ausrichtung selbst, lies so viel Text wie möglich.
-Felder, die du extrahieren sollst (wenn unsicher → null):
-- make (Hersteller, Feld D.1 oder Klartext, z.B. "BMW" / "BAYER. MOT. WERKE")
-- model (Typ/Handelsbezeichnung, Feld D.2/D.3, z.B. "316ti")
-- vin (Fahrgestellnummer, Feld E)
-- hsn (Herstellerschlüsselnummer, Feld "zu 2.1")
-- tsn (Typschlüsselnummer, Feld "zu 2.2")
-- year (Erstzulassung/Herstellungsjahr, Feld B, als Zahl, z.B. 2002)
-- engineKw (Leistung in kW, Feld P.2)
-- fuelType (Kraftstoff, Feld P.3, z.B. "Benzin", "Diesel")
-- emissionClass (z.B. "EURO 4")
-Gib als Ergebnis NUR folgendes JSON (ohne zusätzlichen Text) zurück:
-{
-  "make": "...",
-  "model": "...",
-  "vin": "...",
-  "hsn": "...",
-  "tsn": "...",
-  "year": 2002,
-  "engineKw": 85,
-  "fuelType": "...",
-  "emissionClass": "...",
-  "rawText": "Vollständiger erkannter Text"
-}
-Fülle unbekannte Felder mit null. rawText soll den gesamten erkannten Text enthalten (oder "" falls nichts erkannt).
-`;
+const OCR_SYSTEM_AND_USER_PROMPT =
+    "Du bist ein Experte für OCR und Datenextraktion aus deutschen Fahrzeugdokumenten " +
+    "(Zulassungsbescheinigung Teil I, alter Fahrzeugschein). " +
+    "Sei robust gegenüber gedrehten, unscharfen, dunklen, verzerrten oder teilweise verdeckten Bildern. " +
+    "Gib immer striktes JSON für die angeforderten Felder zurück.\n\n" +
+    "Lies dieses Bild (deutscher Fahrzeugschein, Zulassungsbescheinigung Teil I oder altes Fahrzeugschein-Formular).\n" +
+    "Berücksichtige:\n" +
+    "- Bild kann gedreht (90/180°), perspektivisch verzerrt, unscharf, dunkel oder teilweise verdeckt sein.\n" +
+    "- Erkenne Ausrichtung selbst, lies so viel Text wie möglich.\n" +
+    "Felder, die du extrahieren sollst (wenn unsicher → null):\n" +
+    "- make (Hersteller, Feld D.1 oder Klartext, z.B. \"BMW\" / \"BAYER. MOT. WERKE\")\n" +
+    "- model (Typ/Handelsbezeichnung, Feld D.2/D.3, z.B. \"316ti\")\n" +
+    "- vin (Fahrgestellnummer, Feld E)\n" +
+    "- hsn (Herstellerschlüsselnummer, Feld \"zu 2.1\")\n" +
+    "- tsn (Typschlüsselnummer, Feld \"zu 2.2\")\n" +
+    "- year (Erstzulassung/Herstellungsjahr, Feld B, als Zahl, z.B. 2002)\n" +
+    "- engineKw (Leistung in kW, Feld P.2)\n" +
+    "- fuelType (Kraftstoff, Feld P.3, z.B. \"Benzin\", \"Diesel\")\n" +
+    "- emissionClass (z.B. \"EURO 4\")\n" +
+    "Gib als Ergebnis NUR folgendes JSON (ohne zusätzlichen Text) zurück:\n" +
+    "{\n" +
+    '  "make": "...",\n' +
+    '  "model": "...",\n' +
+    '  "vin": "...",\n' +
+    '  "hsn": "...",\n' +
+    '  "tsn": "...",\n' +
+    '  "year": 2002,\n' +
+    '  "engineKw": 85,\n' +
+    '  "fuelType": "...",\n' +
+    '  "emissionClass": "...",\n' +
+    '  "rawText": "Vollständiger erkannter Text"\n' +
+    "}\n" +
+    "Fülle unbekannte Felder mit null. rawText soll den gesamten erkannten Text enthalten (oder \"\" falls nichts erkannt).";
 
 // ============================================================================
 // OCR EXTRACTION
 // ============================================================================
 
 /**
- * Extract vehicle data from a document image using OpenAI Vision
+ * Extract vehicle data from a document image using Gemini Vision
  */
 export async function extractVehicleDataFromImage(imageBuffer: Buffer): Promise<VehicleOcrResult> {
     const base64 = imageBuffer.toString("base64");
-    const imageUrl = `data:image/jpeg;base64,${base64}`;
 
     try {
-        const resp = await client.chat.completions.create({
-            model: "gpt-4.1",
-            messages: [
-                { role: "system", content: OCR_SYSTEM_PROMPT },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: OCR_USER_PROMPT },
-                        { type: "image_url", image_url: { url: imageUrl } }
-                    ]
-                }
-            ],
-            temperature: 0
+        const content = await generateVisionCompletion({
+            prompt: OCR_SYSTEM_AND_USER_PROMPT,
+            imageBase64: base64,
+            mimeType: "image/jpeg",
+            temperature: 0,
         });
 
-        const content = resp.choices[0]?.message?.content ?? "";
         return safeParseVehicleJson(content);
     } catch (err: any) {
         logger.error("[OCR] Vision extraction failed", { error: err?.message });
@@ -172,7 +151,6 @@ function createEmptyResult(): VehicleOcrResult {
 // ============================================================================
 
 const REQUIRED_FIELDS = ["make", "model"];
-const OPTIONAL_BUT_USEFUL = ["year", "vin", "hsn", "tsn"];
 
 /**
  * Determine which vehicle fields are missing

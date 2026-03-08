@@ -4,30 +4,7 @@ process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
 process.env.TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || 'AC_TEST';
 process.env.TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || 'AUTH_TEST';
 
-// Mock the OpenAI SDK used inside botLogicService so OCR function returns predictable JSON
-jest.mock('openai', () => {
-  return function MockOpenAI(this: any, opts: any) {
-    this.chat = {
-      completions: {
-        create: async (params: any) => {
-          const content = JSON.stringify({
-            make: 'VW',
-            model: 'Golf',
-            vin: 'WVWZZZ1JZXW000001',
-            hsn: null,
-            tsn: null,
-            year: 2015,
-            engineKw: 85,
-            fuelType: 'Diesel',
-            emissionClass: null,
-            rawText: 'mocked OCR text'
-          });
-          return { choices: [{ message: { content } }] };
-        }
-      }
-    };
-  };
-});
+// Mock Gemini service for OCR (ocrService now uses generateVisionCompletion from geminiService)
 
 // Mock fetch helper to simulate Twilio media download
 jest.mock('../utils/httpClient', () => ({

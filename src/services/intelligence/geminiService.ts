@@ -1,6 +1,6 @@
 /**
  * 🤖 GEMINI AI SERVICE
- * Drop-in replacement for OpenAI with higher rate limits
+ * Primary AI provider for all chat completions, vision, and grounded search
  * 
  * Features:
  * - Chat completions (text)
@@ -18,7 +18,6 @@ import { acquireBudgetToken, getRemainingBudget } from './geminiBudget';
 // ============================================================================
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const REQUEST_TIMEOUT_MS = 10000; // 10 second timeout for all Gemini calls
 
@@ -64,7 +63,7 @@ async function waitForRateToken(): Promise<void> {
 }
 
 // ============================================================================
-// Types (OpenAI-compatible)
+// Types
 // ============================================================================
 
 export type ChatMessage = {
@@ -95,7 +94,7 @@ function truncateContent(content: string, maxLen = 8000): string {
 }
 
 /**
- * Convert OpenAI-style messages to Gemini format
+ * Convert chat messages to Gemini format
  */
 function convertMessages(messages: ChatMessage[]): { systemInstruction?: string; contents: Content[] } {
     let systemInstruction: string | undefined;
@@ -117,7 +116,7 @@ function convertMessages(messages: ChatMessage[]): { systemInstruction?: string;
 }
 
 // ============================================================================
-// Main Chat Completion (OpenAI-compatible signature)
+// Main Chat Completion
 // ============================================================================
 
 export async function generateChatCompletion(params: {
@@ -219,65 +218,11 @@ export async function generateChatCompletion(params: {
         }
     }
 
-    // S1 FIX: OpenAI fallback when Gemini exhausts retries
-    if (OPENAI_API_KEY) {
-        try {
-            logger.warn('[GeminiFallback] Gemini failed, attempting OpenAI fallback', {
-                geminiError: lastErr?.message
-            });
-            const openAiResponse = await openAiFallback(messages, responseFormat, temperature);
-            return openAiResponse;
-        } catch (fallbackErr: any) {
-            logger.error('[GeminiFallback] OpenAI fallback also failed', {
-                error: fallbackErr?.message
-            });
-        }
-    }
-
-    logger.error("Gemini FAILED after all attempts (no fallback available)", {
+    logger.error("Gemini FAILED after all attempts", {
         finalError: lastErr?.message,
     });
 
     throw new Error(`Gemini request failed: ${lastErr?.message || 'Unknown error'}`);
-}
-
-/**
- * S1: OpenAI fallback for critical AI calls when Gemini is down
- */
-async function openAiFallback(
-    messages: ChatMessage[],
-    responseFormat?: "json_object" | "text",
-    temperature = 0.7
-): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-            model: 'gpt-4.1-mini',
-            messages: messages.map(m => ({ role: m.role, content: m.content })),
-            temperature,
-            max_tokens: 4096,
-            ...(responseFormat === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
-        }),
-        signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-        throw new Error(`OpenAI HTTP ${response.status}: ${await response.text()}`);
-    }
-
-    const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content || '';
-
-    logger.info('[GeminiFallback] OpenAI fallback succeeded', {
-        responseLength: content.length,
-        model: 'gpt-4.1-mini',
-    });
-
-    return content;
 }
 
 // ============================================================================

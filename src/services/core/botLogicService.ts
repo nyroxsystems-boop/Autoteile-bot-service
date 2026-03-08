@@ -1,4 +1,4 @@
-// Gemini AI Service (replaces OpenAI)
+// Gemini AI Service
 import fetch from "node-fetch";
 import {
   insertMessage,
@@ -351,7 +351,7 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
       messagePreview: payload.latestMessage?.substring(0, 100)
     });
 
-    // #5 FIX: Use Gemini instead of OpenAI for orchestrator (single provider, lower cost)
+    // #5 FIX: Use Gemini for orchestrator (single provider, lower cost)
     const raw = await generateChatCompletion({
       messages: [
         { role: "system", content: ORCHESTRATOR_PROMPT },
@@ -363,7 +363,7 @@ async function callOrchestrator(payload: any): Promise<OrchestratorResult | null
 
     const elapsed = Date.now() - startTime;
 
-    // LOG: Raw OpenAI response
+    // LOG: Raw AI response
     logger.info("✅ Orchestrator raw response received", {
       elapsed,
       responseLength: raw?.length || 0,
@@ -1123,7 +1123,7 @@ function isVehicleSufficientForOem(vehicle: any): boolean {
 }
 
 // ------------------------------
-// Schritt 1: Nutzertext analysieren (NLU via OpenAI)
+// Schritt 1: Nutzertext analysieren (NLU via Gemini)
 // ------------------------------
 export async function parseUserMessage(text: string): Promise<ParsedUserMessage> {
   try {

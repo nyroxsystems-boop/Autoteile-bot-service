@@ -14,18 +14,6 @@ import whatsappWebhookRouter from "./routes/whatsappWebhook";
 import { registerDashboardRoutes } from "./routes/dashboardRoutes";
 import { createInternalRouter } from "./routes/internalRoutes";
 import { initDb } from "./services/core/database";
-
-// Queue Worker - nur starten wenn Redis verfügbar
-if (process.env.REDIS_URL) {
-  import("./queue/botWorker").then(() => {
-    console.log("Queue worker started");
-  }).catch(err => {
-    console.error("Failed to start queue worker:", err);
-  });
-} else {
-  console.log("Skipping queue worker - REDIS_URL not set");
-}
-
 import { createBotHealthRouter } from "./routes/botHealth";
 import { createSuppliersRouter } from "./routes/suppliers";
 import stockMovementsRouter from "./routes/stockMovements";
@@ -40,7 +28,27 @@ import b2bRouter from "./routes/b2bRoutes";
 import healthRouter from "./routes/healthRoutes";
 import settingsRouter from "./routes/settingsRoutes";
 import { authMiddleware } from "./middleware/authMiddleware";
+import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
+import { createAdminRouter } from "./routes/adminRoutes";
+import { createBillingRouter } from "./routes/billingRoutes";
+import { createCrmRouter } from "./routes/crmRoutes";
+import adminAuthRouter from "./routes/adminAuthRoutes";
+import emailTemplatesRouter from "./routes/emailTemplatesRoutes";
+import botTestingRouter from "./routes/botTestingRoutes";
+import inboxRouter from "./routes/inboxRoutes";
+import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
+import productsRouter from "./routes/productRoutes";
 
+// Queue Worker - nur starten wenn Redis verfügbar
+if (process.env.REDIS_URL) {
+  import("./queue/botWorker").then(() => {
+    console.log("Queue worker started");
+  }).catch(err => {
+    console.error("Failed to start queue worker:", err);
+  });
+} else {
+  console.log("Skipping queue worker - REDIS_URL not set");
+}
 
 const app = express();
 
@@ -84,7 +92,6 @@ app.options('*', cors(corsOptions)); // Use same options for preflight
 app.use(express.json());
 
 // Rate Limiting - Apply globally to all API routes
-import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
 app.use("/api/", apiLimiter);        // Standard API limit: 60 req/min
 app.use("/api/auth", authLimiter);   // Strict auth limit: 5 req/15min
 
@@ -93,111 +100,102 @@ app.get("/", (_req, res) => {
   res.send("🚀 AutoTeile Bot Service is running!");
 });
 
-// Orders-API für das spätere Dashboard
-app.use("/api/orders", ordersRouter);
+// ──────────────────────────────────────────────────
+// PUBLIC ROUTES (no auth required)
+// ──────────────────────────────────────────────────
 
-// Scraping-API: Angebote für eine Order & OEM aus Shops holen
-app.use("/api/orders", orderScrapingRouter);
-
-// Auto-Select & Auto-Order Workflows
-app.use("/api/orders", orderAutoSelectRouter);
-app.use("/api/orders", orderAutoOrderRouter);
-
-// OEM-Ermittlung (Mock)
-app.use("/api/oem", oemRouter);
-
-// Bot-Pipeline für eingehende Nachrichten
-app.use("/bot/message", botMessageRouter);
-
-// Twilio WhatsApp Webhook (receives form-encoded payloads)
-app.use("/webhook/whatsapp", whatsappWebhookRouter);
-
-// Auth API (no auth middleware - handles login)
+// Auth API (handles login — must be public)
 app.use("/api/auth", authRouter);
 
-// User Management API (requires auth)
-app.use("/api/users", userRouter);
+// Admin Auth API (separate admin login — must be public)
+app.use("/api/admin-auth", adminAuthRouter);
+
+// Twilio WhatsApp Webhook (receives form-encoded payloads from Twilio)
+app.use("/webhook/whatsapp", whatsappWebhookRouter);
 
 // Health Check API (extended diagnostics)
 app.use("/health", healthRouter);
 
+// CRM Leads API (receives leads from landing page — must be public)
+app.use("/api/crm", createCrmRouter());
+
+// ──────────────────────────────────────────────────
+// PROTECTED ROUTES (all require authMiddleware)
+// ──────────────────────────────────────────────────
+
+// Orders API
+app.use("/api/orders", authMiddleware, ordersRouter);
+app.use("/api/orders", authMiddleware, orderScrapingRouter);
+app.use("/api/orders", authMiddleware, orderAutoSelectRouter);
+app.use("/api/orders", authMiddleware, orderAutoOrderRouter);
+
+// OEM Resolution API
+app.use("/api/oem", authMiddleware, oemRouter);
+
+// Bot Pipeline (incoming messages)
+app.use("/bot/message", authMiddleware, botMessageRouter);
+
 // Dashboard API
 registerDashboardRoutes(app);
 
+// User Management API
+app.use("/api/users", authMiddleware, userRouter);
+
 // Bot Health API
-app.use("/api/bot", createBotHealthRouter());
+app.use("/api/bot", authMiddleware, createBotHealthRouter());
 
 // Suppliers API
-app.use("/api/suppliers", createSuppliersRouter());
+app.use("/api/suppliers", authMiddleware, createSuppliersRouter());
 
 // Stock Movements API (WAWI)
-app.use("/api/stock", stockMovementsRouter);
+app.use("/api/stock", authMiddleware, stockMovementsRouter);
 
 // Purchase Orders API (WAWI)
-app.use("/api/purchase-orders", purchaseOrdersRouter);
+app.use("/api/purchase-orders", authMiddleware, purchaseOrdersRouter);
 
-// Offers API  
-app.use("/api/offers", createOffersRouter());
+// Offers API
+app.use("/api/offers", authMiddleware, createOffersRouter());
 
 // WWS Connections API
-app.use("/api/wws-connections", createWwsConnectionsRouter());
+app.use("/api/wws-connections", authMiddleware, createWwsConnectionsRouter());
 
-// Tax Module API (requires auth)
+// Tax Module API
 app.use("/api/tax", authMiddleware, taxRouter);
 
-// Invoice API (requires auth)
+// Invoice API
 app.use("/api/invoices", authMiddleware, invoiceRouter);
 
-// Settings API (requires auth)
+// Settings API
 app.use("/api/settings", authMiddleware, settingsRouter);
 
-// B2B Supplier API (requires auth)
-app.use("/api/b2b", b2bRouter);
+// B2B Supplier API
+app.use("/api/b2b", authMiddleware, b2bRouter);
 
 // Internal API
-app.use("/internal", createInternalRouter());
+app.use("/internal", authMiddleware, createInternalRouter());
 
 // Admin / Sales API
-import { createAdminRouter } from "./routes/adminRoutes";
-app.use("/api/admin", createAdminRouter());
+app.use("/api/admin", authMiddleware, createAdminRouter());
 
 // Billing API
-import { createBillingRouter } from "./routes/billingRoutes";
-app.use("/api/billing", createBillingRouter());
+app.use("/api/billing", authMiddleware, createBillingRouter());
 
-
-// CRM Integration API (Leads -> InvenTree)
-import { createCrmRouter } from "./routes/crmRoutes";
-app.use("/api/crm", createCrmRouter());
-
-// Admin Authentication API (separate from merchant auth)
-import adminAuthRouter from "./routes/adminAuthRoutes";
-app.use("/api/admin-auth", adminAuthRouter);
-
-// Email Templates API (for admin marketing)
-import emailTemplatesRouter from "./routes/emailTemplatesRoutes";
-app.use("/api/admin/emails", emailTemplatesRouter);
+// Email Templates API (admin marketing)
+app.use("/api/admin/emails", authMiddleware, emailTemplatesRouter);
 
 // Bot Testing API (Admin Dashboard OEM Simulator)
-import botTestingRouter from "./routes/botTestingRoutes";
-app.use("/api/bot-testing", botTestingRouter);
+app.use("/api/bot-testing", authMiddleware, botTestingRouter);
 
 // Inbox API (Admin Email Management)
-import inboxRouter from "./routes/inboxRoutes";
-app.use("/api/inbox", inboxRouter);
+app.use("/api/inbox", authMiddleware, inboxRouter);
 
-// External Shop Integration (Phase 10)
-import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
-app.use("/api/integrations", shopIntegrationRouter);
+// External Shop Integration
+app.use("/api/integrations", authMiddleware, shopIntegrationRouter);
 
-// Simulations-Endpoint für eingehende WhatsApp-Nachrichten
-// Dient nur für lokale Entwicklung und Tests – hier wird noch keine echte
-// WhatsApp-API angesprochen.
-// Product Management API (Secure Tenant Isolation)
-import productsRouter from "./routes/productRoutes";
-app.use("/api/products", productsRouter);
+// Product Management API
+app.use("/api/products", authMiddleware, productsRouter);
 
-// Simulations-Endpoint für eingehende WhatsApp-Nachrichten
+// Simulations-Endpoint (local dev/testing only)
 app.use("/simulate/whatsapp", simulateWhatsappRouter);
 
 // Serverstart
