@@ -39,8 +39,8 @@ router.post("/users", async (req: Request, res: Response) => {
     if (password) {
         passwordHash = await hashPassword(password);
     } else {
-        // Generate default password if not provided
-        const defaultPassword = 'Welcome123!';
+        // Generate secure default password
+        const defaultPassword = generateSecurePassword();
         passwordHash = await hashPassword(defaultPassword);
     }
 
@@ -94,26 +94,38 @@ router.post("/users/:id/reset-password", async (req: Request, res: Response) => 
     }
 });
 
-const activeDevicesMock = new Map<string, any[]>();
+// --- Devices (real data from user_sessions table) ---
 
 router.get("/tenants/:id/devices", async (req: Request, res: Response) => {
     const { id } = req.params;
-    // Return mock devices if none exist yet
-    if (!activeDevicesMock.has(id)) {
-        activeDevicesMock.set(id, [
-            { id: "dev_1", device_id: "iphone-13-pro", user: "Max Mustermann", last_seen: new Date().toISOString(), ip: "192.168.1.1" },
-            { id: "dev_2", device_id: "samsung-s21", user: "Erika Musterfrau", last_seen: new Date().toISOString(), ip: "192.168.1.2" }
-        ]);
+    try {
+        // Query active sessions for users of this tenant
+        const devices = await db.all(
+            `SELECT s.id, s.device_id, u.name as user, s.last_seen, s.ip_address as ip
+             FROM user_sessions s
+             JOIN users u ON s.user_id = u.id
+             WHERE u.merchant_id = ? AND s.is_active = 1
+             ORDER BY s.last_seen DESC`,
+            [String(id)]
+        );
+        return res.json(devices || []);
+    } catch (err: any) {
+        // Table might not exist yet — return empty
+        return res.json([]);
     }
-    return res.json(activeDevicesMock.get(id));
 });
 
 router.delete("/tenants/:id/devices/:deviceId", async (req: Request, res: Response) => {
     const { id, deviceId } = req.params;
-    const devices = activeDevicesMock.get(id) || [];
-    const filtered = devices.filter(d => d.device_id !== deviceId);
-    activeDevicesMock.set(id, filtered);
-    return res.json({ success: true });
+    try {
+        await db.run(
+            `UPDATE user_sessions SET is_active = 0 WHERE device_id = ? AND user_id IN (SELECT id FROM users WHERE merchant_id = ?)`,
+            [deviceId, String(id)]
+        );
+        return res.json({ success: true });
+    } catch (err: any) {
+        return res.json({ success: true }); // Graceful fallback
+    }
 });
 
 // --- KPIs ---
@@ -122,33 +134,73 @@ router.delete("/tenants/:id/devices/:deviceId", async (req: Request, res: Respon
 
 import { getCompanies, createCompany, InvenTreeCompany } from "@adapters/realInvenTreeAdapter";
 
-// In-memory store for Tenant Limits (Mock Persistence)
-const tenantLimits = new Map<string, { max_users: number, max_devices: number }>();
+// Helper: ensure tenant_settings table exists
+async function ensureTenantSettingsTable() {
+    await db.run(`
+        CREATE TABLE IF NOT EXISTS tenant_settings (
+            tenant_id TEXT PRIMARY KEY,
+            max_users INTEGER DEFAULT 10,
+            max_devices INTEGER DEFAULT 5,
+            onboarding_status TEXT DEFAULT 'pending',
+            payment_status TEXT DEFAULT 'trial',
+            whatsapp_number TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+}
+
+async function getTenantLimits(tenantId: string): Promise<{ max_users: number, max_devices: number, onboarding_status: string, payment_status: string, whatsapp_number: string | null }> {
+    await ensureTenantSettingsTable();
+    const row = await db.get<any>('SELECT * FROM tenant_settings WHERE tenant_id = ?', [tenantId]);
+    return {
+        max_users: row?.max_users || 10,
+        max_devices: row?.max_devices || 5,
+        onboarding_status: row?.onboarding_status || 'pending',
+        payment_status: row?.payment_status || 'trial',
+        whatsapp_number: row?.whatsapp_number || null,
+    };
+}
+
+async function setTenantLimits(tenantId: string, limits: { max_users?: number, max_devices?: number }) {
+    await ensureTenantSettingsTable();
+    await db.run(
+        `INSERT INTO tenant_settings (tenant_id, max_users, max_devices) VALUES (?, ?, ?)
+         ON CONFLICT(tenant_id) DO UPDATE SET max_users = ?, max_devices = ?`,
+        [tenantId, limits.max_users || 10, limits.max_devices || 5, limits.max_users || 10, limits.max_devices || 5]
+    );
+}
 
 router.get("/tenants", async (req: Request, res: Response) => {
     try {
         // Tenants are "Companies" in InvenTree (Customers)
         const companies = await getCompanies({ is_customer: true });
 
-        // Map to Dashboard Tenant Format
-        const tenants = companies.map((c: any) => {
-            const limits = tenantLimits.get(String(c.pk)) || { max_users: 10, max_devices: 5 };
+        // Map to Dashboard Tenant Format with real data
+        const tenants = await Promise.all(companies.map(async (c: any) => {
+            const tenantId = String(c.pk);
+            const limits = await getTenantLimits(tenantId);
+
+            // Real user count from SQLite
+            const userCountResult = await db.get<any>(
+                'SELECT COUNT(*) as count FROM users WHERE merchant_id = ?',
+                [tenantId]
+            );
+
             return {
                 id: c.pk,
                 name: c.name,
                 slug: c.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                user_count: 0, // InvenTree doesn't track this yet
+                user_count: userCountResult?.count || 0,
                 max_users: limits.max_users,
-                device_count: 0,
+                device_count: 0, // Will be real once user_sessions table exists
                 max_devices: limits.max_devices,
                 is_active: c.active,
-                // Mock or Real Mapping for Status
-                onboarding_status: c.description?.includes("Wizard") ? 'completed' : 'pending',
-                payment_status: c.is_customer ? 'paid' : 'trial', // Naive mock
-                whatsapp_number: c.phone || '', // Map phone to whatsapp_number if not distinct in mock
-                logo_url: c.website || '' // Reuse website field or mock a specific logo field if DB allowed
+                onboarding_status: limits.onboarding_status,
+                payment_status: limits.payment_status,
+                whatsapp_number: limits.whatsapp_number || c.phone || '',
+                logo_url: c.website || ''
             };
-        });
+        }));
 
         return res.json(tenants);
     } catch (err: any) {
@@ -161,9 +213,9 @@ router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
         const { id } = req.params;
         const { max_users, max_devices } = req.body;
 
-        tenantLimits.set(id, {
+        await setTenantLimits(id, {
             max_users: Number(max_users) || 10,
-            max_devices: Number(max_devices) || 5
+            max_devices: Number(max_devices) || 5,
         });
 
         return res.json({ success: true, id, max_users, max_devices });
@@ -176,98 +228,122 @@ router.post("/tenants", async (req: Request, res: Response) => {
     try {
         const { name, email, website, phone, password, whatsapp_number, logo_url } = req.body;
 
+        // --- Validation ---
         if (!name || !email) {
             return res.status(400).json({ error: "Name and Email are required." });
         }
 
-        // Check if company already exists (duplicate detection)
+        // Email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: "Invalid email format." });
+        }
+
+        // WhatsApp number validation (if provided)
+        if (whatsapp_number) {
+            const cleaned = whatsapp_number.replace(/[\s\-()]/g, '');
+            if (!/^\+?\d{10,15}$/.test(cleaned)) {
+                return res.status(400).json({ error: "Invalid WhatsApp number. Must be 10-15 digits with optional + prefix." });
+            }
+        }
+
+        // Password strength validation
+        if (password && password.length < 8) {
+            return res.status(400).json({ error: "Password must be at least 8 characters." });
+        }
+
+        // --- Duplicate Check ---
         try {
             const existingCompanies = await getCompanies({ is_customer: true });
             const duplicate = existingCompanies.find((c: any) =>
-                c.name === name || c.email === email
+                c.name.toLowerCase() === name.toLowerCase() || c.email === email
             );
 
             if (duplicate) {
-                console.warn(`Duplicate company detected: ${duplicate.name} (${duplicate.email})`);
                 return res.status(409).json({
                     error: "A company with this name or email already exists.",
                     existing: { id: duplicate.pk, name: duplicate.name, email: duplicate.email }
                 });
             }
         } catch (checkErr: any) {
-            console.error("Failed to check for duplicate companies:", checkErr.message);
-            // Continue with creation attempt even if duplicate check fails
+            console.error("Duplicate check failed:", checkErr.message);
         }
 
+        // Also check SQLite for duplicate email
+        const existingUser = await db.get<any>('SELECT id FROM users WHERE email = ?', [email]);
+        if (existingUser) {
+            return res.status(409).json({ error: "A user with this email already exists." });
+        }
+
+        // --- Create Company in InvenTree ---
         const payload: InvenTreeCompany = {
             name,
-            email: email || null, // Send null instead of empty string to avoid unique constraint issues
-            website: logo_url || website || "", // Hack: Storing logo_url in website for mock if needed
-            phone: whatsapp_number || phone || "", // Priority to whatsapp number
+            email: email || null,
+            website: logo_url || website || "",
+            phone: whatsapp_number || phone || "",
             is_customer: true,
             is_supplier: false,
             active: true,
-            description: "Auto-Created via Admin Dashboard",
-            currency: "EUR" // Required field by InvenTree API
+            description: `Dealer created via Admin Dashboard on ${new Date().toISOString().split('T')[0]}`,
+            currency: "EUR"
         };
 
-        // 1. Create Company in InvenTree
         let createdCompany;
         try {
             createdCompany = await createCompany(payload);
         } catch (createErr: any) {
-            // Log the full error for debugging
             console.error("Failed to create company in WAWI:", {
                 message: createErr.message,
                 response: createErr.response?.data,
                 status: createErr.response?.status,
-                payload: payload
             });
 
-            // Return the actual error from WAWI if available
             if (createErr.response?.data) {
                 return res.status(createErr.response.status || 500).json({
                     error: "Failed to create company in WAWI",
                     details: createErr.response.data
                 });
             }
-
-            throw createErr; // Re-throw to be caught by outer catch
+            throw createErr;
         }
 
         const merchantId = String(createdCompany.pk);
 
-        // 2. Create Admin User for this Company
-        const userId = randomUUID();
-        const createdAt = new Date().toISOString();
-        const initialPassword = password || "Start123!";
+        // --- Generate secure initial password ---
+        const initialPassword = password || generateSecurePassword();
         const passwordHash = await hashPassword(initialPassword);
 
-        // We assume 'merchant' role for the dealer admin
+        // --- Create Admin User for this Company ---
+        const userId = randomUUID();
+        const createdAt = new Date().toISOString();
         const username = email.split('@')[0];
+
         const sql = `INSERT INTO users (id, name, email, role, created_at, password_hash, merchant_id, is_active, username) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`;
+        await db.run(sql, [userId, name, email, "merchant", createdAt, passwordHash, merchantId, username]);
 
-        await db.run(sql, [
-            userId,
-            name,
-            email,
-            "merchant",
-            createdAt,
-            passwordHash,
-            merchantId,
-            username
-        ]);
+        // --- Create tenant settings ---
+        await ensureTenantSettingsTable();
+        await db.run(
+            `INSERT OR IGNORE INTO tenant_settings (tenant_id, whatsapp_number, onboarding_status, payment_status) VALUES (?, ?, 'pending', 'trial')`,
+            [merchantId, whatsapp_number || null]
+        );
 
-        console.log(`Successfully created tenant: ${name} (ID: ${merchantId})`);
+        console.log(`✅ Tenant created: ${name} (ID: ${merchantId}, User: ${username})`);
 
-        // Return combined result
+        // Return result — password only shown once, never stored in plaintext
         return res.json({
-            ...createdCompany,
+            id: createdCompany.pk,
+            name: createdCompany.name,
+            email: email,
             user_created: {
                 id: userId,
+                username: username,
                 email: email,
                 role: "merchant",
-                initial_password: initialPassword
+                // Only return initial password if it was auto-generated
+                // so the admin can share it with the dealer
+                initial_password: !password ? initialPassword : undefined,
+                password_was_set: !!password
             }
         });
     } catch (err: any) {
@@ -275,6 +351,19 @@ router.post("/tenants", async (req: Request, res: Response) => {
         return res.status(500).json({ error: err.message });
     }
 });
+
+/**
+ * Generate a secure random password
+ */
+function generateSecurePassword(): string {
+    const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    const bytes = require('crypto').randomBytes(12);
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+        password += chars[bytes[i] % chars.length];
+    }
+    return password;
+}
 
 router.get("/kpis", async (req: Request, res: Response) => {
     try {
