@@ -386,15 +386,59 @@ async function runPipelinePhases(req: OEMResolverRequest, pipelineStart: number)
         allCandidates = p2.candidates;
 
         if (!p2.topCandidate || p2.candidates.length === 0) {
-            // Gemini found nothing
-            phaseResult = {
-                phase: 2,
-                phaseName: "gemini_no_result",
-                confidence: 0,
-                source: "gemini_grounded",
-                latencyMs: Date.now() - pipelineStart,
-            };
-            return buildResult(undefined, 0, allCandidates, phaseResult, req);
+            // ================================================================
+            // PHASE 2c: Direct Gemini Fallback (no grounding)
+            // When grounding is unavailable, use Gemini's training data directly
+            // ================================================================
+            try {
+                const { generateChatCompletion } = await import("../intelligence/geminiService");
+                const directPrompt = [
+                    { role: "system" as const, content: `Du bist ein Experte für KFZ-Ersatzteile und OEM-Nummern. Finde die korrekte Original-Teilenummer (OEM) für das angefragte Teil. Antworte NUR im JSON-Format: {"oem": "NUMMER", "confidence": 0.0-1.0, "description": "Beschreibung"}. Wenn du dir nicht sicher bist, setze confidence auf 0.5 oder niedriger. ERFINDE NIEMALS eine Nummer.` },
+                    { role: "user" as const, content: `Fahrzeug: ${req.vehicle.make || ''} ${req.vehicle.model || ''} ${req.vehicle.year || ''} ${req.vehicle.engine || ''}\nTeil: ${req.partQuery.rawText}\n\nWelche OEM-Nummer hat dieses Teil?` }
+                ];
+
+                const directResult = await generateChatCompletion({
+                    messages: directPrompt,
+                    responseFormat: "json_object",
+                    temperature: 0.2,
+                });
+
+                if (directResult) {
+                    const parsed = JSON.parse(directResult);
+                    if (parsed.oem && typeof parsed.oem === 'string' && parsed.oem.length >= 5) {
+                        const directCandidate: OEMCandidate = {
+                            oem: parsed.oem.replace(/\s+/g, ' ').trim(),
+                            confidence: Math.min(parsed.confidence || 0.65, 0.75), // Cap at 0.75 — not grounded
+                            source: "gemini_direct_fallback",
+                            description: parsed.description || req.partQuery.rawText,
+                        };
+
+                        logger.info("[APEX P2c] Direct Gemini fallback found OEM", {
+                            oem: directCandidate.oem,
+                            confidence: directCandidate.confidence,
+                        });
+
+                        allCandidates = [directCandidate, ...allCandidates];
+                        // Continue to Phase 3 with this candidate
+                        p2.topCandidate = directCandidate;
+                        p2.candidates = [directCandidate];
+                    }
+                }
+            } catch (err: any) {
+                logger.warn("[APEX P2c] Direct Gemini fallback failed", { error: err?.message });
+            }
+
+            // If still nothing after fallback, give up
+            if (!p2.topCandidate || p2.candidates.length === 0) {
+                phaseResult = {
+                    phase: 2,
+                    phaseName: "gemini_no_result",
+                    confidence: 0,
+                    source: "gemini_grounded",
+                    latencyMs: Date.now() - pipelineStart,
+                };
+                return buildResult(undefined, 0, allCandidates, phaseResult, req);
+            }
         }
 
         // ================================================================

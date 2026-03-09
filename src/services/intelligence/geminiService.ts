@@ -431,7 +431,12 @@ export async function generateGroundedCompletion(params: {
 
         return { text, groundingChunks, searchQueries, isGrounded };
     } catch (err: any) {
-        logger.warn('[GeminiGrounded] Failed', { error: err?.message });
+        logger.warn('[GeminiGrounded] Failed', {
+            error: err?.message || String(err),
+            errorType: err?.constructor?.name,
+            statusCode: err?.status || err?.code,
+            details: err?.errorDetails?.[0]?.reason || err?.response?.data?.error?.message,
+        });
         return { text: '', groundingChunks: [], searchQueries: [], isGrounded: false };
     }
 }
