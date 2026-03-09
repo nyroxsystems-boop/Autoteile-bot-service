@@ -19,7 +19,7 @@ import { logger } from "@utils/logger";
 // ============================================================================
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-3-5-haiku-20241022";
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-3-5-haiku-latest";
 const CLAUDE_TIMEOUT_MS = 12000;
 
 let client: Anthropic | null = null;
@@ -140,7 +140,7 @@ Antworte NUR als JSON:
             verdict: "SUSPICIOUS",
             reason: `Claude validation unavailable: ${err?.message}`,
             alternativeOem: null,
-            confidenceInOriginal: 0.70,
+            confidenceInOriginal: 0.85,
         };
     }
 }

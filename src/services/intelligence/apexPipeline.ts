@@ -270,7 +270,7 @@ async function phase3ClaudeAdversary(
         // Fallback: accept Gemini result with slight penalty
         return {
             finalOem: topCandidate.confidence >= PIPELINE_ACCEPT_THRESHOLD ? topCandidate.oem : undefined,
-            finalConfidence: clampConfidence(topCandidate.confidence * 0.90),
+            finalConfidence: clampConfidence(topCandidate.confidence * 0.95),
             claudeVerdict: "ERROR",
             debateUsed: false,
         };
