@@ -120,10 +120,35 @@ router.post("/chat", async (req: Request, res: Response) => {
         let orderDetails = null;
         if (result.orderId) {
             try {
-                orderDetails = await db.get<any>(
+                const raw = await db.get<any>(
                     `SELECT * FROM orders WHERE id = ?`,
                     [result.orderId]
                 );
+                if (raw) {
+                    // Parse order_data JSON to extract OEM and part info
+                    let orderData: any = {};
+                    try {
+                        orderData = typeof raw.order_data === 'string' ? JSON.parse(raw.order_data) : (raw.order_data || {});
+                    } catch (_) { }
+
+                    let vehicleData: any = {};
+                    try {
+                        vehicleData = typeof raw.vehicle_data === 'string' ? JSON.parse(raw.vehicle_data) : (raw.vehicle_data || {});
+                    } catch (_) { }
+
+                    orderDetails = {
+                        ...raw,
+                        // Ensure oem_number is populated from column OR order_data
+                        oem_number: raw.oem_number || orderData.oemNumber || orderData.oem_number || null,
+                        // Extract part name from order_data
+                        requested_part_name: orderData.requestedPart || orderData.partText || raw.requested_part_name || null,
+                        // Extract vehicle info
+                        brand: vehicleData.make || vehicleData.brand || orderData.vehicleBrand || null,
+                        model: vehicleData.model || orderData.vehicleModel || null,
+                        year: vehicleData.year || orderData.vehicleYear || null,
+                        vin: vehicleData.vin || null,
+                    };
+                }
             } catch (e: any) {
                 logger.warn("[BotTesting] Failed to fetch order details", { error: e?.message });
             }
