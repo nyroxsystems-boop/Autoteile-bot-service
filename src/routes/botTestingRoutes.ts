@@ -227,6 +227,45 @@ router.post("/reset", async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/bot-testing/oem-reverse-lookup
+ * AI-powered reverse lookup: given an OEM number, identify what part it is
+ */
+router.post("/oem-reverse-lookup", async (req: Request, res: Response) => {
+    const { oem } = req.body ?? {};
+
+    if (!oem || typeof oem !== 'string' || oem.length < 4) {
+        return res.status(400).json({ error: "oem is required (min 4 chars)" });
+    }
+
+    try {
+        const { generateChatCompletion } = await import("../services/intelligence/geminiService");
+
+        const result = await generateChatCompletion({
+            messages: [
+                {
+                    role: "system",
+                    content: `Du bist ein Experte für KFZ-Ersatzteile und OEM-Nummern. Der Nutzer gibt dir eine OEM-Teilenummer und du identifizierst welches Fahrzeugteil das ist und für welche Fahrzeuge es passt. Antworte NUR als JSON: {"partName": "Name des Teils", "partCategory": "Kategorie", "vehicles": "Kompatible Fahrzeuge", "manufacturer": "OE-Hersteller", "confidence": 0.0-1.0, "notes": "Zusätzliche Info"}. Wenn du die Nummer nicht kennst, setze confidence auf 0 und partName auf "Unbekannt".`
+                },
+                {
+                    role: "user",
+                    content: `OEM-Nummer: ${oem}\n\nWelches Fahrzeugteil ist das?`
+                }
+            ],
+            responseFormat: "json_object",
+            temperature: 0.2,
+        });
+
+        const parsed = JSON.parse(result || "{}");
+        logger.info("[BotTesting] OEM reverse lookup", { oem, partName: parsed.partName, confidence: parsed.confidence });
+
+        return res.json({ success: true, oem, ...parsed });
+    } catch (err: any) {
+        logger.error("[BotTesting] OEM reverse lookup failed", { error: err?.message, oem });
+        return res.status(500).json({ error: "Reverse lookup failed", details: err?.message ?? String(err) });
+    }
+});
+
+/**
  * GET /api/bot-testing/conversations
  * List all test conversations
  */

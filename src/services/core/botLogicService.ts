@@ -1648,17 +1648,40 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
 
         case "await_offer_confirmation": {
           const txt = (userText || "").trim().toLowerCase();
-          // FIX: Stricter matching — require word boundaries to avoid false matches
-          const yesWords = ["ja", "okay", "ok", "passt", "yes", "yep", "okey", "bestellen", "verbindlich"];
-          const noWords = ["nein", "no", "nicht", "anders", "cancel", "abbrechen"];
-          const isYes = yesWords.some((w) => {
-            const re = new RegExp(`(^|\\s)${w}($|\\s|[!.,?])`, 'i');
-            return re.test(txt);
-          });
-          const isNo = noWords.some((w) => {
-            const re = new RegExp(`(^|\\s)${w}($|\\s|[!.,?])`, 'i');
-            return re.test(txt);
-          });
+
+          // AI-based confirmation detection (same pattern as confirm_vehicle)
+          let isYes = false;
+          let isNo = false;
+
+          // Quick regex for obvious cases
+          const quickYes = /^(ja|okay|ok|passt|yes|yep|bestellen|verbindlich|nehme ich|deal|1)$/i.test(txt);
+          const quickNo = /^(nein|no|nicht|anders|cancel|abbrechen|0)$/i.test(txt);
+
+          if (quickYes) {
+            isYes = true;
+          } else if (quickNo) {
+            isNo = true;
+          } else {
+            // AI detection for ambiguous messages
+            try {
+              const confirmResult = await generateChatCompletion({
+                messages: [
+                  { role: "system", content: `You classify user messages as accepting an offer (YES) or rejecting it (NO). The user was shown a product offer with price and asked if they want to order it bindingly. Respond with ONLY "YES" or "NO".` },
+                  { role: "user", content: userText }
+                ],
+                temperature: 0.1,
+              });
+              const aiAnswer = (confirmResult || "").trim().toUpperCase();
+              isYes = aiAnswer.startsWith("YES") || aiAnswer.startsWith("JA");
+              isNo = aiAnswer.startsWith("NO") || aiAnswer.startsWith("NEIN");
+              logger.info("[await_offer_confirmation] AI detection", { userText: userText.substring(0, 50), aiAnswer, isYes, isNo });
+            } catch (err: any) {
+              logger.warn("[await_offer_confirmation] AI detection failed", { error: err?.message });
+              // Heuristic fallback
+              isNo = /nein|no|falsch|wrong|nicht|stop|abbrech/i.test(userText);
+              isYes = !isNo;
+            }
+          }
           const candidateId = orderData?.selectedOfferCandidateId as string | undefined;
           logger.info("User offer confirmation", {
             orderId: order.id,
