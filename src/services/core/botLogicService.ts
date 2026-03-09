@@ -1212,8 +1212,42 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
         }
 
         case "confirm_vehicle": {
-          const isYes = userText.toLowerCase().match(/^(ja|yes|jo|jup|jupp|correct|korrekt|stimmt|richtig|genau|jawohl|passt|ok|okay|jap|jaa|y|si|evet|erê|tak)$/);
-          if (isYes) {
+          // AI-based confirmation detection — understands any language/phrasing
+          let isConfirmed = false;
+
+          // Quick regex check first (saves an API call for obvious cases)
+          const quickYes = /^(ja|yes|jo|jup|jupp|correct|korrekt|stimmt|richtig|genau|jawohl|passt|ok|okay|jap|jaa|y|si|evet|erê|tak|1)$/i.test(userText.trim());
+          const quickNo = /^(nein|no|falsch|wrong|hayır|na|nie|nee|0)$/i.test(userText.trim());
+
+          if (quickYes) {
+            isConfirmed = true;
+          } else if (quickNo) {
+            isConfirmed = false;
+          } else {
+            // Use AI to detect confirmation intent for ambiguous messages
+            try {
+              const confirmResult = await generateChatCompletion({
+                messages: [
+                  { role: "system", content: `You classify user messages as confirmation (YES) or rejection (NO). The user was asked: "Is your vehicle correct?" Respond with ONLY "YES" or "NO". If the message is unclear or unrelated, respond "YES" if it seems positive, "NO" if negative.` },
+                  { role: "user", content: userText }
+                ],
+                temperature: 0.1,
+              });
+              const aiAnswer = (confirmResult || "").trim().toUpperCase();
+              isConfirmed = aiAnswer.startsWith("YES") || aiAnswer.startsWith("JA");
+              logger.info("[confirm_vehicle] AI confirmation detection", {
+                userText: userText.substring(0, 50),
+                aiAnswer,
+                isConfirmed
+              });
+            } catch (err: any) {
+              // AI failed — fall back to treating as confirmation if it seems positive
+              logger.warn("[confirm_vehicle] AI detection failed, using heuristic", { error: err?.message });
+              isConfirmed = !/nein|no|falsch|wrong|nicht|stop/i.test(userText);
+            }
+          }
+
+          if (isConfirmed) {
             try {
               await updateOrderData(order.id, { vehicleConfirmed: true });
               orderData = { ...orderData, vehicleConfirmed: true };
@@ -1242,7 +1276,6 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
             // User says no or provided different info
             replyText = t('vehicle_correction', language);
             nextStatus = "collect_vehicle";
-            // Option: Clear vehicle data? User might just want to correct it.
           }
           break;
         }
