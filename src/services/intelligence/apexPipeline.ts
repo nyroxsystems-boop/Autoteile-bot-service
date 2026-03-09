@@ -394,7 +394,7 @@ async function runPipelinePhases(req: OEMResolverRequest, pipelineStart: number)
                 const { generateChatCompletion } = await import("../intelligence/geminiService");
                 const directPrompt = [
                     { role: "system" as const, content: `Du bist ein Experte für KFZ-Ersatzteile und OEM-Nummern. Finde die korrekte Original-Teilenummer (OEM) für das angefragte Teil. Antworte NUR im JSON-Format: {"oem": "NUMMER", "confidence": 0.0-1.0, "description": "Beschreibung"}. Wenn du dir nicht sicher bist, setze confidence auf 0.5 oder niedriger. ERFINDE NIEMALS eine Nummer.` },
-                    { role: "user" as const, content: `Fahrzeug: ${req.vehicle.make || ''} ${req.vehicle.model || ''} ${req.vehicle.year || ''} ${req.vehicle.engine || ''}\nTeil: ${req.partQuery.rawText}\n\nWelche OEM-Nummer hat dieses Teil?` }
+                    { role: "user" as const, content: `Fahrzeug: ${req.vehicle.make || ''} ${req.vehicle.model || ''} ${req.vehicle.year || ''} ${req.vehicle.motorcode || ''}\nTeil: ${req.partQuery.rawText}\n\nWelche OEM-Nummer hat dieses Teil?` }
                 ];
 
                 const directResult = await generateChatCompletion({
@@ -410,7 +410,7 @@ async function runPipelinePhases(req: OEMResolverRequest, pipelineStart: number)
                             oem: parsed.oem.replace(/\s+/g, ' ').trim(),
                             confidence: Math.min(parsed.confidence || 0.65, 0.75), // Cap at 0.75 — not grounded
                             source: "gemini_direct_fallback",
-                            description: parsed.description || req.partQuery.rawText,
+                            meta: { description: parsed.description || req.partQuery.rawText },
                         };
 
                         logger.info("[APEX P2c] Direct Gemini fallback found OEM", {
