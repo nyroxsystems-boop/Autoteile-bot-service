@@ -309,11 +309,13 @@ router.get("/me/tenants", async (req: Request, res: Response) => {
         }
 
         // Return tenant memberships
-        // For now, return single tenant based on user's merchant_id
+        // Use user's company name (name field) as tenant name
+        let tenantName = user.name || user.full_name || 'Dashboard';
+
         const tenants = [{
             id: 1,
             tenant: user.merchant_id || 1,
-            tenant_name: 'AutoTeile Müller GmbH',
+            tenant_name: tenantName,
             tenant_slug: user.merchant_id || 'dealer-demo-001',
             role: user.role,
             is_active: true
