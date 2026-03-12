@@ -16,7 +16,7 @@ router.get("/users", async (req: Request, res: Response) => {
         const users = await db.all("SELECT * FROM users ORDER BY created_at DESC");
         return res.json(users);
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -80,7 +80,7 @@ router.post("/users", async (req: Request, res: Response) => {
 
         return res.json({ id, name: userName, email, role: role || "sales_rep", created_at: createdAt, username });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -117,7 +117,7 @@ router.post("/users/:id/reset-password", async (req: Request, res: Response) => 
         });
     } catch (err: any) {
         console.error("Password reset error:", err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -231,7 +231,7 @@ router.get("/tenants", async (req: Request, res: Response) => {
 
         return res.json(tenants);
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -247,7 +247,7 @@ router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
 
         return res.json({ success: true, id, max_users, max_devices });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -274,9 +274,14 @@ router.post("/tenants", async (req: Request, res: Response) => {
             }
         }
 
-        // Password strength validation
-        if (password && password.length < 8) {
-            return res.status(400).json({ error: "Password must be at least 8 characters." });
+        // Password strength validation (S11: enforce complexity)
+        if (password) {
+            if (password.length < 10) {
+                return res.status(400).json({ error: "Password must be at least 10 characters." });
+            }
+            if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[!@#$%^&*()_+\-=]/.test(password)) {
+                return res.status(400).json({ error: "Password must contain uppercase, lowercase, number, and special character." });
+            }
         }
 
         // --- Duplicate Check ---
@@ -375,7 +380,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
         });
     } catch (err: any) {
         console.error("Tenant creation failed:", err.message);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -455,7 +460,7 @@ router.get("/kpis", async (req: Request, res: Response) => {
             history
         });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -470,7 +475,7 @@ router.post("/onboarding/initialize", async (req: Request, res: Response) => {
         const result = await onboarding.initializeOnboarding(name, email);
         return res.json(result);
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -545,7 +550,7 @@ router.get("/oem-database/stats", async (_req: Request, res: Response) => {
             categories
         });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -607,7 +612,7 @@ router.post("/oem-database/seed", async (req: Request, res: Response) => {
             pid: child.pid
         });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -671,7 +676,7 @@ router.post("/oem-database/quick-seed", async (req: Request, res: Response) => {
             totalRecords: total.count
         });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -755,7 +760,7 @@ router.get("/oem-records", async (req: Request, res: Response) => {
             }
         });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -775,7 +780,7 @@ router.get("/oem-records/:id", async (req: Request, res: Response) => {
 
         return res.json(record);
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -809,7 +814,7 @@ router.put("/oem-records/:id", async (req: Request, res: Response) => {
 
         return res.json({ success: true, updated: result.changes });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -836,7 +841,7 @@ router.post("/oem-records", async (req: Request, res: Response) => {
 
         return res.json({ success: true, id: result.lastInsertRowid });
     } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 

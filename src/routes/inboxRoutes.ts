@@ -14,6 +14,7 @@ import {
 } from '../services/core/imapEmailService';
 import { sendEmailViaResend, isResendConfigured } from '../services/core/resendEmailService';
 import { generateEmailReply } from '../services/intelligence/geminiEmailReply';
+import { encrypt, decrypt, isEncrypted } from '../utils/encryption';
 
 const router = Router();
 
@@ -22,7 +23,8 @@ console.log(`[Inbox] SHARED_MAILBOX: ${SHARED_MAILBOX}`);
 
 // STRATO password for IMAP and SMTP
 const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || process.env.SHARED_MAILBOX_PASSWORD || '';
-console.log(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET (' + SHARED_MAILBOX_PASSWORD.length + ' chars)' : 'NOT SET'}`);
+console.log(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET' : 'NOT SET'}`);
+// Previous log leaked password length — removed for security
 
 /**
  * Middleware: Get current admin from token
@@ -83,8 +85,10 @@ router.get('/emails', async (req: Request, res: Response) => {
                     needsSetup: true
                 });
             }
-            // Decrypt password (simple base64 for now, should use proper encryption)
-            password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
+            // Decrypt password (AES-256-GCM, with base64 fallback for legacy)
+            password = isEncrypted(admin.imap_password_encrypted)
+                ? decrypt(admin.imap_password_encrypted)
+                : Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
         }
 
         if (!password) {
@@ -161,7 +165,9 @@ router.get('/email/:uid', async (req: Request, res: Response) => {
             if (!admin.imap_password_encrypted) {
                 return res.status(400).json({ error: 'IMAP-Passwort nicht konfiguriert' });
             }
-            password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
+            password = isEncrypted(admin.imap_password_encrypted)
+                ? decrypt(admin.imap_password_encrypted)
+                : Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
         }
 
         const emailData = await fetchEmailByUid(email, password, uid, folder);
@@ -341,7 +347,9 @@ router.patch('/email/:uid/read', async (req: Request, res: Response) => {
             if (!admin.imap_password_encrypted) {
                 return res.status(400).json({ error: 'IMAP-Passwort nicht konfiguriert' });
             }
-            password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
+            password = isEncrypted(admin.imap_password_encrypted)
+                ? decrypt(admin.imap_password_encrypted)
+                : Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
         }
 
         await markEmailRead(email, password, uid, read, folder || 'INBOX');
@@ -377,12 +385,12 @@ router.post('/setup', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'IMAP-Verbindung fehlgeschlagen. Passwort prüfen.' });
         }
 
-        // Store encrypted password (simple base64 for now - production should use proper encryption)
-        const encrypted = Buffer.from(imapPassword).toString('base64');
+        // Store encrypted password (AES-256-GCM)
+        const encryptedPassword = encrypt(imapPassword);
 
         await db.run(
             'UPDATE admin_users SET imap_password_encrypted = ? WHERE id = ?',
-            [encrypted, admin.admin_id]
+            [encryptedPassword, admin.admin_id]
         );
 
         return res.json({ success: true, message: 'IMAP-Zugang konfiguriert' });
@@ -417,7 +425,9 @@ router.get('/test', async (req: Request, res: Response) => {
             if (!admin.imap_password_encrypted) {
                 return res.json({ connected: false, reason: 'IMAP-Passwort nicht konfiguriert' });
             }
-            password = Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
+            password = isEncrypted(admin.imap_password_encrypted)
+                ? decrypt(admin.imap_password_encrypted)
+                : Buffer.from(admin.imap_password_encrypted, 'base64').toString('utf8');
         }
 
         const connected = await testConnection(email, password);

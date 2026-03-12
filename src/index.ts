@@ -197,8 +197,10 @@ app.use("/api/integrations", authMiddleware, shopIntegrationRouter);
 // Product Management API
 app.use("/api/products", authMiddleware, productsRouter);
 
-// Simulations-Endpoint (local dev/testing only)
-app.use("/simulate/whatsapp", simulateWhatsappRouter);
+// Simulations-Endpoint (BLOCKED in production, protected in dev)
+if (process.env.NODE_ENV !== 'production') {
+  app.use("/simulate/whatsapp", authMiddleware, simulateWhatsappRouter);
+}
 
 // Serverstart
 initDb().then(async () => {

@@ -4,9 +4,10 @@
  */
 
 import * as db from '../services/core/database';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 
-const INITIAL_PASSWORD = 'Test007!';
+const INITIAL_PASSWORD = process.env.ADMIN_INITIAL_PASSWORD || 'ChangeMe!2026';
 const ADMIN_USERS = [
     { username: 'Fecat', email: 'fecat.blawat@partsunion.de', fullName: 'Fecat Blawat' },
     { username: 'Elias', email: 'elias.zafar@partsunion.de', fullName: 'Elias Zafar' },
@@ -14,8 +15,8 @@ const ADMIN_USERS = [
     { username: 'Aaron', email: 'aaron.vogt@partsunion.de', fullName: 'Aaron Vogt' }
 ];
 
-function hashPassword(password: string): string {
-    return createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 10);
 }
 
 export async function runMigration(): Promise<void> {
@@ -91,7 +92,7 @@ export async function runMigration(): Promise<void> {
     console.log('✅ Created password_reset_tokens table');
 
     // Seed admin users
-    const passwordHash = hashPassword(INITIAL_PASSWORD);
+    const passwordHash = await hashPassword(INITIAL_PASSWORD);
     const now = new Date().toISOString();
 
     for (const admin of ADMIN_USERS) {
@@ -105,7 +106,7 @@ export async function runMigration(): Promise<void> {
             const id = randomUUID();
             await db.run(
                 `INSERT INTO admin_users (id, username, email, full_name, password_hash, must_change_password, is_active, created_at)
-                 VALUES (?, ?, ?, ?, ?, 0, 1, ?)`,
+                 VALUES (?, ?, ?, ?, ?, 1, 1, ?)`,
                 [id, admin.username, admin.email, admin.fullName, passwordHash, now]
             );
             console.log(`✅ Created admin user: ${admin.username}`);
