@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 
 import { env } from "./config/env";
 import { testDbConnection } from "./services/adapters/supabaseService";
@@ -89,6 +90,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Use same options for preflight
+app.use(helmet()); // Security headers (X-Content-Type-Options, HSTS, etc.)
 app.use(express.json());
 
 // Rate Limiting - Apply globally to all API routes
