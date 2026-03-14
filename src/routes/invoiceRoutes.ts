@@ -209,10 +209,22 @@ router.post('/from-order/:orderId', async (req: Request, res: Response) => {
     try {
         const { createInvoiceFromOrder } = await import('../services/invoicing/orderToInvoice');
         const invoice = await createInvoiceFromOrder(req.tenantId!, req.params.orderId);
-        res.json(invoice);
+        res.status(201).json(invoice);
     } catch (error: any) {
-        console.error('Error creating invoice from order:', error);
-        res.status(500).json({ error: 'Failed to create invoice from order', message: error.message });
+        const msg = error.message || '';
+        console.error('Error creating invoice from order:', msg);
+
+        // Return proper HTTP status codes based on error type
+        if (msg.includes('bereits') || msg.includes('already exists')) {
+            return res.status(409).json({ error: 'Invoice already exists', message: msg });
+        }
+        if (msg.includes('nicht gefunden') || msg.includes('not found')) {
+            return res.status(404).json({ error: 'Order not found', message: msg });
+        }
+        if (msg.includes('keine Positionen') || msg.includes('No items')) {
+            return res.status(400).json({ error: 'Order has no items', message: msg });
+        }
+        res.status(500).json({ error: 'Failed to create invoice from order', message: msg });
     }
 });
 

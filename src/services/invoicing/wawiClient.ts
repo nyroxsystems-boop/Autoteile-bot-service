@@ -68,19 +68,17 @@ export async function fetchOrderItemsFromWAWI(orderId: string): Promise<WAWIOrde
         });
 
         if (!response.ok) {
-            throw new Error(`WAWI API error: ${response.status} ${response.statusText}`);
+            console.warn(`[WAWI Client] Failed to fetch items for order ${orderId}: ${response.status}`);
+            return [];
         }
 
-        const items = await response.json();
-
-        if (!items || items.length === 0) {
-            throw new Error(`No items found for order ${orderId}`);
-        }
-
+        const data = await response.json();
+        // Handle both array and paginated responses
+        const items = Array.isArray(data) ? data : (data.results || []);
         return items;
     } catch (error: any) {
         console.error(`[WAWI Client] Failed to fetch items for order ${orderId}:`, error.message);
-        throw error;
+        return [];
     }
 }
 
