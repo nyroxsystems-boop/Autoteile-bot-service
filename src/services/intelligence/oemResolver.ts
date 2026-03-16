@@ -4,15 +4,15 @@ import { filterByPartMatch, resolveAftermarketToOEM } from "./sources/partMatchH
 import { clampConfidence } from "./sources/baseSource";
 import { detectVariants } from './variantDetector';
 // Document OCR pipeline (Fahrzeugschein + Part Labels via Gemini Vision)
-import { documentOcrSource } from "./sources/documentOcrSource";
+import { documentOcrSource } from "./_deprecated/sources/documentOcrSource";
 import { calculateConsensus, applyBrandPatternBoost } from "./consensusEngine";
 import { performEnhancedValidation } from "./enhancedValidation";
 // Deep OEM Resolution
 import { performDeepResolution, applySupersession } from "./deepOemResolver";
 // Premium OEM Catalog Sources
-import { realOemSource } from "./sources/realOemSource";
-import { mercedesEpcSource } from "./sources/mercedesEpcSource";
-import { vagEtkaSource } from "./sources/vagEtkaSource";
+import { realOemSource } from "./_deprecated/sources/realOemSource";
+import { mercedesEpcSource } from "./_deprecated/sources/mercedesEpcSource";
+import { vagEtkaSource } from "./_deprecated/sources/vagEtkaSource";
 // Enterprise Database
 import { databaseSource } from "./sources/databaseSource";
 // Aftermarket filter
@@ -24,7 +24,7 @@ import { learnFromResolution } from "./oemLearner";
 // Accuracy tracking
 import { trackResolution } from "./accuracyTracker";
 // TecDoc (optional)
-import { tecDocSource } from "./sources/tecDocSource";
+import { tecDocSource } from "./_deprecated/sources/tecDocSource";
 // Gemini Grounded Search
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
 
@@ -140,7 +140,7 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     // =========================================================================
     // Standard Scraper Sources (with health monitoring)
     // =========================================================================
-    const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./sourceHealthMonitor');
+    const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./_deprecated/sourceHealthMonitor');
 
     const activeSources = SOURCES;
 

@@ -15,7 +15,7 @@ import { OEMResolverRequest, OEMResolverResult, OEMCandidate } from "./types";
 import { logger } from "@utils/logger";
 import { databaseSource } from "./sources/databaseSource";
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
-import { validateOemWithClaude, runDebateRound, isClaudeAvailable } from "./claudeService";
+import { validateOemWithClaude, runDebateRound, isClaudeAvailable } from "./_deprecated/claudeService";
 import { reverseVerifyOem } from "./reverseOemVerification";
 import { validateOemPattern } from "./brandPatternRegistry";
 import { isAftermarketNumber } from "./aftermarketFilter";

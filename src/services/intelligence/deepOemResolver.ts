@@ -21,7 +21,7 @@ import { resolveByPRCode, detectPartCategory, suggestPRCodes } from "./prCodeRes
 import { resolveByMotorcode, detectEnginePartCategory, findMotorcodesForModel } from "./motorcodeResolver";
 import { detectFacelift, isFaceliftSensitivePart } from "./faceliftDetector";
 import { checkSupersession, resolveToCurrentOEM } from "./supersessionTracker";
-import { lookupBMWOEM, isBMWVehicle } from "./bmwOemDatabase";
+import { lookupBMWOEM, isBMWVehicle } from "./_deprecated/bmwOemDatabase";
 
 // ============================================================================
 // Deep Resolution Result

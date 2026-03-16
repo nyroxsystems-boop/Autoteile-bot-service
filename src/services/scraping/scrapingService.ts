@@ -23,7 +23,7 @@ export interface ShopAdapter {
  * Mock-Adapter für einen Shop (z.B. Autodoc).
  * Später werden hier echte Scraper/API-Calls implementiert.
  */
-import { ScraperAPIScraper } from "./scrapers/scraperApiScraper";
+import { ScraperAPIScraper } from "./_deprecated/scraperApiScraper";
 
 function buildAdapters(): ShopAdapter[] {
   console.log("[SCRAPE] Using ScraperAPI (Safe for Render)");
