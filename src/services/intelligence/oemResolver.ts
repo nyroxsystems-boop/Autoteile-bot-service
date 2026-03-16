@@ -3,16 +3,10 @@ import { logger } from "@utils/logger";
 import { filterByPartMatch, resolveAftermarketToOEM } from "./sources/partMatchHelper";
 import { clampConfidence } from "./sources/baseSource";
 import { detectVariants } from './variantDetector';
-// Document OCR pipeline (Fahrzeugschein + Part Labels via Gemini Vision)
-import { documentOcrSource } from "./_deprecated/sources/documentOcrSource";
 import { calculateConsensus, applyBrandPatternBoost } from "./consensusEngine";
 import { performEnhancedValidation } from "./enhancedValidation";
 // Deep OEM Resolution
 import { performDeepResolution, applySupersession } from "./deepOemResolver";
-// Premium OEM Catalog Sources
-import { realOemSource } from "./_deprecated/sources/realOemSource";
-import { mercedesEpcSource } from "./_deprecated/sources/mercedesEpcSource";
-import { vagEtkaSource } from "./_deprecated/sources/vagEtkaSource";
 // Enterprise Database
 import { databaseSource } from "./sources/databaseSource";
 // Aftermarket filter
@@ -23,24 +17,18 @@ import { trackOemResolutionResult } from "@core/alertService";
 import { learnFromResolution } from "./oemLearner";
 // Accuracy tracking
 import { trackResolution } from "./accuracyTracker";
-// TecDoc (optional)
-import { tecDocSource } from "./_deprecated/sources/tecDocSource";
 // Gemini Grounded Search
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
 
 // ============================================================================
 // LEGACY RESOLVER — Emergency fallback for APEX pipeline failures only.
-// Primary OEM resolution is handled by apexPipeline.ts.
+// Primary OEM resolution is handled by v2/oemEngine.ts.
+// Deprecated external sources (TecDoc, RealOEM, etc.) have been removed.
 // ============================================================================
 
 const SOURCES = [
   databaseSource,            // SQLite database — instant, highest priority
   geminiGroundedOemSource,   // Gemini + Google Search grounding
-  tecDocSource,              // TecDoc API (optional, needs key)
-  realOemSource,             // BMW catalog (realoem.com)
-  mercedesEpcSource,         // Mercedes EPC catalog
-  vagEtkaSource,             // VAG ETKA catalog
-  documentOcrSource,         // Fahrzeugschein + Part Label OCR
 ];
 
 const CONFIDENCE_THRESHOLD_VETTED = 0.90;
@@ -140,7 +128,11 @@ export async function resolveOEM(req: OEMResolverRequest): Promise<OEMResolverRe
     // =========================================================================
     // Standard Scraper Sources (with health monitoring)
     // =========================================================================
-    const { isSourceDisabled, recordSuccess, recordFailure, getConfidenceWeight } = await import('./_deprecated/sourceHealthMonitor');
+    // Source health monitoring removed (was part of deprecated v1 pipeline)
+    const isSourceDisabled = (_: string) => false;
+    const recordSuccess = (_: string) => {};
+    const recordFailure = (_: string, __: string) => {};
+    const getConfidenceWeight = (_: string) => 1.0;
 
     const activeSources = SOURCES;
 

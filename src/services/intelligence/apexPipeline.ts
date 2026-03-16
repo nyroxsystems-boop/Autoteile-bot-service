@@ -15,7 +15,11 @@ import { OEMResolverRequest, OEMResolverResult, OEMCandidate } from "./types";
 import { logger } from "@utils/logger";
 import { databaseSource } from "./sources/databaseSource";
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
-import { validateOemWithClaude, runDebateRound, isClaudeAvailable } from "./_deprecated/claudeService";
+// Claude service deprecated — stubs for pipeline compatibility
+// Phase 3 will fall through to pattern-validation fallback
+const isClaudeAvailable = async () => false;
+const validateOemWithClaude = async (_: any): Promise<{ verdict: string; reason: string; confidenceInOriginal: number; alternativeOem: string | undefined }> => ({ verdict: 'UNAVAILABLE', reason: 'deprecated', confidenceInOriginal: 0.5, alternativeOem: undefined });
+const runDebateRound = async (_: any) => ({ winner: 'gemini', winningOem: '', confidence: 0, reasoning: 'deprecated' });
 import { reverseVerifyOem } from "./reverseOemVerification";
 import { validateOemPattern } from "./brandPatternRegistry";
 import { isAftermarketNumber } from "./aftermarketFilter";

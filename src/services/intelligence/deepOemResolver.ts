@@ -21,7 +21,9 @@ import { resolveByPRCode, detectPartCategory, suggestPRCodes } from "./prCodeRes
 import { resolveByMotorcode, detectEnginePartCategory, findMotorcodesForModel } from "./motorcodeResolver";
 import { detectFacelift, isFaceliftSensitivePart } from "./faceliftDetector";
 import { checkSupersession, resolveToCurrentOEM } from "./supersessionTracker";
-import { lookupBMWOEM, isBMWVehicle } from "./_deprecated/bmwOemDatabase";
+// BMW OEM Database deprecated — v2 engine handles all brands via Gemini AI
+const isBMWVehicle = (make: string) => ['BMW', 'MINI', 'ROLLS-ROYCE'].includes(make.toUpperCase());
+const lookupBMWOEM = (_model: string, _part: string, _year?: number) => ({ found: false, candidates: [] as any[], chassisDetected: null, partTypeDetected: null });
 
 // ============================================================================
 // Deep Resolution Result
