@@ -9,6 +9,9 @@ RUN npm ci --production=false
 # Copy source
 COPY . .
 
+# Ensure oem-data directory exists (may not be in git, created at runtime)
+RUN mkdir -p oem-data
+
 # Build TypeScript
 RUN npm run build
 
@@ -21,6 +24,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --production
 
 COPY --from=base /app/dist ./dist
+# oem-data may be empty — the actual DB is created/mounted at runtime
 COPY --from=base /app/oem-data ./oem-data
 
 # Security: non-root user
