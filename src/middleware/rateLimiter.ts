@@ -93,6 +93,7 @@ class RedisStore implements RateLimitStore {
 
     private async initRedis(redisUrl: string) {
         try {
+            // @ts-ignore — redis is an optional dependency, only loaded when REDIS_URL is set
             const { createClient } = await import('redis');
             this.redis = createClient({ url: redisUrl });
             this.redis.on('error', (err: Error) => {
