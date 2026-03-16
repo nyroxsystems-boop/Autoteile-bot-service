@@ -29,6 +29,7 @@ import b2bRouter from "./routes/b2bRoutes";
 import healthRouter from "./routes/healthRoutes";
 import settingsRouter from "./routes/settingsRoutes";
 import { authMiddleware } from "./middleware/authMiddleware";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
 import { createAdminRouter } from "./routes/adminRoutes";
 import { createBillingRouter } from "./routes/billingRoutes";
@@ -48,7 +49,13 @@ if (process.env.REDIS_URL) {
     console.error("Failed to start queue worker:", err);
   });
 } else {
-  console.log("Skipping queue worker - REDIS_URL not set");
+  console.warn("⚠️  Skipping queue worker — REDIS_URL not set");
+  if (process.env.NODE_ENV === 'production') {
+    console.error("🔴 CRITICAL: REDIS_URL is not set in production!");
+    console.error("   → Rate limiting will NOT work across instances");
+    console.error("   → WhatsApp messages will be processed synchronously (risk of timeouts)");
+    console.error("   → Set REDIS_URL environment variable to fix this");
+  }
 }
 
 const app = express();
@@ -176,20 +183,20 @@ app.use("/api/b2b", authMiddleware, b2bRouter);
 // Internal API
 app.use("/internal", authMiddleware, createInternalRouter());
 
-// Admin / Sales API
-app.use("/api/admin", authMiddleware, createAdminRouter());
+// Admin / Sales API (admin-only)
+app.use("/api/admin", authMiddleware, requireAdmin, createAdminRouter());
 
 // Billing API
 app.use("/api/billing", authMiddleware, createBillingRouter());
 
-// Email Templates API (admin marketing)
-app.use("/api/admin/emails", authMiddleware, emailTemplatesRouter);
+// Email Templates API (admin marketing, admin-only)
+app.use("/api/admin/emails", authMiddleware, requireAdmin, emailTemplatesRouter);
 
-// Bot Testing API (Admin Dashboard OEM Simulator)
-app.use("/api/bot-testing", authMiddleware, botTestingRouter);
+// Bot Testing API (Admin Dashboard OEM Simulator, admin-only)
+app.use("/api/bot-testing", authMiddleware, requireAdmin, botTestingRouter);
 
-// Inbox API (Admin Email Management)
-app.use("/api/inbox", authMiddleware, inboxRouter);
+// Inbox API (Admin Email Management, admin-only)
+app.use("/api/inbox", authMiddleware, requireAdmin, inboxRouter);
 
 // External Shop Integration
 app.use("/api/integrations", authMiddleware, shopIntegrationRouter);

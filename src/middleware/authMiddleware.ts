@@ -4,8 +4,10 @@ import { logger } from "@utils/logger";
 import { get } from "../services/core/database";
 
 // Secure Tokens via Env only - NO DEFAULTS
-const SERVICE_TOKEN = process.env.VITE_WAWI_SERVICE_TOKEN;
-const API_TOKEN = process.env.VITE_WAWI_API_TOKEN;
+// Prefer non-VITE_ names (VITE_ prefix exposes vars to frontend bundles)
+// Falls back to old VITE_ names for backwards-compatibility during migration
+const SERVICE_TOKEN = process.env.WAWI_SERVICE_TOKEN || process.env.VITE_WAWI_SERVICE_TOKEN;
+const API_TOKEN = process.env.WAWI_API_TOKEN || process.env.VITE_WAWI_API_TOKEN;
 
 /**
  * Middleware to protect dashboard and internal routes.

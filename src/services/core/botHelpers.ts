@@ -302,8 +302,14 @@ export function mergePartInfo(existing: any, parsed: ParsedUserMessage) {
 // ============================================================================
 
 export function calculateEndPrice(buyingPrice: number, margin?: number): number {
-    const m = margin ?? 0.25;
-    return Math.ceil(buyingPrice * (1 + m) * 100) / 100;
+    // Priority: explicit margin param > env var > 25% default
+    const m = margin ?? (process.env.DEALER_MARGIN_PERCENT
+      ? parseFloat(process.env.DEALER_MARGIN_PERCENT) / 100
+      : 0.25);
+    const raw = buyingPrice * (1 + m);
+    // Round to .99 pattern for professional pricing (89.99 instead of 90.00)
+    const floor = Math.floor(raw);
+    return raw - floor > 0.5 ? floor + 0.99 : (floor > 0 ? floor - 0.01 : raw);
 }
 
 export function calculateEstimatedDeliveryRange(days: number): string {

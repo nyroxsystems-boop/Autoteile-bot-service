@@ -5,15 +5,35 @@
 
 import { Router, type Request, type Response } from "express";
 import * as db from "../services/core/database";
-import { createHash, randomUUID, randomBytes } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
+import * as bcrypt from 'bcrypt';
 import { sendPasswordResetEmail } from "../services/core/emailService";
 import { logActivity, ACTION_TYPES, ENTITY_TYPES } from "../services/core/activityLogger";
 
 const router = Router();
 
-// Hash password using SHA-256
-function hashPassword(password: string): string {
-    return createHash('sha256').update(password).digest('hex');
+const BCRYPT_ROUNDS = 10;
+
+// Hash password using bcrypt (secure)
+async function hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, BCRYPT_ROUNDS);
+}
+
+// Check if a hash is an old SHA-256 hash (64 hex chars) vs bcrypt ($2b$...)
+function isLegacySha256Hash(hash: string): boolean {
+    return /^[a-f0-9]{64}$/.test(hash);
+}
+
+// Verify password against hash (supports both legacy SHA-256 and bcrypt)
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+    if (isLegacySha256Hash(hash)) {
+        // Legacy SHA-256 check (for migration)
+        const { createHash } = await import('crypto');
+        const sha256Hash = createHash('sha256').update(password).digest('hex');
+        return sha256Hash === hash;
+    }
+    // Modern bcrypt check
+    return bcrypt.compare(password, hash);
 }
 
 // Generate secure token
@@ -43,13 +63,22 @@ router.post("/login", async (req: Request, res: Response) => {
             return res.status(401).json({ error: "Ungültige Anmeldedaten" });
         }
 
-        // Verify password
-        const passwordHash = hashPassword(password);
-        if (admin.password_hash !== passwordHash) {
+        // Verify password (supports both SHA-256 legacy and bcrypt)
+        const passwordValid = await verifyPassword(password, admin.password_hash);
+        if (!passwordValid) {
             return res.status(401).json({ error: "Ungültige Anmeldedaten" });
         }
 
-        // Generate session token
+        // Auto-upgrade: if still using SHA-256, migrate to bcrypt transparently
+        if (isLegacySha256Hash(admin.password_hash)) {
+            const newHash = await hashPassword(password);
+            await db.run(
+                'UPDATE admin_users SET password_hash = ? WHERE id = ?',
+                [newHash, admin.id]
+            );
+            console.log(`🔐 Auto-upgraded password hash to bcrypt for admin: ${admin.username}`);
+        }
+
         const token = generateToken();
         const sessionId = randomUUID();
         const now = new Date();
@@ -303,8 +332,8 @@ router.post("/reset-password", async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Admin nicht gefunden" });
         }
 
-        // Update password
-        const newPasswordHash = hashPassword(newPassword);
+        // Update password with bcrypt
+        const newPasswordHash = await hashPassword(newPassword);
         await db.run(
             'UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
             [newPasswordHash, admin.id]
@@ -459,14 +488,14 @@ router.post("/change-password", async (req: Request, res: Response) => {
             return res.status(401).json({ error: "Session abgelaufen" });
         }
 
-        // Verify current password
-        const currentHash = hashPassword(currentPassword);
-        if (session.password_hash !== currentHash) {
+        // Verify current password (supports both hash formats)
+        const currentValid = await verifyPassword(currentPassword, session.password_hash);
+        if (!currentValid) {
             return res.status(400).json({ error: "Aktuelles Passwort ist falsch" });
         }
 
-        // Update password
-        const newHash = hashPassword(newPassword);
+        // Update password with bcrypt
+        const newHash = await hashPassword(newPassword);
         await db.run(
             'UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
             [newHash, session.admin_id]

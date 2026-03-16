@@ -2,7 +2,7 @@
  * 🛡️ Rate Limiting Middleware
  * 
  * Provides API rate limiting to protect against abuse.
- * Uses sliding window algorithm with Redis-compatible in-memory store.
+ * Uses Redis when REDIS_URL is set (production), falls back to in-memory for dev.
  */
 import { Request, Response, NextFunction } from "express";
 import { logger } from "@utils/logger";
@@ -24,21 +24,173 @@ interface RateLimitConfig {
     message?: string;
 }
 
+interface RateLimitStore {
+    get(key: string): Promise<RateLimitEntry | null>;
+    increment(key: string, windowMs: number): Promise<RateLimitEntry>;
+    reset(key: string): Promise<void>;
+    clear(): Promise<void>;
+}
+
 // ============================================================================
-// IN-MEMORY STORE
+// IN-MEMORY STORE (Development / Fallback)
 // ============================================================================
 
-const store = new Map<string, RateLimitEntry>();
+class InMemoryStore implements RateLimitStore {
+    private store = new Map<string, RateLimitEntry>();
+    private cleanupInterval: ReturnType<typeof setInterval>;
 
-// Cleanup expired entries every minute
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store.entries()) {
-        if (entry.resetAt < now) {
-            store.delete(key);
+    constructor() {
+        // Cleanup expired entries every minute
+        this.cleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [key, entry] of this.store.entries()) {
+                if (entry.resetAt < now) {
+                    this.store.delete(key);
+                }
+            }
+        }, 60000);
+    }
+
+    async get(key: string): Promise<RateLimitEntry | null> {
+        const entry = this.store.get(key);
+        if (!entry || entry.resetAt < Date.now()) return null;
+        return entry;
+    }
+
+    async increment(key: string, windowMs: number): Promise<RateLimitEntry> {
+        const now = Date.now();
+        let entry = this.store.get(key);
+
+        if (!entry || entry.resetAt < now) {
+            entry = { count: 0, resetAt: now + windowMs };
+            this.store.set(key, entry);
+        }
+
+        entry.count++;
+        return entry;
+    }
+
+    async reset(key: string): Promise<void> {
+        this.store.delete(key);
+    }
+
+    async clear(): Promise<void> {
+        this.store.clear();
+    }
+}
+
+// ============================================================================
+// REDIS STORE (Production)
+// ============================================================================
+
+class RedisStore implements RateLimitStore {
+    private redis: any;
+    private connected = false;
+
+    constructor(redisUrl: string) {
+        this.initRedis(redisUrl);
+    }
+
+    private async initRedis(redisUrl: string) {
+        try {
+            const { createClient } = await import('redis');
+            this.redis = createClient({ url: redisUrl });
+            this.redis.on('error', (err: Error) => {
+                logger.error('[RateLimit] Redis error', { error: err.message });
+                this.connected = false;
+            });
+            this.redis.on('connect', () => {
+                logger.info('[RateLimit] Redis connected for rate limiting');
+                this.connected = true;
+            });
+            await this.redis.connect();
+        } catch (err: any) {
+            logger.warn('[RateLimit] Redis unavailable, falling back to in-memory', { error: err?.message });
+            this.connected = false;
         }
     }
-}, 60000);
+
+    async get(key: string): Promise<RateLimitEntry | null> {
+        if (!this.connected || !this.redis) return null;
+        try {
+            const data = await this.redis.get(`rl:${key}`);
+            return data ? JSON.parse(data) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async increment(key: string, windowMs: number): Promise<RateLimitEntry> {
+        if (!this.connected || !this.redis) {
+            // Fallback: allow the request (fail-open)
+            return { count: 1, resetAt: Date.now() + windowMs };
+        }
+
+        try {
+            const redisKey = `rl:${key}`;
+            const now = Date.now();
+            const resetAt = now + windowMs;
+
+            // Use Redis MULTI for atomic increment
+            const current = await this.redis.get(redisKey);
+            let entry: RateLimitEntry;
+
+            if (current) {
+                entry = JSON.parse(current);
+                if (entry.resetAt < now) {
+                    // Window expired, reset
+                    entry = { count: 1, resetAt };
+                } else {
+                    entry.count++;
+                }
+            } else {
+                entry = { count: 1, resetAt };
+            }
+
+            const ttlSeconds = Math.ceil(windowMs / 1000);
+            await this.redis.setEx(redisKey, ttlSeconds, JSON.stringify(entry));
+
+            return entry;
+        } catch (err: any) {
+            logger.error('[RateLimit] Redis increment failed', { error: err?.message });
+            return { count: 1, resetAt: Date.now() + windowMs };
+        }
+    }
+
+    async reset(key: string): Promise<void> {
+        if (!this.connected || !this.redis) return;
+        try {
+            await this.redis.del(`rl:${key}`);
+        } catch { /* best effort */ }
+    }
+
+    async clear(): Promise<void> {
+        // Not implemented for Redis (would need SCAN + DEL)
+    }
+}
+
+// ============================================================================
+// STORE INITIALIZATION
+// ============================================================================
+
+let activeStore: RateLimitStore;
+
+function getStore(): RateLimitStore {
+    if (activeStore) return activeStore;
+
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+        logger.info('[RateLimit] Using Redis store for rate limiting');
+        activeStore = new RedisStore(redisUrl);
+    } else {
+        if (process.env.NODE_ENV === 'production') {
+            logger.warn('[RateLimit] ⚠️ Using in-memory rate limiting in production! Set REDIS_URL for distributed rate limiting.');
+        }
+        activeStore = new InMemoryStore();
+    }
+
+    return activeStore;
+}
 
 // ============================================================================
 // RATE LIMIT MIDDLEWARE FACTORY
@@ -55,48 +207,47 @@ export function createRateLimiter(config: RateLimitConfig) {
         message = "Too many requests, please try again later."
     } = config;
 
-    return (req: Request, res: Response, next: NextFunction): void => {
+    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         // Skip rate limiting for CORS preflight requests
         if (req.method === 'OPTIONS') {
             next();
             return;
         }
 
+        const store = getStore();
         const key = keyGenerator(req);
-        const now = Date.now();
 
-        let entry = store.get(key);
+        try {
+            const entry = await store.increment(key, windowMs);
 
-        // Create new entry or reset if window expired
-        if (!entry || entry.resetAt < now) {
-            entry = { count: 0, resetAt: now + windowMs };
-            store.set(key, entry);
+            // Set rate limit headers
+            res.setHeader("X-RateLimit-Limit", maxRequests);
+            res.setHeader("X-RateLimit-Remaining", Math.max(0, maxRequests - entry.count));
+            res.setHeader("X-RateLimit-Reset", Math.ceil(entry.resetAt / 1000));
+
+            if (entry.count > maxRequests) {
+                const now = Date.now();
+                logger.warn("[RateLimit] Limit exceeded", {
+                    key,
+                    count: entry.count,
+                    limit: maxRequests,
+                    path: req.path
+                });
+
+                res.status(429).json({
+                    error: "rate_limit_exceeded",
+                    message,
+                    retryAfter: Math.ceil((entry.resetAt - now) / 1000)
+                });
+                return;
+            }
+
+            next();
+        } catch (err: any) {
+            // On store error, fail-open (allow the request)
+            logger.error("[RateLimit] Store error, allowing request", { error: err?.message });
+            next();
         }
-
-        entry.count++;
-
-        // Set rate limit headers
-        res.setHeader("X-RateLimit-Limit", maxRequests);
-        res.setHeader("X-RateLimit-Remaining", Math.max(0, maxRequests - entry.count));
-        res.setHeader("X-RateLimit-Reset", Math.ceil(entry.resetAt / 1000));
-
-        if (entry.count > maxRequests) {
-            logger.warn("[RateLimit] Limit exceeded", {
-                key,
-                count: entry.count,
-                limit: maxRequests,
-                path: req.path
-            });
-
-            res.status(429).json({
-                error: "rate_limit_exceeded",
-                message,
-                retryAfter: Math.ceil((entry.resetAt - now) / 1000)
-            });
-            return;
-        }
-
-        next();
     };
 }
 
@@ -109,7 +260,7 @@ export function createRateLimiter(config: RateLimitConfig) {
  */
 export const authLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 15,          // 15 attempts per 15 min (more reasonable)
+    maxRequests: 15,          // 15 attempts per 15 min
     message: "Too many login attempts. Please try again in 15 minutes."
 });
 
@@ -148,20 +299,20 @@ export const heavyOperationLimiter = createRateLimiter({
 /**
  * Get current rate limit stats for a key
  */
-export function getRateLimitStats(key: string): RateLimitEntry | null {
-    return store.get(key) || null;
+export async function getRateLimitStats(key: string): Promise<RateLimitEntry | null> {
+    return getStore().get(key);
 }
 
 /**
  * Reset rate limit for a key (e.g., after successful authentication)
  */
-export function resetRateLimit(key: string): void {
-    store.delete(key);
+export async function resetRateLimit(key: string): Promise<void> {
+    await getStore().reset(key);
 }
 
 /**
  * Clear all rate limit entries (for testing)
  */
-export function clearAllRateLimits(): void {
-    store.clear();
+export async function clearAllRateLimits(): Promise<void> {
+    await getStore().clear();
 }

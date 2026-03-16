@@ -110,8 +110,25 @@ export async function scrapeOffersForOrder(
     }
   }
 
+  // STEP 4: AI Price Finder fallback (when scrapers return 0 results)
   if (allOffers.length === 0) {
-    console.warn("[SCRAPE] no offers found", { orderId, oemNumber });
+    console.log("[SCRAPE] 🤖 ScraperAPI returned 0 results — trying AI Price Finder...");
+    try {
+      const { findPricesWithAi } = await import("./scrapers/aiPriceFinder");
+      const aiOffers = await findPricesWithAi(oemNumber, vehicleData);
+      if (aiOffers.length > 0) {
+        console.log("[SCRAPE] ✅ AI Price Finder found offers!", { count: aiOffers.length });
+        allOffers.push(...aiOffers);
+      } else {
+        console.warn("[SCRAPE] AI Price Finder also found nothing", { oemNumber });
+      }
+    } catch (aiErr) {
+      console.error("[SCRAPE] AI Price Finder failed", { error: (aiErr as any)?.message });
+    }
+  }
+
+  if (allOffers.length === 0) {
+    console.warn("[SCRAPE] no offers found from any source", { orderId, oemNumber });
     return [];
   }
 

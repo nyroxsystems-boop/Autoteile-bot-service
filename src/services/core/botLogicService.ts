@@ -34,6 +34,7 @@ import { t, tWith } from './botResponses';
 import * as fs from "fs/promises";
 import { isEnabled, FF } from './featureFlags';
 import { getMerchantByPhone } from '../adapters/phoneMerchantMapper';
+import { escalateToDealer, notifyDealerNewOrder } from './escalationService';
 import { withConversationLock } from './lockService';
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
@@ -204,6 +205,17 @@ async function runOemLookupAndScraping(
       }
     }
 
+    // Fix 4: Escalate to dealer when bot can't find the part
+    escalateToDealer({
+      orderId,
+      customerPhone: 'unknown', // will be enriched by caller
+      reason: 'OEM-Nummer nicht sicher gefunden',
+      vehicleSummary: `${vehicleForOem.make || '?'} ${vehicleForOem.model || '?'} (${vehicleForOem.year || '?'})`,
+      partDescription: partDescription || partText,
+      oemNumber: oemResult.primaryOEM,
+      oemConfidence: oemResult.overallConfidence,
+      language: language || 'de',
+    });
     return { replyText: t('oem_product_uncertain', language), nextStatus: "needs_human" as ConversationStatus };
   } catch (err: any) {
     logger.error("resolveOEM failed", { error: err?.message, orderId });
@@ -1513,14 +1525,21 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
 
               const bindingNote = t('offer_binding_note', language);
 
-              // Beautiful offer formatting for WhatsApp (NO LINK, NO SHOP NAME for customer)
-              const isInStock = offer.shopName === "Händler-Lager" || offer.shopName === "Eigener Bestand";
+              // Fix 5: Show OEM + vehicle in offer for customer verification
+              const oemDisplay = orderData?.oemNumber ? `🔧 *OEM:* ${orderData.oemNumber}\n` : '';
+              const vehicleSummary = orderData?.vehicle
+                ? `🚗 ${orderData.vehicle.make || ''} ${orderData.vehicle.model || ''} (${orderData.vehicle.year || ''})\n`
+                : '';
+
+              const isInStock = offer.shopName === "Händler-Lager" || offer.shopName === "Eigener Bestand" || offer.shopName === "✨ Eigenes Lager";
               const stockInfo = isInStock
                 ? t('offer_pickup', language)
                 : tWith('offer_delivery', language, { delivery });
 
               replyText =
                 `${t('offer_single_header', language)}\n\n` +
+                `${vehicleSummary}` +
+                `${oemDisplay}` +
                 `🏷️ *${t('offer_brand_label', language)}:* ${offer.brand ?? t('na_text', language)}\n` +
                 `💰 *${t('offer_price_label', language)}:* ${endPrice} ${offer.currency}\n` +
                 `${stockInfo}\n` +
@@ -1746,6 +1765,25 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
               }
             });
             await updateOrderStatus(order.id, "ready");
+
+            // Fix 7: Notify dealer about new binding order
+            const vehicleSummaryForNotify = orderData?.vehicle
+              ? `${orderData.vehicle.make || ''} ${orderData.vehicle.model || ''} (${orderData.vehicle.year || ''})`
+              : order.vehicle_description || 'Fahrzeug unbekannt';
+            notifyDealerNewOrder({
+              orderId: order.id,
+              customerPhone: payload.from,
+              vehicleSummary: vehicleSummaryForNotify,
+              partDescription: orderData?.requestedPart || orderData?.partText || order.part_description || 'Teil unbekannt',
+              oemNumber: orderData?.oemNumber || undefined,
+              selectedOffer: {
+                shopName: chosen.shopName,
+                brand: chosen.brand || 'Unbekannt',
+                price: calculateEndPrice(chosen.price, merchantSettings?.marginPercent),
+                currency: chosen.currency || 'EUR',
+                deliveryTimeDays: chosen.deliveryTimeDays,
+              },
+            });
 
             if (merchantSettings?.allowDirectDelivery) {
               replyText = t('delivery_choose_exact', language);

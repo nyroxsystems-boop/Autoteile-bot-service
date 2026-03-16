@@ -13,7 +13,18 @@ import { determineRequiredFields } from "./oemRequiredFieldsService";
 import { resolveOEM as resolveOEMUnified } from "./oemResolver";
 import { OEMResolverRequest, OEMResolverResult } from "./types";
 import { resolveOemApex } from "./apexPipeline";
+import { resolveOemV2 } from "./v2/oemEngine";
 import { logger } from "@utils/logger";
+
+// ============================================================================
+// Feature Flag: OEM Engine V2
+// v2 is now the DEFAULT. Set OEM_ENGINE_V2=false to revert to legacy APEX.
+// ============================================================================
+const USE_V2_ENGINE = process.env.OEM_ENGINE_V2 !== 'false';
+
+if (USE_V2_ENGINE) {
+  logger.info('[OEMService] 🚀 v2 Engine ACTIVE — using new OEM Intelligence Engine');
+}
 
 export interface OemResolutionResult {
   success: boolean;
@@ -25,7 +36,6 @@ export interface OemResolutionResult {
 
 /**
  * Simple OEM lookup — used by routes/oem.ts, langchainTools.ts, botLogicService.ts.
- * Routes through APEX pipeline now instead of deleted oemWebFinder.
  */
 export async function resolveOEM(vehicle: VehicleLookup, part: string): Promise<OemResolutionResult> {
   const missing = determineRequiredFields(vehicle);
@@ -50,7 +60,8 @@ export async function resolveOEM(vehicle: VehicleLookup, part: string): Promise<
   };
 
   try {
-    const result = await resolveOemApex(req);
+    const resolver = USE_V2_ENGINE ? resolveOemV2 : resolveOemApex;
+    const result = await resolver(req);
     return {
       success: !!result.primaryOEM,
       oemNumber: result.primaryOEM,
@@ -58,7 +69,7 @@ export async function resolveOEM(vehicle: VehicleLookup, part: string): Promise<
       oemData: { candidates: result.candidates, notes: result.notes },
     };
   } catch (err: any) {
-    logger.warn("[OEMService] resolveOEM APEX failed:", { error: err?.message });
+    logger.warn("[OEMService] resolveOEM failed:", { error: err?.message, engine: USE_V2_ENGINE ? 'v2' : 'apex' });
     return { success: false, message: `Fehler: ${err?.message}` };
   }
 }
@@ -72,8 +83,7 @@ function extractSuspectedArticleNumber(text: string | null | undefined): string 
 }
 
 /**
- * Primary OEM resolver entry — uses APEX dual-AI pipeline.
- * Emergency fallback to legacy resolver only if APEX completely crashes.
+ * Primary OEM resolver entry — uses v2 engine (if enabled), APEX, or legacy.
  * Bot flow calls this exclusively.
  */
 export async function resolveOEMForOrder(
@@ -110,20 +120,17 @@ export async function resolveOEMForOrder(
     }
   };
 
+  // v2 Engine — ONLY resolver (no external platforms)
+  // Uses: Gemini AI + local SQLite DB. NO TecDoc, NO ScraperAPI, NO Apify.
   try {
-    return await resolveOemApex(req);
+    return await resolveOemV2(req);
   } catch (err: any) {
-    logger.error("[OEMService] APEX pipeline crashed — falling back to legacy:", { error: err?.message });
-    try {
-      return await resolveOEMUnified(req);
-    } catch (legacyErr: any) {
-      logger.error("[OEMService] Legacy resolver also failed:", { error: legacyErr?.message });
-      return {
-        primaryOEM: undefined,
-        candidates: [],
-        overallConfidence: 0,
-        notes: `Both APEX and legacy resolver failed: ${err?.message}`,
-      };
-    }
+    logger.error("[OEMService] v2 engine failed:", { error: err?.message, orderId });
+    return {
+      primaryOEM: undefined,
+      candidates: [],
+      overallConfidence: 0,
+      notes: `OEM-Suche fehlgeschlagen: ${err?.message}`,
+    };
   }
 }
