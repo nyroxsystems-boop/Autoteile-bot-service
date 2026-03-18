@@ -17,6 +17,7 @@ interface BillingDesign {
 }
 
 import { getDesignSettings } from './designSettingsService';
+import { logger } from "@utils/logger";
 
 /**
  * Fetch billing design settings from local database
@@ -24,16 +25,16 @@ import { getDesignSettings } from './designSettingsService';
  */
 export async function fetchBillingDesign(tenantId: string): Promise<BillingDesign | null> {
     try {
-        console.log(`[BillingDesign] Fetching design for tenant: ${tenantId}`);
+        logger.info(`[BillingDesign] Fetching design for tenant: ${tenantId}`);
 
         const settings = await getDesignSettings(tenantId);
 
         if (!settings) {
-            console.warn(`[BillingDesign] No design found for tenant ${tenantId}, using defaults`);
+            logger.warn(`[BillingDesign] No design found for tenant ${tenantId}, using defaults`);
             return null;
         }
 
-        console.log(`[BillingDesign] Design loaded successfully:`, {
+        logger.info(`[BillingDesign] Design loaded successfully:`, {
             color: settings.invoice_color,
             font: settings.invoice_font,
             hasLogo: !!settings.logo_base64,
@@ -54,7 +55,7 @@ export async function fetchBillingDesign(tenantId: string): Promise<BillingDesig
             company_zip: settings.company_zip || undefined,
         };
     } catch (error: any) {
-        console.warn('[BillingDesign] Failed to fetch design, using defaults:', error.message);
+        logger.warn('[BillingDesign] Failed to fetch design, using defaults:', error.message);
         return null;
     }
 }

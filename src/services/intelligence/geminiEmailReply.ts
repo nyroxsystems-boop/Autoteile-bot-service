@@ -83,7 +83,7 @@ Schreibe eine passende Antwort:`;
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Gemini API error:', errorText);
+            logger.error('Gemini API error:', errorText);
             throw new Error('Gemini API Fehler');
         }
 
@@ -101,7 +101,7 @@ Schreibe eine passende Antwort:`;
         return replyText;
 
     } catch (error: any) {
-        console.error('Email reply generation error:', error);
+        logger.error('Email reply generation error:', error);
         throw new Error('Antwort konnte nicht generiert werden: ' + error.message);
     }
 }

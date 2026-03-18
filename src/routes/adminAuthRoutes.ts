@@ -4,6 +4,9 @@
  */
 
 import { Router, type Request, type Response } from "express";
+import { logger } from "@utils/logger";
+import { validate } from '../middleware/validate';
+import { adminLoginSchema, requestResetSchema, resetPasswordSchema, updateEmailSchema, adminChangePasswordSchema, updateSignatureSchema } from '../middleware/schemas';
 import * as db from "../services/core/database";
 import { randomUUID, randomBytes } from "crypto";
 import * as bcrypt from 'bcrypt';
@@ -45,7 +48,7 @@ function generateToken(): string {
  * POST /api/admin-auth/login
  * Admin login with username + password
  */
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", validate(adminLoginSchema), async (req: Request, res: Response) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -76,7 +79,7 @@ router.post("/login", async (req: Request, res: Response) => {
                 'UPDATE admin_users SET password_hash = ? WHERE id = ?',
                 [newHash, admin.id]
             );
-            console.log(`🔐 Auto-upgraded password hash to bcrypt for admin: ${admin.username}`);
+            logger.info(`🔐 Auto-upgraded password hash to bcrypt for admin: ${admin.username}`);
         }
 
         const token = generateToken();
@@ -115,7 +118,7 @@ router.post("/login", async (req: Request, res: Response) => {
             userAgent: req.headers['user-agent']
         });
 
-        console.log(`✅ Admin logged in: ${admin.username}`);
+        logger.info(`✅ Admin logged in: ${admin.username}`);
 
         return res.json({
             access: token,
@@ -128,7 +131,7 @@ router.post("/login", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Admin login error:", error);
+        logger.error("Admin login error:", error);
         return res.status(500).json({ error: "Login fehlgeschlagen" });
     }
 });
@@ -163,7 +166,7 @@ router.post("/logout", async (req: Request, res: Response) => {
                 });
             }
         } catch (error) {
-            console.error("Error during logout:", error);
+            logger.error("Error during logout:", error);
         }
     }
 
@@ -214,7 +217,7 @@ router.get("/me", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Error in /me:", error);
+        logger.error("Error in /me:", error);
         return res.status(500).json({ error: "Fehler beim Abrufen der Benutzerdaten" });
     }
 });
@@ -223,7 +226,7 @@ router.get("/me", async (req: Request, res: Response) => {
  * POST /api/admin-auth/request-reset
  * Request password reset email
  */
-router.post("/request-reset", async (req: Request, res: Response) => {
+router.post("/request-reset", validate(requestResetSchema), async (req: Request, res: Response) => {
     const { username, email } = req.body;
 
     if (!username && !email) {
@@ -247,7 +250,7 @@ router.post("/request-reset", async (req: Request, res: Response) => {
 
         // Always return success for security (don't reveal if user exists)
         if (!admin) {
-            console.log(`Password reset requested for non-existent user: ${username || email}`);
+            logger.info(`Password reset requested for non-existent user: ${username || email}`);
             return res.json({ success: true, message: "Falls ein Account existiert, wurde eine E-Mail gesendet." });
         }
 
@@ -281,7 +284,7 @@ router.post("/request-reset", async (req: Request, res: Response) => {
         });
 
         if (!emailSent) {
-            console.warn('Password reset email could not be sent (SMTP not configured)');
+            logger.warn('Password reset email could not be sent (SMTP not configured)');
         }
 
         return res.json({
@@ -290,7 +293,7 @@ router.post("/request-reset", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Password reset request error:", error);
+        logger.error("Password reset request error:", error);
         return res.status(500).json({ error: "Fehler bei der Anfrage" });
     }
 });
@@ -299,7 +302,7 @@ router.post("/request-reset", async (req: Request, res: Response) => {
  * POST /api/admin-auth/reset-password
  * Set new password with reset token
  */
-router.post("/reset-password", async (req: Request, res: Response) => {
+router.post("/reset-password", validate(resetPasswordSchema), async (req: Request, res: Response) => {
     const { token, newPassword } = req.body;
 
     if (!token || !newPassword) {
@@ -360,12 +363,12 @@ router.post("/reset-password", async (req: Request, res: Response) => {
             ipAddress: req.ip || req.socket.remoteAddress
         });
 
-        console.log(`✅ Password reset for admin: ${admin.username}`);
+        logger.info(`✅ Password reset for admin: ${admin.username}`);
 
         return res.json({ success: true, message: "Passwort erfolgreich geändert" });
 
     } catch (error: any) {
-        console.error("Password reset error:", error);
+        logger.error("Password reset error:", error);
         return res.status(500).json({ error: "Fehler beim Zurücksetzen des Passworts" });
     }
 });
@@ -374,7 +377,7 @@ router.post("/reset-password", async (req: Request, res: Response) => {
  * PATCH /api/admin-auth/update-email
  * Update current admin's email address (for password reset capability)
  */
-router.patch("/update-email", async (req: Request, res: Response) => {
+router.patch("/update-email", validate(updateEmailSchema), async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     const { email } = req.body;
 
@@ -411,7 +414,7 @@ router.patch("/update-email", async (req: Request, res: Response) => {
             [session.admin_id]
         );
 
-        console.log(`✅ Email updated for admin: ${admin?.username} -> ${email}`);
+        logger.info(`✅ Email updated for admin: ${admin?.username} -> ${email}`);
 
         return res.json({
             success: true,
@@ -420,7 +423,7 @@ router.patch("/update-email", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Update email error:", error);
+        logger.error("Update email error:", error);
         return res.status(500).json({ error: "Fehler beim Aktualisieren der E-Mail" });
     }
 });
@@ -443,12 +446,12 @@ router.post("/fix-emails", async (_req: Request, res: Response) => {
                 'UPDATE admin_users SET email = ? WHERE username = ?',
                 [email, username]
             );
-            console.log(`✅ Fixed email for ${username}: ${email}`);
+            logger.info(`✅ Fixed email for ${username}: ${email}`);
         }
 
         return res.json({ success: true, message: "Admin-E-Mails aktualisiert" });
     } catch (error: any) {
-        console.error("Fix emails error:", error);
+        logger.error("Fix emails error:", error);
         return res.status(500).json({ error: error.message });
     }
 });
@@ -457,7 +460,7 @@ router.post("/fix-emails", async (_req: Request, res: Response) => {
  * POST /api/admin-auth/change-password
  * Change current admin's password
  */
-router.post("/change-password", async (req: Request, res: Response) => {
+router.post("/change-password", validate(adminChangePasswordSchema), async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     const { currentPassword, newPassword } = req.body;
 
@@ -501,12 +504,12 @@ router.post("/change-password", async (req: Request, res: Response) => {
             [newHash, session.admin_id]
         );
 
-        console.log(`✅ Password changed for admin ID: ${session.admin_id}`);
+        logger.info(`✅ Password changed for admin ID: ${session.admin_id}`);
 
         return res.json({ success: true, message: "Passwort erfolgreich geändert" });
 
     } catch (error: any) {
-        console.error("Change password error:", error);
+        logger.error("Change password error:", error);
         return res.status(500).json({ error: "Fehler beim Ändern des Passworts" });
     }
 });
@@ -515,7 +518,7 @@ router.post("/change-password", async (req: Request, res: Response) => {
  * PATCH /api/admin-auth/update-signature
  * Update current admin's email signature
  */
-router.patch("/update-signature", async (req: Request, res: Response) => {
+router.patch("/update-signature", validate(updateSignatureSchema), async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     const { signature } = req.body;
 
@@ -545,7 +548,7 @@ router.patch("/update-signature", async (req: Request, res: Response) => {
         return res.json({ success: true, message: "Signatur aktualisiert" });
 
     } catch (error: any) {
-        console.error("Update signature error:", error);
+        logger.error("Update signature error:", error);
         return res.status(500).json({ error: "Fehler beim Aktualisieren der Signatur" });
     }
 });
@@ -568,7 +571,7 @@ router.get("/list-admins", async (req: Request, res: Response) => {
 
         return res.json({ admins });
     } catch (error: any) {
-        console.error("List admins error:", error);
+        logger.error("List admins error:", error);
         return res.status(500).json({ error: "Fehler beim Abrufen der Admins" });
     }
 });
@@ -595,11 +598,11 @@ router.put("/update-email", async (req: Request, res: Response) => {
             [email, adminId]
         );
 
-        console.log(`[Admin] Updated email for admin ${adminId} to ${email}`);
+        logger.info(`[Admin] Updated email for admin ${adminId} to ${email}`);
         return res.json({ success: true, message: `E-Mail aktualisiert auf ${email}` });
 
     } catch (error: any) {
-        console.error("Update email error:", error);
+        logger.error("Update email error:", error);
         return res.status(500).json({ error: "Fehler beim Aktualisieren der E-Mail" });
     }
 });
@@ -618,17 +621,17 @@ router.get("/profile", async (req: Request, res: Response) => {
     const token = authHeader.substring(6);
 
     try {
-        console.log(`[Admin/Profile] Checking token (length: ${token.length})`);
+        logger.info(`[Admin/Profile] Checking token (length: ${token.length})`);
 
         const session = await db.get<any>(
             `SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()`,
             [token]
         );
 
-        console.log(`[Admin/Profile] Session found: ${!!session}`);
+        logger.info(`[Admin/Profile] Session found: ${!!session}`);
 
         if (!session) {
-            console.log(`[Admin/Profile] No valid session found for token`);
+            logger.info(`[Admin/Profile] No valid session found for token`);
             return res.status(401).json({ error: "Session abgelaufen" });
         }
 
@@ -647,7 +650,7 @@ router.get("/profile", async (req: Request, res: Response) => {
         return res.json(admin);
 
     } catch (error: any) {
-        console.error("[Admin/Profile] Error:", error.message);
+        logger.error("[Admin/Profile] Error:", error.message);
         return res.status(500).json({ error: "Fehler beim Abrufen des Profils", details: error.message });
     }
 });

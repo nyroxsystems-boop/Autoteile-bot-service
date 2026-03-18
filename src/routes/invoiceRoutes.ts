@@ -2,6 +2,7 @@
 // Endpoints for invoice CRUD operations
 
 import { Router, Request, Response } from 'express';
+import { logger } from "@utils/logger";
 import {
     createInvoice,
     getInvoiceById,
@@ -61,7 +62,7 @@ router.get('/', async (req: Request, res: Response) => {
         const invoices = await listInvoices(req.tenantId!, options);
         res.json(invoices);
     } catch (error: any) {
-        console.error('Error listing invoices:', error);
+        logger.error('Error listing invoices:', error);
         res.status(500).json({ error: 'Failed to list invoices', message: error.message });
     }
 });
@@ -75,7 +76,7 @@ router.post('/', async (req: Request, res: Response) => {
         const invoice = await createInvoice(req.tenantId!, req.body);
         res.status(201).json(invoice);
     } catch (error: any) {
-        console.error('Error creating invoice:', error);
+        logger.error('Error creating invoice:', error);
         res.status(500).json({ error: 'Failed to create invoice', message: error.message });
     }
 });
@@ -89,7 +90,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         const invoice = await getInvoiceById(req.tenantId!, req.params.id);
         res.json(invoice);
     } catch (error: any) {
-        console.error('Error fetching invoice:', error);
+        logger.error('Error fetching invoice:', error);
         res.status(404).json({ error: 'Invoice not found', message: error.message });
     }
 });
@@ -103,7 +104,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         const invoice = await updateInvoice(req.tenantId!, req.params.id, req.body);
         res.json(invoice);
     } catch (error: any) {
-        console.error('Error updating invoice:', error);
+        logger.error('Error updating invoice:', error);
         res.status(500).json({ error: 'Failed to update invoice', message: error.message });
     }
 });
@@ -117,7 +118,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
         const invoice = await markInvoiceAsPaid(req.tenantId!, req.params.id);
         res.json(invoice);
     } catch (error: any) {
-        console.error('Error marking invoice as paid:', error);
+        logger.error('Error marking invoice as paid:', error);
         res.status(500).json({ error: 'Failed to mark invoice as paid', message: error.message });
     }
 });
@@ -131,7 +132,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
         const invoice = await cancelInvoice(req.tenantId!, req.params.id);
         res.json(invoice);
     } catch (error: any) {
-        console.error('Error canceling invoice:', error);
+        logger.error('Error canceling invoice:', error);
         res.status(500).json({ error: 'Failed to cancel invoice', message: error.message });
     }
 });
@@ -145,7 +146,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         await deleteInvoice(req.tenantId!, req.params.id);
         res.status(204).send();
     } catch (error: any) {
-        console.error('Error deleting invoice:', error);
+        logger.error('Error deleting invoice:', error);
         res.status(500).json({ error: 'Failed to delete invoice', message: error.message });
     }
 });
@@ -156,32 +157,32 @@ router.delete('/:id', async (req: Request, res: Response) => {
  */
 router.get('/:id/pdf', async (req: Request, res: Response) => {
     const startTime = Date.now();
-    console.log(`[PDF] Request received for invoice: ${req.params.id}, tenant: ${req.tenantId}`);
+    logger.info(`[PDF] Request received for invoice: ${req.params.id}, tenant: ${req.tenantId}`);
 
     try {
         // Step 1: Load PDF generator
-        console.log(`[PDF] Loading PDF generator module...`);
+        logger.info(`[PDF] Loading PDF generator module...`);
         const { generateInvoicePDF } = await import('../services/invoicing/pdfGenerator');
 
         // Step 2: Fetch invoice from database by invoice number
-        console.log(`[PDF] Fetching invoice from database...`);
+        logger.info(`[PDF] Fetching invoice from database...`);
         const invoice = await getInvoiceByNumber(req.tenantId!, req.params.id);
-        console.log(`[PDF] Invoice found: ${invoice.invoice_number}, status: ${invoice.status}, lines: ${invoice.lines?.length || 0}`);
+        logger.info(`[PDF] Invoice found: ${invoice.invoice_number}, status: ${invoice.status}, lines: ${invoice.lines?.length || 0}`);
 
         // Step 3: Generate PDF
-        console.log(`[PDF] Generating PDF...`);
+        logger.info(`[PDF] Generating PDF...`);
         const pdfBuffer = await generateInvoicePDF(req.tenantId!, invoice);
-        console.log(`[PDF] PDF generated successfully, size: ${pdfBuffer.length} bytes, took: ${Date.now() - startTime}ms`);
+        logger.info(`[PDF] PDF generated successfully, size: ${pdfBuffer.length} bytes, took: ${Date.now() - startTime}ms`);
 
         // Step 4: Send response
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="Rechnung-${invoice.invoice_number}.pdf"`);
         res.send(pdfBuffer);
 
-        console.log(`[PDF] PDF sent to client successfully`);
+        logger.info(`[PDF] PDF sent to client successfully`);
     } catch (error: any) {
-        console.error(`[PDF] Error generating PDF for invoice ${req.params.id}:`, error);
-        console.error(`[PDF] Error stack:`, error.stack);
+        logger.error(`[PDF] Error generating PDF for invoice ${req.params.id}:`, error);
+        logger.error(`[PDF] Error stack:`, error.stack);
 
         // Return appropriate status code based on error type
         if (error.message === 'Invoice not found') {
@@ -212,7 +213,7 @@ router.post('/from-order/:orderId', async (req: Request, res: Response) => {
         res.status(201).json(invoice);
     } catch (error: any) {
         const msg = error.message || '';
-        console.error('Error creating invoice from order:', msg);
+        logger.error('Error creating invoice from order:', msg);
 
         // Return proper HTTP status codes based on error type
         if (msg.includes('bereits') || msg.includes('already exists')) {
@@ -262,7 +263,7 @@ router.post('/bulk-from-orders', async (req: Request, res: Response) => {
 
         res.json(results);
     } catch (error: any) {
-        console.error('Error in bulk invoice creation:', error);
+        logger.error('Error in bulk invoice creation:', error);
         res.status(500).json({ error: 'Bulk invoice creation failed', message: error.message });
     }
 });
@@ -285,7 +286,7 @@ router.get('/by-order/:orderId', async (req: Request, res: Response) => {
 
         res.json(invoice);
     } catch (error: any) {
-        console.error('Error fetching invoice by order:', error);
+        logger.error('Error fetching invoice by order:', error);
         res.status(500).json({ error: 'Failed to fetch invoice', message: error.message });
     }
 });
@@ -296,11 +297,11 @@ router.get('/by-order/:orderId', async (req: Request, res: Response) => {
  */
 router.get('/settings/billing', async (req: Request, res: Response) => {
     try {
-        console.log(`[Settings] GET request for tenant: ${req.tenantId}`);
+        logger.info(`[Settings] GET request for tenant: ${req.tenantId}`);
         const settings = await getDesignSettings(req.tenantId!);
 
         if (!settings) {
-            console.log(`[Settings] No settings found for tenant: ${req.tenantId}, returning defaults`);
+            logger.info(`[Settings] No settings found for tenant: ${req.tenantId}, returning defaults`);
             // Return default settings if none exist
             return res.json({
                 tenant_id: req.tenantId,
@@ -317,10 +318,10 @@ router.get('/settings/billing', async (req: Request, res: Response) => {
             });
         }
 
-        console.log(`[Settings] Settings found for tenant: ${req.tenantId}`);
+        logger.info(`[Settings] Settings found for tenant: ${req.tenantId}`);
         res.json(settings);
     } catch (error: any) {
-        console.error('[Settings] Error fetching design settings:', error);
+        logger.error('[Settings] Error fetching design settings:', error);
         res.status(500).json({ error: 'Failed to fetch design settings', message: error.message });
     }
 });
@@ -331,15 +332,15 @@ router.get('/settings/billing', async (req: Request, res: Response) => {
  */
 router.put('/settings/billing', async (req: Request, res: Response) => {
     try {
-        console.log(`[Settings] PUT request for tenant: ${req.tenantId}`);
-        console.log(`[Settings] Request body:`, JSON.stringify(req.body, null, 2));
+        logger.info(`[Settings] PUT request for tenant: ${req.tenantId}`);
+        logger.info(`[Settings] Request body:`, JSON.stringify(req.body, null, 2));
 
         const settings = await upsertDesignSettings(req.tenantId!, req.body);
-        console.log(`[Settings] Settings saved successfully for tenant: ${req.tenantId}`);
+        logger.info(`[Settings] Settings saved successfully for tenant: ${req.tenantId}`);
 
         res.json(settings);
     } catch (error: any) {
-        console.error('[Settings] Error updating design settings:', error);
+        logger.error('[Settings] Error updating design settings:', error);
         res.status(500).json({ error: 'Failed to update design settings', message: error.message });
     }
 });

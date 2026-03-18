@@ -1,4 +1,5 @@
 import type {
+import { logger } from "@utils/logger";
   Order as DomainOrder,
   Supplier,
   SupplierScraperInput,
@@ -23,6 +24,7 @@ type ResolutionOrder = Pick<
 };
 
 import { resolveOEMForOrder } from "./oemService";
+import { logger } from "@utils/logger";
 
 export interface DbClient {
   query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
@@ -103,7 +105,7 @@ export class ProductResolutionService {
 
     // BUG C FIX: Use the modern unified resolver (15 sources, consensus, validation)
     // instead of the legacy findBestOemForVehicle which bypasses all quality layers
-    console.log(`[ProductResolution] Resolving OEM via unified resolver for Order ${order.id}...`);
+    logger.info(`[ProductResolution] Resolving OEM via unified resolver for Order ${order.id}...`);
 
     try {
       const result = await resolveOEMForOrder(
@@ -122,14 +124,14 @@ export class ProductResolutionService {
       );
 
       if (result.primaryOEM) {
-        console.log(`[ProductResolution] Found OEM: ${result.primaryOEM} (Confidence: ${result.overallConfidence})`);
+        logger.info(`[ProductResolution] Found OEM: ${result.primaryOEM} (Confidence: ${result.overallConfidence})`);
         return result.primaryOEM;
       }
 
-      console.warn(`[ProductResolution] No OEM found for Order ${order.id}`);
+      logger.warn(`[ProductResolution] No OEM found for Order ${order.id}`);
       return null;
     } catch (err: any) {
-      console.error(`[ProductResolution] Unified resolver failed for Order ${order.id}`, err?.message);
+      logger.error(`[ProductResolution] Unified resolver failed for Order ${order.id}`, err?.message);
       return null;
     }
   }
@@ -193,7 +195,7 @@ export class ProductResolutionService {
     } catch (error) {
       // Continue with other suppliers while surfacing the failure
       // TODO: replace console.error with structured logging
-      console.error(
+      logger.error(
         `Failed to process supplier ${supplier.name} (${supplier.id}) for order ${order.id}`,
         error
       );
@@ -248,6 +250,6 @@ export class ProductResolutionService {
 
 // TODO: Wire real dependencies and return actual offers; placeholder to satisfy internal routes.
 export async function refreshOffersForOrder(orderId: string): Promise<{ offers: any[] }> {
-  console.warn("[ProductResolutionService] refreshOffersForOrder is not implemented", { orderId });
+  logger.warn("[ProductResolutionService] refreshOffersForOrder is not implemented", { orderId });
   return { offers: [] };
 }

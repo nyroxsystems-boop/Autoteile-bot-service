@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import { logger } from "@utils/logger";
 import * as path from 'path';
+import { logger } from "@utils/logger";
 import type { Pool } from 'pg';
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'db', 'migrations');
@@ -15,7 +17,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
         `);
 
         if (!fs.existsSync(MIGRATIONS_DIR)) {
-            console.warn(`[DB] Migrations directory not found: ${MIGRATIONS_DIR}`);
+            logger.warn(`[DB] Migrations directory not found: ${MIGRATIONS_DIR}`);
             return;
         }
 
@@ -31,7 +33,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
             const filePath = path.join(MIGRATIONS_DIR, file);
             const sql = fs.readFileSync(filePath, 'utf-8');
 
-            console.log(`[DB] Applying migration: ${file}`);
+            logger.info(`[DB] Applying migration: ${file}`);
             await client.query('BEGIN');
             try {
                 await client.query(sql);

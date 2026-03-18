@@ -4,6 +4,7 @@
  */
 
 import * as db from './database';
+import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';
 
 export interface ActivityLogEntry {
@@ -41,6 +42,8 @@ export const ACTION_TYPES = {
     OEM_BULK_DELETED: 'OEM_BULK_DELETED',
     OEM_SEEDER_TRIGGERED: 'OEM_SEEDER_TRIGGERED',
     OEM_VALIDATOR_TRIGGERED: 'OEM_VALIDATOR_TRIGGERED',
+    OEM_DB_UPDATE: 'OEM_DB_UPDATE',
+    OEM_DB_UPDATE_FAILED: 'OEM_DB_UPDATE_FAILED',
 
     // Email Actions
     EMAIL_CAMPAIGN_SENT: 'EMAIL_CAMPAIGN_SENT',
@@ -63,6 +66,7 @@ export const ENTITY_TYPES = {
     TENANT: 'TENANT',
     USER: 'USER',
     OEM: 'OEM',
+    OEM_DATABASE: 'OEM_DATABASE',
     EMAIL: 'EMAIL',
     SYSTEM: 'SYSTEM',
     ADMIN: 'ADMIN'
@@ -106,9 +110,9 @@ export async function logActivity(params: {
                 timestamp
             ]
         );
-        console.log(`📝 Activity logged: ${params.actionType} by ${params.adminUsername}`);
+        logger.info(`📝 Activity logged: ${params.actionType} by ${params.adminUsername}`);
     } catch (error: any) {
-        console.error('Failed to log activity:', error.message);
+        logger.error('Failed to log activity:', error.message);
     }
 }
 

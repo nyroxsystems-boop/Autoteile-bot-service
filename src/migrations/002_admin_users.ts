@@ -4,6 +4,7 @@
  */
 
 import * as db from '../services/core/database';
+import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 
@@ -20,7 +21,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 export async function runMigration(): Promise<void> {
-    console.log('🔄 Running migration: Admin Users & Sessions...');
+    logger.info('🔄 Running migration: Admin Users & Sessions...');
 
     // Create admin_users table
     await db.run(`
@@ -38,28 +39,28 @@ export async function runMigration(): Promise<void> {
             last_login TEXT
         )
     `);
-    console.log('✅ Created admin_users table');
+    logger.info('✅ Created admin_users table');
 
     // Add missing columns if they don't exist (for existing tables)
     try {
         await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS full_name TEXT`);
-        console.log('✅ Added full_name column');
+        logger.info('✅ Added full_name column');
     } catch (e: any) {
-        if (!e.message?.includes('already exists')) console.log('ℹ️ full_name column check:', e.message);
+        if (!e.message?.includes('already exists')) logger.info('ℹ️ full_name column check:', e.message);
     }
 
     try {
         await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS signature TEXT DEFAULT ''`);
-        console.log('✅ Added signature column');
+        logger.info('✅ Added signature column');
     } catch (e: any) {
-        if (!e.message?.includes('already exists')) console.log('ℹ️ signature column check:', e.message);
+        if (!e.message?.includes('already exists')) logger.info('ℹ️ signature column check:', e.message);
     }
 
     try {
         await db.run(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS imap_password_encrypted TEXT`);
-        console.log('✅ Added imap_password_encrypted column');
+        logger.info('✅ Added imap_password_encrypted column');
     } catch (e: any) {
-        if (!e.message?.includes('already exists')) console.log('ℹ️ imap_password_encrypted column check:', e.message);
+        if (!e.message?.includes('already exists')) logger.info('ℹ️ imap_password_encrypted column check:', e.message);
     }
 
     // Create admin_sessions table
@@ -75,7 +76,7 @@ export async function runMigration(): Promise<void> {
             FOREIGN KEY (admin_id) REFERENCES admin_users(id)
         )
     `);
-    console.log('✅ Created admin_sessions table');
+    logger.info('✅ Created admin_sessions table');
 
     // Create password_reset_tokens table
     await db.run(`
@@ -89,7 +90,7 @@ export async function runMigration(): Promise<void> {
             FOREIGN KEY (admin_id) REFERENCES admin_users(id)
         )
     `);
-    console.log('✅ Created password_reset_tokens table');
+    logger.info('✅ Created password_reset_tokens table');
 
     // Seed admin users
     const passwordHash = await hashPassword(INITIAL_PASSWORD);
@@ -109,13 +110,13 @@ export async function runMigration(): Promise<void> {
                  VALUES (?, ?, ?, ?, ?, 1, 1, ?)`,
                 [id, admin.username, admin.email, admin.fullName, passwordHash, now]
             );
-            console.log(`✅ Created admin user: ${admin.username}`);
+            logger.info(`✅ Created admin user: ${admin.username}`);
         } else {
-            console.log(`ℹ️ Admin user already exists: ${admin.username}`);
+            logger.info(`ℹ️ Admin user already exists: ${admin.username}`);
         }
     }
 
-    console.log('✅ Migration complete: Admin Users & Sessions');
+    logger.info('✅ Migration complete: Admin Users & Sessions');
 }
 
 // Export for direct execution

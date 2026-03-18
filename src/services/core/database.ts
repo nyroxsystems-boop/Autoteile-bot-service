@@ -2,6 +2,7 @@
 // Replaces in-memory store for investor-ready deployment
 
 import { Pool, PoolClient } from 'pg';
+import { logger } from "@utils/logger";
 import * as crypto from 'crypto';
 import { runMigrations } from './migrations';
 import { seedDemoData } from './seedDemoData';
@@ -15,7 +16,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3)
             const isTransient = err?.code === 'EAI_AGAIN' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT';
             if (isTransient && attempt < maxRetries) {
                 const delay = attempt * 1000; // 1s, 2s, 3s
-                console.warn(`[DB] ${label} failed (attempt ${attempt}/${maxRetries}, retrying in ${delay}ms):`, err?.message);
+                logger.warn(`[DB] ${label} failed (attempt ${attempt}/${maxRetries}, retrying in ${delay}ms):`, err?.message);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
             }
@@ -43,12 +44,12 @@ const generateId = () => crypto.randomUUID();
  * Initialize database - create tables and seed admin user
  */
 export async function initDb(): Promise<void> {
-    console.log("[DB] Initializing PostgreSQL database...");
+    logger.info("[DB] Initializing PostgreSQL database...");
 
     // Retry init up to 5 times — Railway DNS can be slow on cold start
     await withRetry(async () => {
         await runMigrations(pool);
-        console.log("[DB] Migrations completed successfully");
+        logger.info("[DB] Migrations completed successfully");
 
         // Seed Admin User (if not exists)
         const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
@@ -56,7 +57,7 @@ export async function initDb(): Promise<void> {
 
         // SECURITY: Only create admin if credentials are explicitly configured
         if (!adminEmail || !adminPassword) {
-            console.log("[DB] ⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set - skipping admin seeding");
+            logger.info("[DB] ⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set - skipping admin seeding");
         } else {
             const existingUser = await pool.query(
                 'SELECT id FROM users WHERE email = $1',
@@ -83,9 +84,9 @@ export async function initDb(): Promise<void> {
                         new Date().toISOString()
                     ]
                 );
-                console.log(`[DB] ✅ Seeded admin user: ${adminEmail}`);
+                logger.info(`[DB] ✅ Seeded admin user: ${adminEmail}`);
             } else {
-                console.log("[DB] Admin user already exists");
+                logger.info("[DB] Admin user already exists");
             }
         }
 
@@ -94,7 +95,7 @@ export async function initDb(): Promise<void> {
             await seedDemoData();
         }
 
-        console.log("[DB] PostgreSQL database initialized successfully");
+        logger.info("[DB] PostgreSQL database initialized successfully");
     }, 'initDb', 5);
 }
 
@@ -123,7 +124,7 @@ export async function runRaw(sql: string, params: any[] = []): Promise<void> {
     try {
         await pool.query(sql, params);
     } catch (error) {
-        console.error("[DB] Error in runRaw():", error);
+        logger.error("[DB] Error in runRaw():", error);
         throw error;
     }
 }
@@ -174,7 +175,7 @@ function convertPlaceholders(sql: string): string {
  */
 export async function closeDb(): Promise<void> {
     await pool.end();
-    console.log("[DB] Connection pool closed");
+    logger.info("[DB] Connection pool closed");
 }
 
 // Export db instance for compatibility

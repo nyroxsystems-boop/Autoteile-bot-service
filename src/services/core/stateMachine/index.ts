@@ -17,6 +17,7 @@ import { oemLookupHandler } from './handlers/oemLookupHandler';
 import { showOffersHandler } from './handlers/showOffersHandler';
 import { awaitOfferChoiceHandler } from './handlers/awaitOfferChoiceHandler';
 import { awaitOfferConfirmationHandler } from './handlers/awaitOfferConfirmationHandler';
+import { variantSelectionHandler } from './handlers/variantSelectionHandler';
 
 // Post-offer handlers
 import { collectDeliveryPreferenceHandler } from './handlers/collectDeliveryPreferenceHandler';
@@ -32,6 +33,7 @@ registerHandler(oemLookupHandler);
 registerHandler(showOffersHandler);
 registerHandler(awaitOfferChoiceHandler);
 registerHandler(awaitOfferConfirmationHandler);
+registerHandler(variantSelectionHandler);
 registerHandler(collectDeliveryPreferenceHandler);
 registerHandler(collectAddressHandler);
 registerHandler(doneHandler);

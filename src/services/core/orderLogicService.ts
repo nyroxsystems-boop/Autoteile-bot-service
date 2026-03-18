@@ -1,5 +1,7 @@
 import { insertOrder, getOrderById, updateOrderStatus, findOrCreateOrder, updateOrder, updateOrderData, listShopOffersByOrderId } from '@adapters/supabaseService';
+import { logger } from "@utils/logger";
 import { Order, Message, Vehicle, ShopOffer } from '../../types/models';
+import { logger } from "@utils/logger";
 
 /**
  * Regel-Engine: Bestes Angebot auswählen.
@@ -10,7 +12,7 @@ import { Order, Message, Vehicle, ShopOffer } from '../../types/models';
  *    bevorzugt Lieferzeit ≤ 2 Tage
  */
 export function selectBestOffer(offers: ShopOffer[]): ShopOffer | null {
-  console.log("[OrderLogic] selectBestOffer called", { offersCount: offers?.length ?? 0 });
+  logger.info("[OrderLogic] selectBestOffer called", { offersCount: offers?.length ?? 0 });
   if (!offers || offers.length === 0) return null;
 
   // 1. Filter bevorzugt schnelle Lieferung
@@ -23,7 +25,7 @@ export function selectBestOffer(offers: ShopOffer[]): ShopOffer | null {
 
   const best = candidates[0] ?? null;
   if (best) {
-    console.log("[OrderLogic] selectBestOffer result", {
+    logger.info("[OrderLogic] selectBestOffer result", {
       orderId: (best as any)?.orderId ?? (best as any)?.order_id ?? null,
       shopName: (best as any)?.shopName ?? (best as any)?.shop_name ?? null,
       price: best.price
@@ -36,9 +38,9 @@ export function selectBestOffer(offers: ShopOffer[]): ShopOffer | null {
  * Markiert eine Order als "ready" und setzt bestOffer.
  */
 export async function autoSelectOffer(orderId: string) {
-  console.log("[OrderLogic] autoSelectOffer start", { orderId });
+  logger.info("[OrderLogic] autoSelectOffer start", { orderId });
   const offers = await listShopOffersByOrderId(orderId);
-  console.log("[OrderLogic] autoSelectOffer offers loaded", { orderId, offersCount: offers.length });
+  logger.info("[OrderLogic] autoSelectOffer offers loaded", { orderId, offersCount: offers.length });
   if (offers.length === 0) {
     throw new Error("No shop offers available for this order.");
   }
@@ -50,7 +52,7 @@ export async function autoSelectOffer(orderId: string) {
 
   // Status aktualisieren
   await updateOrderStatus(orderId, "ready");
-  console.log("[OrderLogic] autoSelectOffer completed", {
+  logger.info("[OrderLogic] autoSelectOffer completed", {
     orderId,
     selectedOffer: {
       shopName: (best as any)?.shopName ?? (best as any)?.shop_name ?? null,
@@ -74,7 +76,7 @@ export async function autoSelectOffer(orderId: string) {
  * Jetzt nur Mock.
  */
 export async function autoOrder(orderId: string, offer: ShopOffer) {
-  console.log("[OrderLogic] autoOrder start", {
+  logger.info("[OrderLogic] autoOrder start", {
     orderId,
     offer: {
       shopName: (offer as any)?.shopName ?? (offer as any)?.shop_name ?? null,
@@ -83,7 +85,7 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
   });
   // Fake-Verzögerung
   await new Promise(res => setTimeout(res, 300));
-  console.log("[OrderLogic] autoOrder mock delay finished", { orderId });
+  logger.info("[OrderLogic] autoOrder mock delay finished", { orderId });
 
   // In Realität würdest du hier eine externe Bestellung ausführen.
   const confirmation = `MOCK - ORDER - ${orderId} -${offer.shopName} -${Date.now()} `;
@@ -96,9 +98,9 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
     // Dynamic import to avoid cycles or use dependency injection in real app
     const wawi = await import('../adapters/realInvenTreeAdapter');
     await wawi.createInvoice(orderId);
-    console.log("[OrderLogic] Automated Invoice created", { orderId });
+    logger.info("[OrderLogic] Automated Invoice created", { orderId });
   } catch (err: any) {
-    console.error("[OrderLogic] Failed to auto-create invoice", { orderId, error: err.message });
+    logger.error("[OrderLogic] Failed to auto-create invoice", { orderId, error: err.message });
     // Don't fail the order flow, just log
   }
 
@@ -114,16 +116,16 @@ export async function autoOrder(orderId: string, offer: ShopOffer) {
 
       if (part && part.pk) {
         await wawi.deductStock(tenantId, part.pk, 1);
-        console.log(`[OrderLogic] Stock deducted for Part ${part.pk}(OEM: ${oem})`);
+        logger.info(`[OrderLogic] Stock deducted for Part ${part.pk}(OEM: ${oem})`);
       } else {
-        console.log(`[OrderLogic] No matching WWS part found for OEM ${oem} - Stock not deducted.`);
+        logger.info(`[OrderLogic] No matching WWS part found for OEM ${oem} - Stock not deducted.`);
       }
     }
   } catch (err: any) {
-    console.error("[OrderLogic] Failed to sync stock", { orderId, error: err.message });
+    logger.error("[OrderLogic] Failed to sync stock", { orderId, error: err.message });
   }
 
-  console.log("[OrderLogic] autoOrder completed", {
+  logger.info("[OrderLogic] autoOrder completed", {
     orderId,
     newStatus: "ordered",
     confirmation

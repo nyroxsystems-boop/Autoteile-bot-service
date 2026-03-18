@@ -1,4 +1,19 @@
 import { Router, type Request, type Response } from "express";
+import { logger } from "@utils/logger";
+import { validate } from '../middleware/validate';
+import { loginSchema, changePasswordSchema } from '../middleware/schemas';
+import { jwtService } from '../services/auth/jwtService';
+import { z } from 'zod';
+
+// Flexible login: accepts email OR username
+const flexLoginSchema = z.object({
+    email: z.string().max(255).optional(),
+    username: z.string().max(64).optional(),
+    password: z.string().min(1, 'Passwort erforderlich').max(128),
+    tenant: z.string().max(255).optional(),
+    device_id: z.string().max(128).optional(),
+    device_name: z.string().max(128).optional(),
+}).refine(d => d.email || d.username, { message: 'E-Mail oder Benutzername erforderlich' });
 import * as db from "../services/core/database";
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
@@ -32,7 +47,7 @@ async function ensureUserSessionsTable() {
  * POST /api/auth/login
  * Login endpoint for dashboard with device limit enforcement
  */
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", validate(flexLoginSchema), async (req: Request, res: Response) => {
     const { email, username, password, tenant, device_id } = req.body;
     const loginIdentifier = email || username;
     const deviceId = device_id || req.headers['x-device-id'] || `unknown-${Date.now()}`;
@@ -90,7 +105,7 @@ router.post("/login", async (req: Request, res: Response) => {
             );
 
             if (!existingDevice && activeDeviceCount >= maxDevices) {
-                console.log(`⛔ Device limit reached for tenant ${merchantId}: ${activeDeviceCount}/${maxDevices}`);
+                logger.info(`⛔ Device limit reached for tenant ${merchantId}: ${activeDeviceCount}/${maxDevices}`);
                 return res.status(403).json({
                     error: "DEVICE_LIMIT_REACHED",
                     message: "Gerätelimit erreicht. Kontaktieren Sie Ihren Verkäufer für weitere Zugänge.",
@@ -133,7 +148,7 @@ router.post("/login", async (req: Request, res: Response) => {
             );
         } catch (err) {
             // Device tracking is best-effort, don't fail login
-            console.warn('Device tracking failed:', err);
+            logger.warn('Device tracking failed:', err);
         }
 
         // Update last login
@@ -151,10 +166,25 @@ router.post("/login", async (req: Request, res: Response) => {
             }
         } catch { /* fallback to default */ }
 
-        // Return session data
+        // Issue JWT tokens alongside legacy session
+        const jwtTokens = jwtService.generateTokenPair({
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            merchantId: user.merchant_id || '',
+        });
+
+        // Return session data + JWT tokens
         const response = {
             access: token,
             refresh: token,
+            // JWT tokens (new clients should use these)
+            jwt: {
+                accessToken: jwtTokens.accessToken,
+                refreshToken: jwtTokens.refreshToken,
+                expiresIn: jwtTokens.expiresIn,
+                tokenType: jwtTokens.tokenType,
+            },
             user: {
                 id: user.id,
                 email: user.email,
@@ -169,11 +199,11 @@ router.post("/login", async (req: Request, res: Response) => {
             }
         };
 
-        console.log(`✅ User logged in: ${user.email} (${user.role}) on device ${deviceId}`);
+        logger.info(`✅ User logged in: ${user.email} (${user.role}) on device ${deviceId}`);
         return res.status(200).json(response);
 
     } catch (error: any) {
-        console.error("Error in POST /api/auth/login:", error);
+        logger.error("Error in POST /api/auth/login:", error);
         return res.status(500).json({
             error: "Login failed",
             details: error?.message ?? String(error)
@@ -188,6 +218,12 @@ router.post("/login", async (req: Request, res: Response) => {
 router.post("/logout", async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
 
+    // Also blacklist JWT if present
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const bearerToken = authHeader.substring(7);
+        jwtService.blacklistToken(bearerToken);
+    }
+
     if (authHeader && authHeader.startsWith('Token ')) {
         const token = authHeader.substring(6);
 
@@ -200,13 +236,37 @@ router.post("/logout", async (req: Request, res: Response) => {
                 await db.run('UPDATE user_sessions SET is_active = 0 WHERE token = ?', [token]);
             } catch { /* best effort */ }
 
-            console.log('✅ User logged out, device session deactivated');
+            logger.info('✅ User logged out, device session deactivated');
         } catch (error) {
-            console.error("Error deleting session:", error);
+            logger.error("Error deleting session:", error);
         }
     }
 
     return res.status(200).json({ success: true });
+});
+
+/**
+ * POST /api/auth/refresh
+ * Rotate JWT refresh token → new access + refresh pair
+ */
+router.post("/refresh", async (req: Request, res: Response) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return res.status(400).json({ error: "refreshToken is required" });
+    }
+
+    const newTokens = jwtService.rotateRefreshToken(refreshToken);
+    if (!newTokens) {
+        return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+
+    return res.json({
+        accessToken: newTokens.accessToken,
+        refreshToken: newTokens.refreshToken,
+        expiresIn: newTokens.expiresIn,
+        tokenType: newTokens.tokenType,
+    });
 });
 
 /**
@@ -224,7 +284,7 @@ router.get("/me", async (req: Request, res: Response) => {
 
     try {
         // Find session with proper PostgreSQL timestamp comparison
-        console.log(`[Auth/Me] Checking session token (Length: ${token.length})`);
+        logger.info(`[Auth/Me] Checking session token (Length: ${token.length})`);
 
         const session = await db.get<any>(
             'SELECT * FROM sessions WHERE token = ? AND expires_at > NOW()',
@@ -232,11 +292,11 @@ router.get("/me", async (req: Request, res: Response) => {
         );
 
         if (!session) {
-            console.log(`[Auth/Me] Session not found or expired.`);
+            logger.info(`[Auth/Me] Session not found or expired.`);
             return res.status(401).json({ error: "Invalid or expired session" });
         }
 
-        console.log(`[Auth/Me] Session valid for user ${session.user_id}`);
+        logger.info(`[Auth/Me] Session valid for user ${session.user_id}`);
 
         // Get user
         const user = await db.get<any>(
@@ -266,7 +326,7 @@ router.get("/me", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Error in GET /api/auth/me:", error);
+        logger.error("Error in GET /api/auth/me:", error);
         return res.status(500).json({
             error: "Failed to get user info",
             details: error?.message ?? String(error)
@@ -324,7 +384,7 @@ router.get("/me/tenants", async (req: Request, res: Response) => {
         return res.status(200).json(tenants);
 
     } catch (error: any) {
-        console.error("Error in GET /api/auth/me/tenants:", error);
+        logger.error("Error in GET /api/auth/me/tenants:", error);
         return res.status(500).json({
             error: "Failed to get tenants",
             details: error?.message ?? String(error)
@@ -332,7 +392,10 @@ router.get("/me/tenants", async (req: Request, res: Response) => {
     }
 });
 
-router.post("/change-password", async (req: Request, res: Response) => {
+router.post("/change-password", validate(z.object({
+    oldPassword: z.string().min(1),
+    newPassword: z.string().min(8).max(128),
+})), async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     const { oldPassword, newPassword } = req.body;
 
@@ -421,7 +484,7 @@ router.get("/team/", async (req: Request, res: Response) => {
         return res.status(200).json(teamMembers);
 
     } catch (error: any) {
-        console.error("Error in GET /api/auth/team:", error);
+        logger.error("Error in GET /api/auth/team:", error);
         return res.status(500).json({
             error: "Failed to get team",
             details: error?.message ?? String(error)

@@ -1,0 +1,91 @@
+[
+  { "id": "BMW-001", "make": "BMW", "model": "3er (E90)", "year": "2010", "part": "Bremsscheibe vorne", "expectedOem": "34116854998", "notes": "320i/325i vented front disc" },
+  { "id": "BMW-002", "make": "BMW", "model": "5er (F10)", "year": "2013", "part": "Ölfilter", "expectedOem": "11427953129", "notes": "N20 engine" },
+  { "id": "BMW-003", "make": "BMW", "model": "X3 (F25)", "year": "2015", "part": "Luftfilter", "expectedOem": "13717602643", "notes": "xDrive20d" },
+  { "id": "BMW-004", "make": "BMW", "model": "1er (F20)", "year": "2014", "part": "Zündkerze", "expectedOem": "12120037244", "notes": "116i N13 engine" },
+  { "id": "BMW-005", "make": "BMW", "model": "3er (G20)", "year": "2020", "part": "Bremsbelag hinten", "expectedOem": "34216873093", "notes": "330i rear pads" },
+  { "id": "BMW-006", "make": "BMW", "model": "X5 (E70)", "year": "2011", "part": "Thermostat", "expectedOem": "11537586885", "notes": "N57 diesel" },
+  { "id": "BMW-007", "make": "BMW", "model": "7er (F01)", "year": "2012", "part": "Wasserpumpe", "expectedOem": "11517632426", "notes": "740i N54/N55" },
+  { "id": "BMW-008", "make": "BMW", "model": "X1 (E84)", "year": "2013", "part": "Keilrippenriemen", "expectedOem": "11287578667", "notes": "sDrive18i" },
+  { "id": "BMW-009", "make": "BMW", "model": "4er (F32)", "year": "2016", "part": "Stoßdämpfer vorne", "expectedOem": "31316796157", "notes": "420d" },
+  { "id": "BMW-010", "make": "BMW", "model": "3er (E46)", "year": "2004", "part": "Koppelstange vorne", "expectedOem": "31356780847", "notes": "325i" },
+
+  { "id": "MB-001", "make": "Mercedes", "model": "C-Klasse (W205)", "year": "2016", "part": "Ölfilter", "expectedOem": "A6511800109", "notes": "C220d OM651" },
+  { "id": "MB-002", "make": "Mercedes", "model": "E-Klasse (W213)", "year": "2018", "part": "Bremsscheibe vorne", "expectedOem": "A0004212512", "notes": "E300 vented" },
+  { "id": "MB-003", "make": "Mercedes", "model": "A-Klasse (W176)", "year": "2015", "part": "Luftfilter", "expectedOem": "A2700940004", "notes": "A180 M270" },
+  { "id": "MB-004", "make": "Mercedes", "model": "GLC (X253)", "year": "2019", "part": "Bremsbelag vorne", "expectedOem": "A0004206800", "notes": "GLC300" },
+  { "id": "MB-005", "make": "Mercedes", "model": "S-Klasse (W222)", "year": "2017", "part": "Zündkerze", "expectedOem": "A0041596403", "notes": "S400 M276" },
+  { "id": "MB-006", "make": "Mercedes", "model": "CLA (C117)", "year": "2016", "part": "Innenraumfilter", "expectedOem": "A2468300018", "notes": "CLA200" },
+  { "id": "MB-007", "make": "Mercedes", "model": "GLE (W166)", "year": "2016", "part": "Stoßdämpfer hinten", "expectedOem": "A1663200930", "notes": "GLE350d" },
+  { "id": "MB-008", "make": "Mercedes", "model": "Sprinter (W906)", "year": "2015", "part": "Kraftstofffilter", "expectedOem": "A6510901652", "notes": "313 CDI" },
+  { "id": "MB-009", "make": "Mercedes", "model": "B-Klasse (W246)", "year": "2014", "part": "Scheibenwischer", "expectedOem": "A2468201145", "notes": "B180" },
+  { "id": "MB-010", "make": "Mercedes", "model": "Vito (W447)", "year": "2018", "part": "Koppelstange vorne", "expectedOem": "A4473200189", "notes": "116 CDI" },
+
+  { "id": "VW-001", "make": "VW", "model": "Golf 7", "year": "2015", "part": "Ölfilter", "expectedOem": "04E115561H", "notes": "1.4 TSI EA211" },
+  { "id": "VW-002", "make": "VW", "model": "Passat B8", "year": "2017", "part": "Bremsscheibe vorne", "expectedOem": "3Q0615301", "notes": "2.0 TDI 340mm" },
+  { "id": "VW-003", "make": "VW", "model": "Tiguan (AD)", "year": "2018", "part": "Luftfilter", "expectedOem": "5Q0129620D", "notes": "2.0 TDI" },
+  { "id": "VW-004", "make": "VW", "model": "Polo 6R", "year": "2014", "part": "Zündkerze", "expectedOem": "04E905612C", "notes": "1.2 TSI" },
+  { "id": "VW-005", "make": "VW", "model": "T6 Transporter", "year": "2019", "part": "Kraftstofffilter", "expectedOem": "7H0127401B", "notes": "2.0 TDI" },
+  { "id": "VW-006", "make": "VW", "model": "Touran (5T)", "year": "2016", "part": "Bremsbelag hinten", "expectedOem": "5Q0698451A", "notes": "1.6 TDI" },
+  { "id": "VW-007", "make": "VW", "model": "Caddy (2K)", "year": "2013", "part": "Keilrippenriemen", "expectedOem": "03L903137", "notes": "1.6 TDI" },
+  { "id": "VW-008", "make": "VW", "model": "Golf 8", "year": "2021", "part": "Innenraumfilter", "expectedOem": "5Q0819653", "notes": "1.5 TSI" },
+  { "id": "VW-009", "make": "VW", "model": "Arteon", "year": "2019", "part": "Stoßdämpfer vorne", "expectedOem": "3Q0413031JN", "notes": "2.0 TSI" },
+  { "id": "VW-010", "make": "VW", "model": "T-Roc", "year": "2020", "part": "Thermostat", "expectedOem": "04E121113P", "notes": "1.5 TSI" },
+
+  { "id": "AUDI-001", "make": "Audi", "model": "A4 (B8)", "year": "2013", "part": "Ölfilter", "expectedOem": "06J115403Q", "notes": "2.0 TFSI EA888" },
+  { "id": "AUDI-002", "make": "Audi", "model": "A3 (8V)", "year": "2016", "part": "Bremsscheibe vorne", "expectedOem": "5Q0615301", "notes": "2.0 TDI (MQB platform shared with Golf)" },
+  { "id": "AUDI-003", "make": "Audi", "model": "Q5 (FY)", "year": "2018", "part": "Luftfilter", "expectedOem": "80A133843A", "notes": "2.0 TDI" },
+  { "id": "AUDI-004", "make": "Audi", "model": "A6 (C7)", "year": "2015", "part": "Zündkerze", "expectedOem": "06H905611", "notes": "2.0 TFSI" },
+  { "id": "AUDI-005", "make": "Audi", "model": "Q7 (4M)", "year": "2017", "part": "Bremsbelag vorne", "expectedOem": "4M0698151AA", "notes": "3.0 TDI" },
+
+  { "id": "OPEL-001", "make": "Opel", "model": "Astra K", "year": "2017", "part": "Ölfilter", "expectedOem": "55594651", "notes": "1.4 Turbo" },
+  { "id": "OPEL-002", "make": "Opel", "model": "Corsa E", "year": "2016", "part": "Bremsscheibe vorne", "expectedOem": "95516122", "notes": "1.2" },
+  { "id": "OPEL-003", "make": "Opel", "model": "Insignia B", "year": "2018", "part": "Luftfilter", "expectedOem": "13272719", "notes": "2.0 CDTI" },
+  { "id": "OPEL-004", "make": "Opel", "model": "Mokka X", "year": "2017", "part": "Innenraumfilter", "expectedOem": "1808246", "notes": "1.6 CDTI" },
+  { "id": "OPEL-005", "make": "Opel", "model": "Zafira C", "year": "2015", "part": "Thermostat", "expectedOem": "55577072", "notes": "1.4 Turbo" },
+
+  { "id": "FORD-001", "make": "Ford", "model": "Focus MK3", "year": "2015", "part": "Ölfilter", "expectedOem": "1359941", "notes": "1.6 TDCi" },
+  { "id": "FORD-002", "make": "Ford", "model": "Fiesta MK7", "year": "2014", "part": "Luftfilter", "expectedOem": "1729860", "notes": "1.0 EcoBoost" },
+  { "id": "FORD-003", "make": "Ford", "model": "Kuga MK2", "year": "2016", "part": "Bremsscheibe vorne", "expectedOem": "1763282", "notes": "2.0 TDCi" },
+  { "id": "FORD-004", "make": "Ford", "model": "Transit Custom", "year": "2018", "part": "Kraftstofffilter", "expectedOem": "2042991", "notes": "2.0 TDCi" },
+  { "id": "FORD-005", "make": "Ford", "model": "Mondeo MK5", "year": "2017", "part": "Innenraumfilter", "expectedOem": "1776360", "notes": "2.0 TDCi" },
+
+  { "id": "TOYOTA-001", "make": "Toyota", "model": "Corolla (E210)", "year": "2020", "part": "Ölfilter", "expectedOem": "04152-YZZA1", "notes": "1.8 Hybrid" },
+  { "id": "TOYOTA-002", "make": "Toyota", "model": "Yaris (XP210)", "year": "2021", "part": "Luftfilter", "expectedOem": "17801-21060", "notes": "1.5 Hybrid" },
+  { "id": "TOYOTA-003", "make": "Toyota", "model": "RAV4 (XA50)", "year": "2019", "part": "Bremsscheibe vorne", "expectedOem": "43512-42130", "notes": "2.5 Hybrid" },
+  { "id": "TOYOTA-004", "make": "Toyota", "model": "C-HR", "year": "2018", "part": "Innenraumfilter", "expectedOem": "87139-0N020", "notes": "1.8 Hybrid" },
+  { "id": "TOYOTA-005", "make": "Toyota", "model": "Hilux (AN120)", "year": "2017", "part": "Kraftstofffilter", "expectedOem": "23390-0L070", "notes": "2.4 D-4D" },
+
+  { "id": "HYUNDAI-001", "make": "Hyundai", "model": "Tucson (TL)", "year": "2018", "part": "Ölfilter", "expectedOem": "26300-35505", "notes": "2.0 CRDi" },
+  { "id": "HYUNDAI-002", "make": "Hyundai", "model": "i30 (PD)", "year": "2019", "part": "Luftfilter", "expectedOem": "28113-H8100", "notes": "1.6 CRDi" },
+  { "id": "HYUNDAI-003", "make": "Hyundai", "model": "Kona", "year": "2020", "part": "Bremsscheibe vorne", "expectedOem": "51712-J9000", "notes": "1.6 T-GDI" },
+
+  { "id": "SKODA-001", "make": "Skoda", "model": "Octavia III", "year": "2016", "part": "Ölfilter", "expectedOem": "04E115561H", "notes": "1.4 TSI (VW EA211 shared)" },
+  { "id": "SKODA-002", "make": "Skoda", "model": "Kodiaq", "year": "2018", "part": "Bremsscheibe vorne", "expectedOem": "5Q0615301", "notes": "2.0 TDI (MQB shared)" },
+  { "id": "SKODA-003", "make": "Skoda", "model": "Fabia III", "year": "2017", "part": "Luftfilter", "expectedOem": "04C129620A", "notes": "1.0 TSI" },
+
+  { "id": "SEAT-001", "make": "Seat", "model": "Leon III", "year": "2016", "part": "Bremsbelag vorne", "expectedOem": "5Q0698151B", "notes": "2.0 TDI (MQB shared)" },
+  { "id": "SEAT-002", "make": "Seat", "model": "Ateca", "year": "2018", "part": "Ölfilter", "expectedOem": "04E115561H", "notes": "1.4 TSI (VW EA211 shared)" },
+
+  { "id": "RENAULT-001", "make": "Renault", "model": "Clio IV", "year": "2016", "part": "Ölfilter", "expectedOem": "152089599R", "notes": "1.5 dCi" },
+  { "id": "RENAULT-002", "make": "Renault", "model": "Megane IV", "year": "2018", "part": "Bremsscheibe vorne", "expectedOem": "402065345R", "notes": "1.6 dCi" },
+  { "id": "RENAULT-003", "make": "Renault", "model": "Kadjar", "year": "2017", "part": "Luftfilter", "expectedOem": "165467674R", "notes": "1.5 dCi" },
+
+  { "id": "PEUGEOT-001", "make": "Peugeot", "model": "308 II", "year": "2016", "part": "Ölfilter", "expectedOem": "1109CK", "notes": "1.6 BlueHDi" },
+  { "id": "PEUGEOT-002", "make": "Peugeot", "model": "3008 II", "year": "2018", "part": "Luftfilter", "expectedOem": "1444XE", "notes": "1.6 THP" },
+
+  { "id": "FIAT-001", "make": "Fiat", "model": "500 (312)", "year": "2015", "part": "Ölfilter", "expectedOem": "55223416", "notes": "1.2 69PS" },
+  { "id": "FIAT-002", "make": "Fiat", "model": "Ducato (250)", "year": "2018", "part": "Kraftstofffilter", "expectedOem": "77366565", "notes": "2.3 Multijet" },
+
+  { "id": "VOLVO-001", "make": "Volvo", "model": "XC60 II", "year": "2019", "part": "Ölfilter", "expectedOem": "31372212", "notes": "D4 Drive-E" },
+  { "id": "VOLVO-002", "make": "Volvo", "model": "V60 II", "year": "2020", "part": "Bremsscheibe vorne", "expectedOem": "31471824", "notes": "T5 340mm" },
+
+  { "id": "MAZDA-001", "make": "Mazda", "model": "CX-5 (KF)", "year": "2019", "part": "Ölfilter", "expectedOem": "SH01-14-302A", "notes": "2.2 Skyactiv-D" },
+  { "id": "MAZDA-002", "make": "Mazda", "model": "3 (BP)", "year": "2020", "part": "Luftfilter", "expectedOem": "PE01-13-3A0A", "notes": "2.0 Skyactiv-G" },
+
+  { "id": "NISSAN-001", "make": "Nissan", "model": "Qashqai (J11)", "year": "2017", "part": "Ölfilter", "expectedOem": "15208-65F0E", "notes": "1.6 dCi" },
+  { "id": "NISSAN-002", "make": "Nissan", "model": "X-Trail (T32)", "year": "2018", "part": "Bremsscheibe vorne", "expectedOem": "40206-4BA0A", "notes": "2.0 dCi" },
+
+  { "id": "KIA-001", "make": "Kia", "model": "Sportage (QL)", "year": "2018", "part": "Ölfilter", "expectedOem": "26300-35505", "notes": "2.0 CRDi (Hyundai shared)" },
+  { "id": "KIA-002", "make": "Kia", "model": "Ceed (CD)", "year": "2019", "part": "Bremsscheibe vorne", "expectedOem": "51712-J7000", "notes": "1.6 CRDi" }
+]

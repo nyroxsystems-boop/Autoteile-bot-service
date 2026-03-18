@@ -2,6 +2,7 @@
 // Endpoints for tax profiles, periods, and exports
 
 import { Router, Request, Response } from 'express';
+import { logger } from "@utils/logger";
 import {
     getTaxProfile,
     upsertTaxProfile,
@@ -46,7 +47,7 @@ router.get('/profile', async (req: Request, res: Response) => {
         }
         res.json(profile);
     } catch (error: any) {
-        console.error('Error fetching tax profile:', error);
+        logger.error('Error fetching tax profile:', error);
         res.status(500).json({ error: 'Failed to fetch tax profile', message: error.message });
     }
 });
@@ -60,7 +61,7 @@ router.put('/profile', async (req: Request, res: Response) => {
         const profile = await upsertTaxProfile((req as any).tenantId!, req.body);
         res.json(profile);
     } catch (error: any) {
-        console.error('Error updating tax profile:', error);
+        logger.error('Error updating tax profile:', error);
         res.status(500).json({ error: 'Failed to update tax profile', message: error.message });
     }
 });
@@ -75,7 +76,7 @@ router.get('/periods', async (req: Request, res: Response) => {
         const periods = await listTaxPeriods((req as any).tenantId!, limit);
         res.json(periods);
     } catch (error: any) {
-        console.error('Error listing tax periods:', error);
+        logger.error('Error listing tax periods:', error);
         res.status(500).json({ error: 'Failed to list tax periods', message: error.message });
     }
 });
@@ -89,7 +90,7 @@ router.get('/periods/:id', async (req: Request, res: Response) => {
         const period = await getTaxPeriodById((req as any).tenantId!, req.params.id);
         res.json(period);
     } catch (error: any) {
-        console.error('Error fetching tax period:', error);
+        logger.error('Error fetching tax period:', error);
         res.status(404).json({ error: 'Tax period not found', message: error.message });
     }
 });
@@ -109,7 +110,7 @@ router.post('/periods/calculate', async (req: Request, res: Response) => {
         const aggregation = await calculateTaxPeriod((req as any).tenantId!, period_start, period_end);
         res.json(aggregation);
     } catch (error: any) {
-        console.error('Error calculating tax period:', error);
+        logger.error('Error calculating tax period:', error);
         res.status(500).json({ error: 'Failed to calculate tax period', message: error.message });
     }
 });
@@ -129,7 +130,7 @@ router.post('/periods', async (req: Request, res: Response) => {
         const period = await saveTaxPeriod((req as any).tenantId!, period_start, period_end, 'calculated');
         res.json(period);
     } catch (error: any) {
-        console.error('Error saving tax period:', error);
+        logger.error('Error saving tax period:', error);
         res.status(500).json({ error: 'Failed to save tax period', message: error.message });
     }
 });
@@ -158,7 +159,7 @@ router.get('/export/:year/:month', async (req: Request, res: Response) => {
             ...calculation
         });
     } catch (error: any) {
-        console.error('Error exporting monthly report:', error);
+        logger.error('Error exporting monthly report:', error);
         res.status(500).json({ error: 'Failed to export monthly report', message: error.message });
     }
 });
@@ -178,7 +179,7 @@ router.post('/periods/:id/export', async (req: Request, res: Response) => {
             period
         });
     } catch (error: any) {
-        console.error('Error exporting tax period:', error);
+        logger.error('Error exporting tax period:', error);
         res.status(500).json({ error: 'Failed to export tax period', message: error.message });
     }
 });

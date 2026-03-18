@@ -1,4 +1,5 @@
 import express from "express";
+import { logger } from "@utils/logger";
 import cors from "cors";
 import helmet from "helmet";
 
@@ -40,21 +41,22 @@ import botTestingRouter from "./routes/botTestingRoutes";
 import inboxRouter from "./routes/inboxRoutes";
 import shopIntegrationRouter from "./routes/shopIntegrationRoutes";
 import productsRouter from "./routes/productRoutes";
+import gdprRouter from "./routes/gdprRoutes";
 
 // Queue Worker - nur starten wenn Redis verfügbar
 if (process.env.REDIS_URL) {
   import("./queue/botWorker").then(() => {
-    console.log("Queue worker started");
+    logger.info("Queue worker started");
   }).catch(err => {
-    console.error("Failed to start queue worker:", err);
+    logger.error("Failed to start queue worker:", err);
   });
 } else {
-  console.warn("⚠️  Skipping queue worker — REDIS_URL not set");
+  logger.warn("⚠️  Skipping queue worker — REDIS_URL not set");
   if (process.env.NODE_ENV === 'production') {
-    console.error("🔴 CRITICAL: REDIS_URL is not set in production!");
-    console.error("   → Rate limiting will NOT work across instances");
-    console.error("   → WhatsApp messages will be processed synchronously (risk of timeouts)");
-    console.error("   → Set REDIS_URL environment variable to fix this");
+    logger.error("🔴 CRITICAL: REDIS_URL is not set in production!");
+    logger.error("   → Rate limiting will NOT work across instances");
+    logger.error("   → WhatsApp messages will be processed synchronously (risk of timeouts)");
+    logger.error("   → Set REDIS_URL environment variable to fix this");
   }
 }
 
@@ -72,20 +74,19 @@ const alwaysAllowedOrigins = [
   'http://localhost:5174'
 ];
 
-// Additional origins from env (if any)
+// Production origins MUST be set via CORS_ALLOWED_ORIGINS env variable
 const envOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : [
-    'https://autoteile-dashboard.onrender.com',
-    'https://crm-system.onrender.com',
-    'https://admin-dashboard.onrender.com',
-    'https://admin-dashboard-ufau.onrender.com'
-  ];
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+  : [];
+
+if (envOrigins.length === 0 && process.env.NODE_ENV === 'production') {
+  logger.warn('[CORS] ⚠️  CORS_ALLOWED_ORIGINS not set in production! Set it to your dashboard URLs.');
+}
 
 // Merge and deduplicate
 const allowedOrigins = [...new Set([...alwaysAllowedOrigins, ...envOrigins])];
 
-console.log('[CORS] Allowed origins:', allowedOrigins);
+logger.info({ origins: allowedOrigins }, '[CORS] Allowed origins configured');
 
 const corsOptions = {
   origin: allowedOrigins,
@@ -204,6 +205,9 @@ app.use("/api/integrations", authMiddleware, shopIntegrationRouter);
 // Product Management API
 app.use("/api/products", authMiddleware, productsRouter);
 
+// GDPR/DSGVO Compliance API (admin-only)
+app.use("/api/gdpr", authMiddleware, requireAdmin, gdprRouter);
+
 // Simulations-Endpoint (BLOCKED in production, protected in dev)
 if (process.env.NODE_ENV !== 'production') {
   app.use("/simulate/whatsapp", authMiddleware, simulateWhatsappRouter);
@@ -214,30 +218,30 @@ initDb().then(async () => {
   // Run tax module migrations
   const { runTaxMigrations } = await import('./migrations/runTaxMigrations');
   await runTaxMigrations().catch(err => {
-    console.error('Tax migration failed (non-critical):', err);
+    logger.error('Tax migration failed (non-critical):', err);
   });
 
   // Run admin module migrations
   const { runMigration: runAdminUsersMigration } = await import('./migrations/002_admin_users');
   await runAdminUsersMigration().catch(err => {
-    console.error('Admin users migration failed (non-critical):', err);
+    logger.error('Admin users migration failed (non-critical):', err);
   });
 
   const { runMigration: runActivityLogMigration } = await import('./migrations/003_admin_activity_log');
   await runActivityLogMigration().catch(err => {
-    console.error('Activity log migration failed (non-critical):', err);
+    logger.error('Activity log migration failed (non-critical):', err);
   });
 
   // Run email assignments migration
   const { runMigration: runEmailAssignmentsMigration } = await import('./migrations/004_email_assignments');
   await runEmailAssignmentsMigration().catch(err => {
-    console.error('Email assignments migration failed (non-critical):', err);
+    logger.error('Email assignments migration failed (non-critical):', err);
   });
 
   app.listen(env.port, () => {
-    console.log(`Bot service listening on port ${env.port}`);
+    logger.info(`Bot service listening on port ${env.port}`);
   });
 }).catch(err => {
-  console.error("Failed to init database", err);
+  logger.error("Failed to init database", err);
   process.exit(1);
 });

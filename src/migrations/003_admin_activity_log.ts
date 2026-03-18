@@ -4,9 +4,10 @@
  */
 
 import * as db from '../services/core/database';
+import { logger } from "@utils/logger";
 
 export async function runMigration(): Promise<void> {
-    console.log('🔄 Running migration: Admin Activity Log...');
+    logger.info('🔄 Running migration: Admin Activity Log...');
 
     // Create admin_activity_log table
     await db.run(`
@@ -24,22 +25,22 @@ export async function runMigration(): Promise<void> {
             timestamp TEXT NOT NULL
         )
     `);
-    console.log('✅ Created admin_activity_log table');
+    logger.info('✅ Created admin_activity_log table');
 
     // Create index for faster queries
     await db.run(`
         CREATE INDEX IF NOT EXISTS idx_activity_timestamp 
         ON admin_activity_log(timestamp DESC)
     `);
-    console.log('✅ Created timestamp index');
+    logger.info('✅ Created timestamp index');
 
     await db.run(`
         CREATE INDEX IF NOT EXISTS idx_activity_admin 
         ON admin_activity_log(admin_username)
     `);
-    console.log('✅ Created admin username index');
+    logger.info('✅ Created admin username index');
 
-    console.log('✅ Migration complete: Admin Activity Log');
+    logger.info('✅ Migration complete: Admin Activity Log');
 }
 
 // Export for direct execution

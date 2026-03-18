@@ -1,4 +1,8 @@
 import { Router, type Request, type Response } from "express";
+import { logger } from "@utils/logger";
+import { validate, validateParams } from '../middleware/validate';
+import { logger } from "@utils/logger";
+import { createUserSchema, resetUserPasswordSchema, updateTenantLimitsSchema, createTenantSchema, seedOemDatabaseSchema, idParamSchema, tenantDeviceParamSchema } from '../middleware/schemas';
 import { randomUUID } from "crypto";
 import * as bcrypt from 'bcrypt';
 import * as db from "../services/core/database";
@@ -27,7 +31,7 @@ async function hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 10);
 }
 
-router.post("/users", async (req: Request, res: Response) => {
+router.post("/users", validate(createUserSchema.extend({ tenant_id: require('zod').z.coerce.number().int().positive() })), async (req: Request, res: Response) => {
     const { name, email, role, password, tenant_id, username: providedUsername } = req.body;
     if (!email) {
         return res.status(400).json({ error: "Email is required." });
@@ -108,7 +112,7 @@ router.post("/users/:id/reset-password", async (req: Request, res: Response) => 
 
         await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
 
-        console.log(`✅ Password reset for user: ${user.username || user.email} (${id})`);
+        logger.info(`✅ Password reset for user: ${user.username || user.email} (${id})`);
 
         return res.json({
             success: true,
@@ -116,7 +120,7 @@ router.post("/users/:id/reset-password", async (req: Request, res: Response) => 
             user: { id: user.id, username: user.username, email: user.email }
         });
     } catch (err: any) {
-        console.error("Password reset error:", err);
+        logger.error("Password reset error:", err);
         return res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -235,7 +239,7 @@ router.get("/tenants", async (req: Request, res: Response) => {
     }
 });
 
-router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
+router.patch("/tenants/:id/limits", validateParams(idParamSchema), validate(updateTenantLimitsSchema), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { max_users, max_devices } = req.body;
@@ -251,7 +255,7 @@ router.patch("/tenants/:id/limits", async (req: Request, res: Response) => {
     }
 });
 
-router.post("/tenants", async (req: Request, res: Response) => {
+router.post("/tenants", validate(createTenantSchema), async (req: Request, res: Response) => {
     try {
         const { name, email, website, phone, password, whatsapp_number, logo_url } = req.body;
 
@@ -298,7 +302,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
                 });
             }
         } catch (checkErr: any) {
-            console.error("Duplicate check failed:", checkErr.message);
+            logger.error("Duplicate check failed:", checkErr.message);
         }
 
         // Also check SQLite for duplicate email
@@ -324,7 +328,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
         try {
             createdCompany = await createCompany(payload);
         } catch (createErr: any) {
-            console.error("Failed to create company in WAWI:", {
+            logger.error("Failed to create company in WAWI:", {
                 message: createErr.message,
                 response: createErr.response?.data,
                 status: createErr.response?.status,
@@ -360,7 +364,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
             [merchantId, whatsapp_number || null]
         );
 
-        console.log(`✅ Tenant created: ${name} (ID: ${merchantId}, User: ${username})`);
+        logger.info(`✅ Tenant created: ${name} (ID: ${merchantId}, User: ${username})`);
 
         // Return result — password only shown once, never stored in plaintext
         return res.json({
@@ -379,7 +383,7 @@ router.post("/tenants", async (req: Request, res: Response) => {
             }
         });
     } catch (err: any) {
-        console.error("Tenant creation failed:", err.message);
+        logger.error("Tenant creation failed:", err.message);
         return res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -558,7 +562,7 @@ router.get("/oem-database/stats", async (_req: Request, res: Response) => {
 const activeSeederJobs = new Map<string, { pid: number; status: string; output: string[]; startTime: Date }>();
 
 // Trigger OEM Seeder Script
-router.post("/oem-database/seed", async (req: Request, res: Response) => {
+router.post("/oem-database/seed", validate(seedOemDatabaseSchema), async (req: Request, res: Response) => {
     try {
         const { script = 'massive' } = req.body;
 

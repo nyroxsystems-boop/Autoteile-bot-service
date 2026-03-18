@@ -7,6 +7,7 @@
  */
 
 import { Resend } from 'resend';
+import { logger } from "@utils/logger";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const DEFAULT_FROM_EMAIL = 'info@partsunion.de';
@@ -52,7 +53,7 @@ export async function sendEmailViaResend(options: SendEmailOptions): Promise<{ s
         signature
     } = options;
 
-    console.log(`[Resend] Sending email to ${Array.isArray(to) ? to.join(', ') : to}`);
+    logger.info(`[Resend] Sending email to ${Array.isArray(to) ? to.join(', ') : to}`);
 
     try {
         const resend = getResendClient();
@@ -73,21 +74,21 @@ export async function sendEmailViaResend(options: SendEmailOptions): Promise<{ s
         });
 
         if (result.error) {
-            console.error('[Resend] API Error:', result.error);
+            logger.error('[Resend] API Error:', result.error);
             return {
                 success: false,
                 error: result.error.message || 'Resend API Fehler'
             };
         }
 
-        console.log(`✉️ [Resend] Email sent successfully! ID: ${result.data?.id}`);
+        logger.info(`✉️ [Resend] Email sent successfully! ID: ${result.data?.id}`);
         return {
             success: true,
             messageId: result.data?.id
         };
 
     } catch (error: any) {
-        console.error('[Resend] Send error:', error.message);
+        logger.error('[Resend] Send error:', error.message);
         return {
             success: false,
             error: error.message || 'E-Mail-Versand fehlgeschlagen'
@@ -103,7 +104,7 @@ export async function sendBulkEmailViaResend(
     subject: string,
     htmlContent: string
 ): Promise<{ sent: number; failed: number; errors: string[] }> {
-    console.log(`[Resend] Sending bulk email to ${recipients.length} recipients`);
+    logger.info(`[Resend] Sending bulk email to ${recipients.length} recipients`);
 
     let sent = 0;
     let failed = 0;
@@ -143,7 +144,7 @@ export async function sendBulkEmailViaResend(
         }
     }
 
-    console.log(`[Resend] Bulk send complete: ${sent} sent, ${failed} failed`);
+    logger.info(`[Resend] Bulk send complete: ${sent} sent, ${failed} failed`);
     return { sent, failed, errors };
 }
 

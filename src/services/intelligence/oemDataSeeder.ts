@@ -195,10 +195,10 @@ export async function seedAllData(): Promise<void> {
         brands: Object.keys(stats.brands).length,
     });
 
-    console.log('\n=== OEM Database Seed Complete ===');
-    console.log(`Total Records: ${stats.totalRecords}`);
-    console.log('Brands:', stats.brands);
-    console.log('Categories:', stats.categories);
+    logger.info('\n=== OEM Database Seed Complete ===');
+    logger.info(`Total Records: ${stats.totalRecords}`);
+    logger.info('Brands:', stats.brands);
+    logger.info('Categories:', stats.categories);
 }
 
 /**
@@ -220,11 +220,11 @@ export async function seedVerifiedCatalog(): Promise<number> {
 if (require.main === module) {
     seedAllData()
         .then(() => {
-            console.log('\nDatabase seeding complete!');
+            logger.info('\nDatabase seeding complete!');
             process.exit(0);
         })
         .catch(err => {
-            console.error('Seeding failed:', err);
+            logger.error('Seeding failed:', err);
             process.exit(1);
         });
 }

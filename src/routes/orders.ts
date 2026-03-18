@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import { logger } from "@utils/logger";
 import { insertOrder, listOrders, getOrderById } from "@adapters/supabaseService";
+import { logger } from "@utils/logger";
 
 const router = Router();
 
@@ -12,7 +14,7 @@ router.get("/", async (_req: Request, res: Response) => {
     const orders = await listOrders();
     res.json(orders);
   } catch (error: any) {
-    console.error("Error in GET /api/orders:", error);
+    logger.error("Error in GET /api/orders:", error);
     res.status(500).json({
       error: "Failed to list orders",
       details: error?.message ?? String(error)
@@ -34,7 +36,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     }
     res.json(order);
   } catch (error: any) {
-    console.error(`Error in GET /api/orders/${id}:`, error);
+    logger.error(`Error in GET /api/orders/${id}:`, error);
     res.status(500).json({
       error: "Failed to fetch order",
       details: error?.message ?? String(error)
@@ -73,7 +75,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     res.status(201).json(order);
   } catch (error: any) {
-    console.error("Error in POST /api/orders:", error);
+    logger.error("Error in POST /api/orders:", error);
     res.status(500).json({
       error: "Failed to create order",
       details: error?.message ?? String(error)

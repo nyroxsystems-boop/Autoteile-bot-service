@@ -15,11 +15,28 @@ import { OEMResolverRequest, OEMResolverResult, OEMCandidate } from "./types";
 import { logger } from "@utils/logger";
 import { databaseSource } from "./sources/databaseSource";
 import { geminiGroundedOemSource } from "./sources/geminiGroundedOemSource";
-// Claude service deprecated — stubs for pipeline compatibility
-// Phase 3 will fall through to pattern-validation fallback
-const isClaudeAvailable = async () => false;
-const validateOemWithClaude = async (_: any): Promise<{ verdict: string; reason: string; confidenceInOriginal: number; alternativeOem: string | undefined }> => ({ verdict: 'UNAVAILABLE', reason: 'deprecated', confidenceInOriginal: 0.5, alternativeOem: undefined });
-const runDebateRound = async (_: any) => ({ winner: 'gemini', winningOem: '', confidence: 0, reasoning: 'deprecated' });
+// AI Adversary: Claude primary, Gemini adversary fallback (budget-controlled)
+import { isAdversaryAvailable, validateWithAdversary } from './adversaryValidator';
+// Legacy aliases for pipeline compatibility
+const isClaudeAvailable = isAdversaryAvailable;
+const validateOemWithClaude = async (req: any) => {
+  const result = await validateWithAdversary({
+    oemNumber: req.oem || req.oemNumber || '',
+    make: req.make || '',
+    model: req.model || '',
+    year: req.year,
+    partName: req.partName || req.part || '',
+    primarySource: req.source || 'gemini',
+    primaryConfidence: req.confidence || 0.5,
+  });
+  return {
+    verdict: result.verdict,
+    reason: result.reason,
+    confidenceInOriginal: (req.confidence || 0.5) + result.confidenceAdjustment,
+    alternativeOem: result.alternativeOem,
+  };
+};
+const runDebateRound = async (_: any) => ({ winner: 'gemini', winningOem: '', confidence: 0, reasoning: 'deprecated — use adversaryValidator' });
 import { reverseVerifyOem } from "./reverseOemVerification";
 import { validateOemPattern } from "./brandPatternRegistry";
 import { isAftermarketNumber } from "./aftermarketFilter";

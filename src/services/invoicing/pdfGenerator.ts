@@ -2,6 +2,7 @@
 // Generates §14 UStG compliant invoice PDFs
 
 import PDFDocument from 'pdfkit';
+import { logger } from "@utils/logger";
 import { Invoice } from '../../types/tax';
 import { getTaxProfile } from '../tax/taxCalculator';
 import { fetchBillingDesign, mapFont, getLogoXPosition } from './billingDesignAdapter';
@@ -52,16 +53,16 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             }
 
             // Load billing design (colors, logo, fonts)
-            console.log('[PDF] Step 1: Loading design settings for tenant:', tenantId);
+            logger.info('[PDF] Step 1: Loading design settings for tenant:', tenantId);
             const design = await fetchBillingDesign(tenantId);
-            console.log('[PDF] Step 2: Design loaded:', JSON.stringify(design, null, 2));
+            logger.info('[PDF] Step 2: Design loaded:', JSON.stringify(design, null, 2));
 
             const primaryColor = design?.invoice_color || '#000000';
             const accentColor = design?.accent_color || '#f3f4f6';
             const font = design?.invoice_font ? mapFont(design.invoice_font) : 'Helvetica';
             const tableStyle = design?.table_style || 'grid';
 
-            console.log('[PDF] Step 3: Extracted settings:', {
+            logger.info('[PDF] Step 3: Extracted settings:', {
                 primaryColor,
                 accentColor,
                 font,
@@ -93,7 +94,7 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
                     doc.image(logoBuffer, logoX, 40, { width: 100, height: 60, fit: [100, 60] });
                     headerY = 120; // Move text down if logo present
                 } catch (error) {
-                    console.warn('[PDF] Failed to embed logo:', error);
+                    logger.warn('[PDF] Failed to embed logo:', error);
                 }
             }
 

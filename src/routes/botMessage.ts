@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import { logger } from "@utils/logger";
 import { handleIncomingBotMessage } from "../services/core/botLogicService";
+import { logger } from "@utils/logger";
 import { insertMessage } from "@adapters/supabaseService";
 import { env } from "../config/env";
 
@@ -31,7 +33,7 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   try {
-    console.log("[Bot] Incoming /bot/message", {
+    logger.info("[Bot] Incoming /bot/message", {
       from,
       text,
       orderId,
@@ -48,14 +50,14 @@ router.post("/", async (req: Request, res: Response) => {
     try {
       await insertMessage(from, result.reply, "OUT" as any);
     } catch (dbErr: any) {
-      console.error("Failed to store outgoing bot message", { error: dbErr?.message, orderId: result.orderId });
+      logger.error("Failed to store outgoing bot message", { error: dbErr?.message, orderId: result.orderId });
       // Do not fail the whole request if logging to DB fails
     }
 
-    console.log("[Bot] Outgoing reply", { orderId: result.orderId, reply: result.reply });
+    logger.info("[Bot] Outgoing reply", { orderId: result.orderId, reply: result.reply });
     res.json(result);
   } catch (err: any) {
-    console.error("BotFlow Error:", err);
+    logger.error("BotFlow Error:", err);
     res.status(500).json({
       error: "BotFlow failed",
       details: err?.message ?? String(err)

@@ -20,6 +20,7 @@ export interface OEMResolverRequest {
     normalizedCategory?: string; // e.g. "spark_plug" (LLM-normalized)
     suspectedNumber?: string | null; // optional OE/Artikelnummer aus User-Text
     partCategory?: string; // Detected category for PR/Motor-based lookup
+    position?: 'front' | 'rear' | 'left' | 'right' | 'front-left' | 'front-right' | 'rear-left' | 'rear-right' | 'any';
   };
 }
 

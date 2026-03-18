@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import { logger } from "@utils/logger";
 import { refreshOffersForOrder } from '../services/intelligence/productResolutionService';
+import { logger } from "@utils/logger";
 import { getOrderById } from '../services/adapters/supabaseService';
 import { runSeeding } from '../services/core/seedingService';
 import { authMiddleware } from '../middleware/authMiddleware';
@@ -12,14 +14,14 @@ export function createInternalRouter(): Router {
 
   router.post("/orders/:id/refresh-offers", async (req: Request, res: Response) => {
     const orderId = req.params.id;
-    console.log("[InternalAPI] POST /internal/orders/:id/refresh-offers", { orderId });
+    logger.info("[InternalAPI] POST /internal/orders/:id/refresh-offers", { orderId });
 
     try {
       const { offers } = await refreshOffersForOrder(orderId);
-      console.log("[InternalAPI] Offers refreshed for order", orderId, { count: offers.length });
+      logger.info("[InternalAPI] Offers refreshed for order", orderId, { count: offers.length });
       return res.status(200).json({ success: true, offers });
     } catch (err: any) {
-      console.error("[InternalAPI] Failed to refresh offers for order", orderId, err);
+      logger.error("[InternalAPI] Failed to refresh offers for order", orderId, err);
       return res.status(500).json({ success: false, error: err?.message || "Unknown error" });
     }
   });
@@ -31,13 +33,13 @@ export function createInternalRouter(): Router {
 
   // Seeding Route (Renamed to force update)
   router.post("/seed-db", async (req: Request, res: Response) => {
-    console.log("[InternalAPI] POST /internal/seed-db requested");
+    logger.info("[InternalAPI] POST /internal/seed-db requested");
     try {
       const { runSeeding } = await import("../services/core/seedingService");
       const result = await runSeeding(50);
       return res.status(200).json({ success: true, result });
     } catch (err: any) {
-      console.error("[InternalAPI] Seeding failed", err);
+      logger.error("[InternalAPI] Seeding failed", err);
       return res.status(500).json({ success: false, error: err?.message });
     }
   });

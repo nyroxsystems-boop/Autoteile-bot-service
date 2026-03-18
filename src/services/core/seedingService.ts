@@ -1,5 +1,6 @@
 
 import * as db from './database';
+import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';
 
 const DEALER_ID = 'dealer-demo-001';
@@ -140,11 +141,11 @@ async function generateOrderedOffers(orderId: string, part: any) {
 }
 
 export async function runSeeding(count = 50) {
-    console.log(`\n📦 Generating ${count} demo orders...`);
+    logger.info(`\n📦 Generating ${count} demo orders...`);
     const orders = [];
 
     // Clear existing data
-    console.log('🗑️  Clearing existing demo data...');
+    logger.info('🗑️  Clearing existing demo data...');
     await db.run('DELETE FROM shop_offers');
     await db.run('DELETE FROM messages');
     await db.run('DELETE FROM orders');
@@ -166,7 +167,7 @@ export async function runSeeding(count = 50) {
     );
 
     // Seed Parts
-    console.log('🔧 Seeding Parts...');
+    logger.info('🔧 Seeding Parts...');
     await db.run('DELETE FROM parts');
     for (const part of PARTS) {
         await db.run(
@@ -213,6 +214,6 @@ export async function runSeeding(count = 50) {
         }
     }
 
-    console.log(`✅ Generated ${count} orders with messages and offers`);
+    logger.info(`✅ Generated ${count} orders with messages and offers`);
     return { count, orders };
 }

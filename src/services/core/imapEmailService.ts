@@ -4,6 +4,7 @@
  */
 
 import Imap from 'imap';
+import { logger } from "@utils/logger";
 import { simpleParser, ParsedMail } from 'mailparser';
 import { createTransport, Transporter } from 'nodemailer';
 
@@ -101,7 +102,7 @@ export async function fetchEmails(
                                 const parsed = await simpleParser(buffer);
                                 emails.push(parsedMailToEmail(parsed, uid));
                             } catch (parseErr) {
-                                console.error('Failed to parse email:', parseErr);
+                                logger.error('Failed to parse email:', parseErr);
                             }
                         });
                     });
@@ -166,7 +167,7 @@ export async function fetchEmailByUid(
                                 const parsed = await simpleParser(buffer);
                                 foundEmail = parsedMailToEmail(parsed, uid);
                             } catch (parseErr) {
-                                console.error('Failed to parse email:', parseErr);
+                                logger.error('Failed to parse email:', parseErr);
                             }
                         });
                     });
@@ -204,10 +205,10 @@ export async function sendEmail(
     signature?: string,
     replyTo?: string
 ): Promise<boolean> {
-    console.log(`[Email] Attempting to send from ${fromEmail} to ${to}`);
+    logger.info(`[Email] Attempting to send from ${fromEmail} to ${to}`);
 
     if (!password) {
-        console.error('[Email] No password provided for SMTP');
+        logger.error('[Email] No password provided for SMTP');
         throw new Error('SMTP-Passwort fehlt');
     }
 
@@ -225,7 +226,7 @@ export async function sendEmail(
 
         const fullBody = signature ? `${body}\n\n--\n${signature}` : body;
 
-        console.log(`[Email] Connecting to SMTP ${SMTP_CONFIG.host}:${SMTP_CONFIG.port}...`);
+        logger.info(`[Email] Connecting to SMTP ${SMTP_CONFIG.host}:${SMTP_CONFIG.port}...`);
 
         const result = await transporter.sendMail({
             from: fromEmail,
@@ -237,11 +238,11 @@ export async function sendEmail(
             references: replyTo ? [replyTo] : undefined
         });
 
-        console.log(`✉️ Email sent from ${fromEmail} to ${to}, messageId: ${result.messageId}`);
+        logger.info(`✉️ Email sent from ${fromEmail} to ${to}, messageId: ${result.messageId}`);
         return true;
     } catch (error: any) {
-        console.error('[Email] Failed to send:', error.message);
-        console.error('[Email] Full error:', error);
+        logger.error('[Email] Failed to send:', error.message);
+        logger.error('[Email] Full error:', error);
         throw new Error(`E-Mail-Versand fehlgeschlagen: ${error.message}`);
     }
 }

@@ -1,17 +1,21 @@
 import { Request, Response, NextFunction } from "express";
 import { logger } from "@utils/logger";
-// Import 'get' directly as it is async, matching the unified Promise interface
+// Import 'get' directly for DB session lookups (backward compatible)
 import { get } from "../services/core/database";
+import { jwtService } from "../services/auth/jwtService";
 
 // Secure Tokens via Env only - NO DEFAULTS
-// Prefer non-VITE_ names (VITE_ prefix exposes vars to frontend bundles)
-// Falls back to old VITE_ names for backwards-compatibility during migration
 const SERVICE_TOKEN = process.env.WAWI_SERVICE_TOKEN || process.env.VITE_WAWI_SERVICE_TOKEN;
 const API_TOKEN = process.env.WAWI_API_TOKEN || process.env.VITE_WAWI_API_TOKEN;
 
 /**
- * Middleware to protect dashboard and internal routes.
- * Supports Bearer (Service), Token (User/API), and DB Session tokens.
+ * Unified Auth Middleware
+ *
+ * Authentication priority:
+ * 1. Bearer JWT (stateless, preferred)
+ * 2. Bearer Service Token (internal/WAWI)
+ * 3. Token Session (legacy DB sessions — backward compatible)
+ * 4. Token API Key (static API token)
  */
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization;
@@ -23,7 +27,6 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     }
 
     if (!authHeader) {
-        // Reduced log level for noise
         logger.debug(`[Auth] Missing Authorization header for ${path}`);
         return res.status(401).json({ error: "No authorization header provided" });
     }
@@ -34,53 +37,76 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return res.status(401).json({ error: "Malformed authorization header" });
     }
 
-    // Support for dashboard client: 'Token <api_token>' OR Session Token
-    if (type === "Token") {
-        // 1. Check Static API Token (if configured)
+    // ─── 1. Bearer: JWT or Service Token ───────────────────────
+    if (type === "Bearer") {
+        // 1a. Try JWT first
+        const jwtPayload = jwtService.verifyAccessToken(token);
+        if (jwtPayload) {
+            req.user = {
+                id: jwtPayload.sub,
+                email: jwtPayload.email,
+                role: jwtPayload.role as any,
+                merchantId: jwtPayload.merchantId,
+                tenantId: jwtPayload.tenantId,
+            };
+            req.merchantId = jwtPayload.merchantId;
+            req.tenantId = jwtPayload.tenantId;
+            return next();
+        }
+
+        // 1b. Service Token (WAWI / internal)
+        if (SERVICE_TOKEN && token === SERVICE_TOKEN) {
+            return next();
+        }
+
+        logger.warn(`[Auth] Invalid Bearer token for ${path}`);
+    }
+
+    // ─── 2. Token: DB Session or API Key (backward compatible) ──
+    else if (type === "Token") {
+        // 2a. Static API Token
         if (API_TOKEN && token === API_TOKEN) {
             return next();
         }
 
-        // 2. Check Database Session (admin_sessions for Admin Dashboard)
+        // 2b. Database Session (admin + user)
         try {
-            // First check admin_sessions table
+            // Check admin_sessions table
             const adminSession = await get<any>(
                 'SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()',
                 [token]
             );
 
             if (adminSession) {
-                // Attach user to request
-                (req as any).user = adminSession;
-                (req as any).isAdmin = true;
+                req.user = {
+                    id: adminSession.id || adminSession.user_id,
+                    email: adminSession.email || '',
+                    role: 'admin',
+                    merchantId: adminSession.merchant_id || '',
+                };
                 return next();
             }
 
-            // Then check regular sessions table (User Dashboard)
+            // Check regular sessions table (User Dashboard)
             const userSession = await get<any>(
                 'SELECT s.*, u.id as user_id, u.email, u.username, u.role, u.merchant_id FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at::TIMESTAMP > NOW()',
                 [token]
             );
 
             if (userSession) {
-                // Attach user to request
-                (req as any).user = userSession;
-                (req as any).isAdmin = false;
+                req.user = {
+                    id: userSession.user_id,
+                    email: userSession.email || '',
+                    role: userSession.role || 'user',
+                    merchantId: userSession.merchant_id || '',
+                };
+                req.merchantId = userSession.merchant_id;
                 return next();
             }
 
             logger.warn(`[Auth] Session invalid or expired for ${path}`);
         } catch (error) {
             logger.error("[Auth] DB session check failed", error);
-        }
-    }
-
-    // Support for internal/service: 'Bearer <service_token>'
-    else if (type === "Bearer") {
-        if (SERVICE_TOKEN && token === SERVICE_TOKEN) {
-            return next();
-        } else {
-            logger.warn(`[Auth] Invalid Service Token for ${path}`);
         }
     }
 
@@ -93,3 +119,45 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     });
 }
 
+/**
+ * Admin Auth Middleware
+ * Validates admin JWT or Session token
+ */
+export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+    const authHeader = req.headers.authorization;
+    
+    // Allow OPTIONS preflight
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
+
+    if (!authHeader || !authHeader.startsWith('Token ')) {
+        logger.debug(`[Admin Auth] Missing Authorization header for ${req.path}`);
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    const token = authHeader.substring(6);
+
+    try {
+        const session = await get<any>(
+            `SELECT * FROM admin_sessions WHERE token = ? AND expires_at::TIMESTAMP > NOW()`,
+            [token]
+        );
+
+        if (!session) {
+            return res.status(401).json({ error: "Session abgelaufen" });
+        }
+
+        req.user = {
+            id: session.admin_id.toString(),
+            email: 'admin',
+            role: 'admin' as any,
+            merchantId: '',
+        };
+        
+        return next();
+    } catch (error) {
+        logger.error("[Admin Auth] Session check failed", error);
+        return res.status(500).json({ error: "Authentifizierungsfehler" });
+    }
+}

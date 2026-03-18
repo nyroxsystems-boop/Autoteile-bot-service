@@ -5,6 +5,7 @@
  * Key must be 32 bytes (set ENCRYPTION_KEY env var as 64-char hex string).
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { logger } from "@utils/logger";
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -15,7 +16,7 @@ function getKey(): Buffer {
     if (!keyHex || keyHex.length !== 64) {
         throw new Error(
             'ENCRYPTION_KEY env var must be a 64-char hex string (32 bytes). ' +
-            'Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+            'Generate with: node -e "logger.info(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
         );
     }
     return Buffer.from(keyHex, 'hex');

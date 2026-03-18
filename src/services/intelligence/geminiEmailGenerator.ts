@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logger } from "@utils/logger";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
 
@@ -144,11 +145,11 @@ Generiere jetzt die E-Mail im JSON-Format.`;
             throw new Error('Unvollständige E-Mail-Daten generiert');
         }
 
-        console.log(`✅ ${type === 'promotional' ? 'Promotional' : 'Normal'} email template generated: "${emailData.subject.substring(0, 50)}..."`);
+        logger.info(`✅ ${type === 'promotional' ? 'Promotional' : 'Normal'} email template generated: "${emailData.subject.substring(0, 50)}..."`);
         return emailData;
 
     } catch (error: any) {
-        console.error('Email generation error:', error.message);
+        logger.error('Email generation error:', error.message);
         throw new Error(`E-Mail-Generierung fehlgeschlagen: ${error.message}`);
     }
 }

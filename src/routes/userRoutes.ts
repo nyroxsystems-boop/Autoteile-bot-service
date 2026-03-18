@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from "express";
+import { logger } from "@utils/logger";
 import * as db from "../services/core/database";
+import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { authMiddleware } from "../middleware/authMiddleware";
@@ -28,7 +30,7 @@ router.get("/", async (req: Request, res: Response) => {
 
         return res.status(200).json(users);
     } catch (error: any) {
-        console.error("Error in GET /api/users:", error);
+        logger.error("Error in GET /api/users:", error);
         return res.status(500).json({
             error: "Failed to list users",
             details: error?.message ?? String(error)
@@ -57,7 +59,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 
         return res.status(200).json(user);
     } catch (error: any) {
-        console.error(`Error in GET /api/users/${id}:`, error);
+        logger.error(`Error in GET /api/users/${id}:`, error);
         return res.status(500).json({
             error: "Failed to get user",
             details: error?.message ?? String(error)
@@ -148,11 +150,11 @@ router.post("/", async (req: Request, res: Response) => {
             [userId]
         );
 
-        console.log(`✅ User created: ${email} (${role || 'staff'})`);
+        logger.info(`✅ User created: ${email} (${role || 'staff'})`);
         return res.status(201).json(user);
 
     } catch (error: any) {
-        console.error("Error in POST /api/users:", error);
+        logger.error("Error in POST /api/users:", error);
         return res.status(500).json({
             error: "Failed to create user",
             details: error?.message ?? String(error)
@@ -255,11 +257,11 @@ router.put("/:id", async (req: Request, res: Response) => {
             [id]
         );
 
-        console.log(`✅ User updated: ${id}`);
+        logger.info(`✅ User updated: ${id}`);
         return res.status(200).json(updatedUser);
 
     } catch (error: any) {
-        console.error(`Error in PUT /api/users/${id}:`, error);
+        logger.error(`Error in PUT /api/users/${id}:`, error);
         return res.status(500).json({
             error: "Failed to update user",
             details: error?.message ?? String(error)
@@ -287,11 +289,11 @@ router.delete("/:id", async (req: Request, res: Response) => {
         // Delete user
         await db.run('DELETE FROM users WHERE id = ?', [id]);
 
-        console.log(`✅ User deleted: ${id}`);
+        logger.info(`✅ User deleted: ${id}`);
         return res.status(200).json({ success: true });
 
     } catch (error: any) {
-        console.error(`Error in DELETE /api/users/${id}:`, error);
+        logger.error(`Error in DELETE /api/users/${id}:`, error);
         return res.status(500).json({
             error: "Failed to delete user",
             details: error?.message ?? String(error)

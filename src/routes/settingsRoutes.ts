@@ -2,6 +2,7 @@
 // Endpoints for billing/design settings management
 
 import { Router, Request, Response } from 'express';
+import { logger } from "@utils/logger";
 import { getDesignSettings, upsertDesignSettings } from '../services/invoicing/designSettingsService';
 
 const router = Router();
@@ -13,13 +14,13 @@ const router = Router();
 router.get('/billing/:tenantId', async (req: Request, res: Response) => {
     try {
         const { tenantId } = req.params;
-        console.log(`[Settings] Fetching billing settings for tenant: ${tenantId}`);
+        logger.info(`[Settings] Fetching billing settings for tenant: ${tenantId}`);
 
         const settings = await getDesignSettings(tenantId);
 
         if (!settings) {
             // Return default settings if none exist
-            console.log(`[Settings] No settings found for tenant ${tenantId}, returning defaults`);
+            logger.info(`[Settings] No settings found for tenant ${tenantId}, returning defaults`);
             return res.json({
                 company_name: '',
                 address_line1: '',
@@ -42,7 +43,7 @@ router.get('/billing/:tenantId', async (req: Request, res: Response) => {
             });
         }
 
-        console.log(`[Settings] Settings found for tenant ${tenantId}`);
+        logger.info(`[Settings] Settings found for tenant ${tenantId}`);
 
         // Map database fields to frontend expected format
         res.json({
@@ -67,7 +68,7 @@ router.get('/billing/:tenantId', async (req: Request, res: Response) => {
             logo_base64: settings.logo_base64,
         });
     } catch (error: any) {
-        console.error('[Settings] Error fetching billing settings:', error);
+        logger.error('[Settings] Error fetching billing settings:', error);
         res.status(500).json({ error: 'Failed to fetch billing settings', message: error.message });
     }
 });
@@ -79,8 +80,8 @@ router.get('/billing/:tenantId', async (req: Request, res: Response) => {
 router.put('/billing/:tenantId', async (req: Request, res: Response) => {
     try {
         const { tenantId } = req.params;
-        console.log(`[Settings] Updating billing settings for tenant: ${tenantId}`);
-        console.log(`[Settings] Request body:`, JSON.stringify(req.body, null, 2));
+        logger.info(`[Settings] Updating billing settings for tenant: ${tenantId}`);
+        logger.info(`[Settings] Request body:`, JSON.stringify(req.body, null, 2));
 
         // Map frontend fields to database fields
         const settingsData = {
@@ -99,14 +100,14 @@ router.put('/billing/:tenantId', async (req: Request, res: Response) => {
         };
 
         const updatedSettings = await upsertDesignSettings(tenantId, settingsData);
-        console.log(`[Settings] Settings updated successfully for tenant ${tenantId}`);
+        logger.info(`[Settings] Settings updated successfully for tenant ${tenantId}`);
 
         res.json({
             success: true,
             settings: updatedSettings
         });
     } catch (error: any) {
-        console.error('[Settings] Error updating billing settings:', error);
+        logger.error('[Settings] Error updating billing settings:', error);
         res.status(500).json({ error: 'Failed to update billing settings', message: error.message });
     }
 });

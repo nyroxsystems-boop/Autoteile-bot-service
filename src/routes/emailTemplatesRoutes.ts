@@ -4,6 +4,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
+import { logger } from "@utils/logger";
 import * as db from "../services/core/database";
 import { randomUUID } from "crypto";
 import { generateEmailTemplate, improveEmailContent } from "../services/intelligence/geminiEmailGenerator";
@@ -59,7 +60,7 @@ router.post("/generate", async (req: Request, res: Response) => {
             email: result
         });
     } catch (error: any) {
-        console.error("Email generation error:", error);
+        logger.error("Email generation error:", error);
         return res.status(500).json({
             error: error.message || "E-Mail-Generierung fehlgeschlagen"
         });
@@ -140,7 +141,7 @@ router.get("/recipients/:type", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Error fetching recipients:", error);
+        logger.error("Error fetching recipients:", error);
         return res.status(500).json({ error: "Empfänger konnten nicht geladen werden" });
     }
 });
@@ -203,7 +204,7 @@ router.post("/send", async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("Email send error:", error);
+        logger.error("Email send error:", error);
         return res.status(500).json({ error: "E-Mail-Versand fehlgeschlagen" });
     }
 });
@@ -268,7 +269,7 @@ router.post("/templates", async (req: Request, res: Response) => {
 
         return res.json({ success: true, id });
     } catch (error: any) {
-        console.error("Error saving template:", error);
+        logger.error("Error saving template:", error);
         return res.status(500).json({ error: "Template konnte nicht gespeichert werden" });
     }
 });

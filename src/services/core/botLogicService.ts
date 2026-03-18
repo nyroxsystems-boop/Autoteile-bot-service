@@ -880,14 +880,15 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
 
     let replyText = "";
 
-    // 🚀 STATE MACHINE INTEGRATION (Feature Flag controlled)
-    // When enabled, use new state machine handlers instead of legacy switch
+    // 🚀 STATE MACHINE — Primary handler for all conversation states.
+    // Legacy switch below serves only as a safety net fallback.
     const stateMachineStates: ConversationStatus[] = [
       'choose_language', 'collect_vehicle', 'confirm_vehicle', 'collect_part',
       'oem_lookup', 'show_offers', 'await_offer_choice', 'await_offer_confirmation',
-      'collect_delivery_preference', 'collect_address', 'done'
+      'collect_delivery_preference', 'collect_address', 'done',
+      'awaiting_variant_selection' as ConversationStatus
     ];
-    if (isEnabled(FF.USE_STATE_MACHINE, { userId: payload.from }) && stateMachineStates.includes(nextStatus)) {
+    if (stateMachineStates.includes(nextStatus)) {
       try {
         // Dynamic import to avoid circular dependencies
         const { executeState, getHandler } = await import('./stateMachine');
@@ -922,9 +923,6 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
             nextStatus,
             replyLength: replyText.length
           });
-
-          // Skip legacy switch if state machine handled it
-          // We'll jump to the persist section
         } else {
           logger.debug("No state machine handler for status, falling back to legacy", { status: nextStatus });
         }
@@ -938,14 +936,12 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
       }
     }
 
-    // Legacy switch (will be removed after 100% rollout)
+    // Legacy switch (fallback when state machine returns empty reply)
     if (!replyText) {
-      // AUDIT FIX: Log when state machine was active but produced no reply
-      if (isEnabled(FF.USE_STATE_MACHINE, { userId: payload.from }) && stateMachineStates.includes(nextStatus)) {
-        logger.warn("[SILENT FALLBACK] State machine active but produced empty reply — legacy switch taking over", {
+      if (stateMachineStates.includes(nextStatus)) {
+        logger.warn("[LEGACY FALLBACK] State machine produced empty reply", {
           status: nextStatus,
           orderId: order.id,
-          from: payload.from
         });
       }
       switch (nextStatus) {

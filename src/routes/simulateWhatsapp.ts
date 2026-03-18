@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import { logger } from "@utils/logger";
 import { insertOrder, insertMessage } from "@adapters/supabaseService";
+import { logger } from "@utils/logger";
 
 const router = Router();
 
@@ -50,7 +52,7 @@ router.post("/", async (req: Request, res: Response) => {
       chatMessage: message
     });
   } catch (error: any) {
-    console.error("Error in POST /simulate/whatsapp:", error);
+    logger.error("Error in POST /simulate/whatsapp:", error);
     return res.status(500).json({
       error: "Failed to process simulated WhatsApp message",
       details: error?.message ?? String(error)

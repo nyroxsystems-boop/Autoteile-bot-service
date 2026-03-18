@@ -1,4 +1,5 @@
 import type {
+import { logger } from "@utils/logger";
   DashboardOrder,
   DashboardOrderPart,
   DashboardShopOffer,
@@ -7,7 +8,7 @@ import type {
 } from "../types/dashboard";
 
 export function mapOrderRowToDashboardOrder(row: any, vehicleRow?: any | null): DashboardOrder {
-  console.log("[DashboardMapper] mapOrderRowToDashboardOrder input row:", {
+  logger.info("[DashboardMapper] mapOrderRowToDashboardOrder input row:", {
     id: row?.id,
     hasVehicle: !!vehicleRow
   });
@@ -51,7 +52,7 @@ export function mapOrderRowToDashboardOrder(row: any, vehicleRow?: any | null): 
     oem_number: row.oem_number ?? null
   };
 
-  console.log("[DashboardMapper] mapped order", { id: mapped.id, status: mapped.status });
+  logger.info("[DashboardMapper] mapped order", { id: mapped.id, status: mapped.status });
   return mapped;
 }
 
@@ -72,7 +73,7 @@ export function mapOfferRowToDashboardShopOffer(row: any): DashboardShopOffer {
     tier: row.tier ?? null
   };
 
-  console.log("[DashboardMapper] mapped offer", { id: mapped.id, orderId: mapped.orderId });
+  logger.info("[DashboardMapper] mapped offer", { id: mapped.id, orderId: mapped.orderId });
   return mapped;
 }
 

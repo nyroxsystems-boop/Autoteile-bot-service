@@ -1,5 +1,7 @@
 import axios, { AxiosResponse, AxiosInstance } from "axios";
+import { logger } from "@utils/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import { logger } from "@utils/logger";
 
 // Read proxy from HTTPS_WEB or HTTP_WEB environment variables
 const PROXY_URL = process.env.HTTPS_WEB || process.env.HTTP_WEB;
@@ -13,12 +15,12 @@ if (PROXY_URL) {
     httpAgent: proxyAgent,
     httpsAgent: proxyAgent,
   });
-  console.log("✅ HTTP Client (axios): Using proxy from HTTPS_WEB/HTTP_WEB:", {
+  logger.info("✅ HTTP Client (axios): Using proxy from HTTPS_WEB/HTTP_WEB:", {
     proxyUrl: PROXY_URL.replace(/:[^:@]+@/, ':***@') // Hide password
   });
 } else {
   axiosInstance = axios.create();
-  console.warn("⚠️ HTTP Client: No proxy configured (HTTPS_WEB/HTTP_WEB not set) - requests may be blocked!");
+  logger.warn("⚠️ HTTP Client: No proxy configured (HTTPS_WEB/HTTP_WEB not set) - requests may be blocked!");
 }
 
 export interface FetchOptions {

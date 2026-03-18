@@ -98,7 +98,8 @@ export async function resolveOEMForOrder(
     hsn?: string | null;
     tsn?: string | null;
   },
-  partText: string
+  partText: string,
+  position?: 'front' | 'rear' | 'left' | 'right' | 'front-left' | 'front-right' | 'rear-left' | 'rear-right' | 'any'
 ): Promise<OEMResolverResult> {
   const normalizedPartText = partText || "";
   const suspectedArticle = extractSuspectedArticleNumber(normalizedPartText);
@@ -116,7 +117,8 @@ export async function resolveOEMForOrder(
     },
     partQuery: {
       rawText: normalizedPartText,
-      suspectedNumber: suspectedArticle
+      suspectedNumber: suspectedArticle,
+      position: position
     }
   };
 

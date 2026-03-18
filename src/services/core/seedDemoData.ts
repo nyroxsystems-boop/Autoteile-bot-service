@@ -4,6 +4,7 @@
  */
 
 import * as db from './database';
+import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';
 
 // Admin-Account Merchant ID - linked to admin@autoteile-assistent.com
@@ -210,7 +211,7 @@ function generateMessages(orderId: string, customerName: string) {
 // Main Seed Function
 // ============================================================================
 export async function seedDemoData(): Promise<void> {
-    console.log('[SEED] Starting comprehensive demo data seeding...');
+    logger.info('[SEED] Starting comprehensive demo data seeding...');
 
     try {
         // Check if already seeded (look for existing demo orders)
@@ -220,7 +221,7 @@ export async function seedDemoData(): Promise<void> {
         );
 
         if (existingOrders.length > 0) {
-            console.log('[SEED] Demo data already exists, skipping...');
+            logger.info('[SEED] Demo data already exists, skipping...');
             return;
         }
 
@@ -229,10 +230,10 @@ export async function seedDemoData(): Promise<void> {
             `UPDATE users SET merchant_id = $1 WHERE email = $2`,
             [MERCHANT_ID, ADMIN_EMAIL]
         );
-        console.log(`[SEED] Updated admin user merchant_id to ${MERCHANT_ID}`);
+        logger.info(`[SEED] Updated admin user merchant_id to ${MERCHANT_ID}`);
 
         // 1. Insert Demo Customers (Companies)
-        console.log('[SEED] Creating demo customers...');
+        logger.info('[SEED] Creating demo customers...');
         for (const customer of DEMO_CUSTOMERS) {
             await db.run(
                 `INSERT INTO companies (id, name, email, phone, is_customer, is_supplier, active, created_at)
@@ -240,10 +241,10 @@ export async function seedDemoData(): Promise<void> {
                 [randomUUID(), customer.name, customer.email, customer.phone, true, false, true, new Date().toISOString()]
             );
         }
-        console.log(`[SEED] Created ${DEMO_CUSTOMERS.length} customers`);
+        logger.info(`[SEED] Created ${DEMO_CUSTOMERS.length} customers`);
 
         // 2. Insert Demo Suppliers
-        console.log('[SEED] Creating demo suppliers...');
+        logger.info('[SEED] Creating demo suppliers...');
         for (const supplier of DEMO_SUPPLIERS) {
             await db.run(
                 `INSERT INTO companies (id, name, email, phone, website, is_customer, is_supplier, active, created_at)
@@ -251,10 +252,10 @@ export async function seedDemoData(): Promise<void> {
                 [randomUUID(), supplier.name, supplier.email, supplier.phone, supplier.website, false, true, true, new Date().toISOString()]
             );
         }
-        console.log(`[SEED] Created ${DEMO_SUPPLIERS.length} suppliers`);
+        logger.info(`[SEED] Created ${DEMO_SUPPLIERS.length} suppliers`);
 
         // 3. Insert Demo Orders with Vehicles, Messages, and Offers
-        console.log('[SEED] Creating demo orders...');
+        logger.info('[SEED] Creating demo orders...');
         for (let i = 0; i < DEMO_ORDERS.length; i++) {
             const order = DEMO_ORDERS[i];
             const orderId = `order-${randomUUID().substring(0, 8)}`;
@@ -296,11 +297,11 @@ export async function seedDemoData(): Promise<void> {
                 );
             }
 
-            console.log(`[SEED] Created order: ${orderId} - ${order.requestedPartName} (${order.status})`);
+            logger.info(`[SEED] Created order: ${orderId} - ${order.requestedPartName} (${order.status})`);
         }
 
         // 4. Insert Demo Products
-        console.log('[SEED] Creating demo products...');
+        logger.info('[SEED] Creating demo products...');
         for (const product of DEMO_PRODUCTS) {
             await db.run(
                 `INSERT INTO parts (id, name, oem_number, manufacturer, category, stock, created_at)
@@ -308,10 +309,10 @@ export async function seedDemoData(): Promise<void> {
                 [randomUUID(), product.name, product.oem_number, product.manufacturer, product.category, product.stock, new Date().toISOString()]
             );
         }
-        console.log(`[SEED] Created ${DEMO_PRODUCTS.length} products`);
+        logger.info(`[SEED] Created ${DEMO_PRODUCTS.length} products`);
 
         // 5. Insert Merchant Settings for admin
-        console.log('[SEED] Creating merchant settings...');
+        logger.info('[SEED] Creating merchant settings...');
         const merchantSettings = {
             selectedShops: ['PKW-Teile24', 'Autodoc', 'Kfzteile24', 'Oscaro'],
             marginPercent: 25,
@@ -327,18 +328,18 @@ export async function seedDemoData(): Promise<void> {
              ON CONFLICT (merchant_id) DO UPDATE SET settings = $2, updated_at = $4`,
             [MERCHANT_ID, JSON.stringify(merchantSettings), new Date().toISOString(), new Date().toISOString()]
         );
-        console.log('[SEED] Created merchant settings');
+        logger.info('[SEED] Created merchant settings');
 
-        console.log('[SEED] ✅ Comprehensive demo data seeding complete!');
-        console.log(`[SEED] Summary:`);
-        console.log(`  - ${DEMO_ORDERS.length} orders with vehicles, messages & offers`);
-        console.log(`  - ${DEMO_PRODUCTS.length} products`);
-        console.log(`  - ${DEMO_CUSTOMERS.length} customers`);
-        console.log(`  - ${DEMO_SUPPLIERS.length} suppliers`);
-        console.log(`  - Merchant settings configured`);
+        logger.info('[SEED] ✅ Comprehensive demo data seeding complete!');
+        logger.info(`[SEED] Summary:`);
+        logger.info(`  - ${DEMO_ORDERS.length} orders with vehicles, messages & offers`);
+        logger.info(`  - ${DEMO_PRODUCTS.length} products`);
+        logger.info(`  - ${DEMO_CUSTOMERS.length} customers`);
+        logger.info(`  - ${DEMO_SUPPLIERS.length} suppliers`);
+        logger.info(`  - Merchant settings configured`);
 
     } catch (error) {
-        console.error('[SEED] Error seeding demo data:', error);
+        logger.error('[SEED] Error seeding demo data:', error);
         throw error;
     }
 }

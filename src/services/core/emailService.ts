@@ -4,6 +4,7 @@
  */
 
 import nodemailer from 'nodemailer';
+import { logger } from "@utils/logger";
 
 // STRATO SMTP Configuration
 const STRATO_HOST = 'smtp.strato.de';
@@ -14,7 +15,7 @@ const STRATO_PASSWORD = process.env.STRATO_PASSWORD || '';
 // Create reusable transporter
 const createTransporter = () => {
     if (!STRATO_PASSWORD) {
-        console.warn('⚠️ STRATO_PASSWORD not set - email sending disabled');
+        logger.warn('⚠️ STRATO_PASSWORD not set - email sending disabled');
         return null;
     }
 
@@ -129,7 +130,7 @@ export async function sendPasswordResetEmail(
 ): Promise<boolean> {
     const transport = getTransporter();
     if (!transport) {
-        console.error('Email transporter not available');
+        logger.error('Email transporter not available');
         return false;
     }
 
@@ -156,10 +157,10 @@ export async function sendPasswordResetEmail(
             subject: 'Passwort zurücksetzen - Partsunion Admin',
             html: wrapEmailHtml(htmlContent, 'Passwort zurücksetzen')
         });
-        console.log(`✅ Password reset email sent to ${to}`);
+        logger.info(`✅ Password reset email sent to ${to}`);
         return true;
     } catch (error: any) {
-        console.error(`❌ Failed to send password reset email:`, error.message);
+        logger.error(`❌ Failed to send password reset email:`, error.message);
         return false;
     }
 }
@@ -172,7 +173,7 @@ export async function sendWelcomeAdminEmail(
 ): Promise<boolean> {
     const transport = getTransporter();
     if (!transport) {
-        console.error('Email transporter not available');
+        logger.error('Email transporter not available');
         return false;
     }
 
@@ -198,10 +199,10 @@ export async function sendWelcomeAdminEmail(
             subject: 'Willkommen - Partsunion Admin Zugang',
             html: wrapEmailHtml(htmlContent, 'Willkommen')
         });
-        console.log(`✅ Welcome email sent to ${to}`);
+        logger.info(`✅ Welcome email sent to ${to}`);
         return true;
     } catch (error: any) {
-        console.error(`❌ Failed to send welcome email:`, error.message);
+        logger.error(`❌ Failed to send welcome email:`, error.message);
         return false;
     }
 }
@@ -214,7 +215,7 @@ export async function sendMarketingEmail(
 ): Promise<{ sent: number; failed: number }> {
     const transport = getTransporter();
     if (!transport) {
-        console.error('Email transporter not available');
+        logger.error('Email transporter not available');
         return { sent: 0, failed: recipients.length };
     }
 
@@ -234,12 +235,12 @@ export async function sendMarketingEmail(
             // Rate limiting: wait 100ms between emails
             await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error: any) {
-            console.error(`Failed to send to ${recipient}:`, error.message);
+            logger.error(`Failed to send to ${recipient}:`, error.message);
             failed++;
         }
     }
 
-    console.log(`📧 Marketing email campaign: ${sent} sent, ${failed} failed`);
+    logger.info(`📧 Marketing email campaign: ${sent} sent, ${failed} failed`);
     return { sent, failed };
 }
 
@@ -252,10 +253,10 @@ export async function testEmailConnection(): Promise<boolean> {
 
     try {
         await transport.verify();
-        console.log('✅ STRATO SMTP connection verified');
+        logger.info('✅ STRATO SMTP connection verified');
         return true;
     } catch (error: any) {
-        console.error('❌ STRATO SMTP connection failed:', error.message);
+        logger.error('❌ STRATO SMTP connection failed:', error.message);
         return false;
     }
 }

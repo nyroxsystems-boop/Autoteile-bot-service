@@ -7,6 +7,7 @@
  */
 
 import path from 'path';
+import { logger } from "@utils/logger";
 import fs from 'fs';
 
 // Import database
@@ -55,23 +56,23 @@ const PART_TYPE_MAP: Record<string, { category: string; field: string; descripti
 // ============================================================================
 
 async function seedDatabase() {
-    console.log('🏆 OEM Database Seeder');
-    console.log('='.repeat(60));
+    logger.info('🏆 OEM Database Seeder');
+    logger.info('='.repeat(60));
 
     // Get registry stats first
     const stats = getRegistryStats();
-    console.log(`📊 Registry Stats:`);
-    console.log(`   Brands: ${stats.brands}`);
-    console.log(`   Models: ${stats.models}`);
-    console.log(`   OEM Numbers: ${stats.oemNumbers}`);
-    console.log('');
+    logger.info(`📊 Registry Stats:`);
+    logger.info(`   Brands: ${stats.brands}`);
+    logger.info(`   Models: ${stats.models}`);
+    logger.info(`   OEM Numbers: ${stats.oemNumbers}`);
+    logger.info('');
 
     const allRecords: OEMRecord[] = [];
     let totalOems = 0;
 
     // Iterate all registries
     for (const registry of ALL_REGISTRIES) {
-        console.log(`\n🚗 Processing ${registry.brand} (${registry.brandCode})...`);
+        logger.info(`\n🚗 Processing ${registry.brand} (${registry.brandCode})...`);
         let brandOems = 0;
 
         // Iterate all models
@@ -81,41 +82,41 @@ async function seedDatabase() {
             brandOems += modelRecords.length;
         }
 
-        console.log(`   ✅ ${brandOems} OEMs extracted`);
+        logger.info(`   ✅ ${brandOems} OEMs extracted`);
         totalOems += brandOems;
     }
 
-    console.log('\n' + '='.repeat(60));
-    console.log(`📦 Total OEMs to insert: ${totalOems}`);
+    logger.info('\n' + '='.repeat(60));
+    logger.info(`📦 Total OEMs to insert: ${totalOems}`);
 
     // Bulk insert
-    console.log('\n💾 Inserting into SQLite...');
+    logger.info('\n💾 Inserting into SQLite...');
     const startTime = Date.now();
 
     try {
         const insertedCount = oemDatabase.bulkInsert(allRecords);
         const duration = Date.now() - startTime;
 
-        console.log(`✅ Inserted ${insertedCount} records in ${duration}ms`);
+        logger.info(`✅ Inserted ${insertedCount} records in ${duration}ms`);
     } catch (err: any) {
-        console.error(`❌ Insert failed: ${err.message}`);
+        logger.error(`❌ Insert failed: ${err.message}`);
         throw err;
     }
 
     // Verify
-    console.log('\n📊 Verifying database...');
+    logger.info('\n📊 Verifying database...');
     const dbStats = oemDatabase.getStats();
-    console.log(`   Total Records: ${dbStats.totalRecords}`);
-    console.log(`   Brands: ${Object.keys(dbStats.brands).length}`);
-    console.log(`   Top Brands:`);
+    logger.info(`   Total Records: ${dbStats.totalRecords}`);
+    logger.info(`   Brands: ${Object.keys(dbStats.brands).length}`);
+    logger.info(`   Top Brands:`);
     Object.entries(dbStats.brands)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .forEach(([brand, count]) => {
-            console.log(`     - ${brand}: ${count}`);
+            logger.info(`     - ${brand}: ${count}`);
         });
 
-    console.log('\n🎉 Seeding complete!');
+    logger.info('\n🎉 Seeding complete!');
     oemDatabase.close();
 }
 
@@ -169,6 +170,6 @@ function extractModelRecords(brand: string, brandCode: string, model: ModelEntry
 // ============================================================================
 
 seedDatabase().catch(err => {
-    console.error('❌ Seeder failed:', err);
+    logger.error('❌ Seeder failed:', err);
     process.exit(1);
 });

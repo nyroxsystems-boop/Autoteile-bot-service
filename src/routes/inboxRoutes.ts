@@ -4,6 +4,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { logger } from "@utils/logger";
 import * as db from '../services/core/database';
 import {
     fetchEmails,
@@ -19,11 +20,11 @@ import { encrypt, decrypt, isEncrypted } from '../utils/encryption';
 const router = Router();
 
 // Debug log on startup
-console.log(`[Inbox] SHARED_MAILBOX: ${SHARED_MAILBOX}`);
+logger.info(`[Inbox] SHARED_MAILBOX: ${SHARED_MAILBOX}`);
 
 // STRATO password for IMAP and SMTP
 const SHARED_MAILBOX_PASSWORD = process.env.STRATO_PASSWORD || process.env.SHARED_MAILBOX_PASSWORD || '';
-console.log(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET' : 'NOT SET'}`);
+logger.info(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET' : 'NOT SET'}`);
 // Previous log leaked password length — removed for security
 
 /**
@@ -32,12 +33,12 @@ console.log(`[Inbox] STRATO_PASSWORD: ${SHARED_MAILBOX_PASSWORD ? 'SET' : 'NOT S
 async function getAdminFromToken(req: Request): Promise<any | null> {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Token ')) {
-        console.log('[Inbox] No Token header found');
+        logger.info('[Inbox] No Token header found');
         return null;
     }
 
     const token = authHeader.substring(6);
-    console.log(`[Inbox] Checking admin token (length: ${token.length})`);
+    logger.info(`[Inbox] Checking admin token (length: ${token.length})`);
 
     try {
         const session = await db.get<any>(
@@ -47,10 +48,10 @@ async function getAdminFromToken(req: Request): Promise<any | null> {
             [token]
         );
 
-        console.log(`[Inbox] Admin session found: ${!!session}, username: ${session?.username || 'none'}`);
+        logger.info(`[Inbox] Admin session found: ${!!session}, username: ${session?.username || 'none'}`);
         return session;
     } catch (error: any) {
-        console.error('[Inbox] Token check error:', error.message);
+        logger.error('[Inbox] Token check error:', error.message);
         return null;
     }
 }
@@ -95,7 +96,7 @@ router.get('/emails', async (req: Request, res: Response) => {
             const errorMsg = mailbox === 'shared'
                 ? 'STRATO_PASSWORD Umgebungsvariable nicht gesetzt. Bitte in Railway konfigurieren.'
                 : 'E-Mail-Passwort nicht konfiguriert';
-            console.error(`[Inbox] Password missing for ${mailbox}: ${errorMsg}`);
+            logger.error(`[Inbox] Password missing for ${mailbox}: ${errorMsg}`);
             return res.status(400).json({ error: errorMsg });
         }
 
@@ -110,7 +111,7 @@ router.get('/emails', async (req: Request, res: Response) => {
             return recipients.some(addr => addr === targetEmail);
         }).slice(0, limit); // Limit after filtering
 
-        console.log(`[Inbox] Fetched ${allEmails.length} emails, filtered to ${filteredEmails.length} for ${targetEmail}`);
+        logger.info(`[Inbox] Fetched ${allEmails.length} emails, filtered to ${filteredEmails.length} for ${targetEmail}`);
 
         // Enrich with assignment info
         const messageIds = filteredEmails.map(e => e.messageId).filter(Boolean);
@@ -134,7 +135,7 @@ router.get('/emails', async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error('Inbox fetch error:', error);
+        logger.error('Inbox fetch error:', error);
         return res.status(500).json({ error: error.message || 'E-Mails konnten nicht abgerufen werden' });
     }
 });
@@ -188,7 +189,7 @@ router.get('/email/:uid', async (req: Request, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error('Email fetch error:', error);
+        logger.error('Email fetch error:', error);
         return res.status(500).json({ error: error.message });
     }
 });
@@ -230,7 +231,7 @@ router.post('/email/:uid/assign', async (req: Request, res: Response) => {
         return res.json({ success: true });
 
     } catch (error: any) {
-        console.error('Assignment error:', error);
+        logger.error('Assignment error:', error);
         return res.status(500).json({ error: error.message });
     }
 });
@@ -253,14 +254,14 @@ router.post('/email/send', async (req: Request, res: Response) => {
 
     // Resend is required because Railway blocks outbound SMTP connections
     if (!isResendConfigured()) {
-        console.error('[Inbox Send] RESEND_API_KEY not configured!');
+        logger.error('[Inbox Send] RESEND_API_KEY not configured!');
         return res.status(500).json({
             error: 'RESEND_API_KEY nicht konfiguriert. Bitte in Railway als Environment Variable setzen.'
         });
     }
 
     const fromEmail = useSharedMailbox ? SHARED_MAILBOX : (admin.email || SHARED_MAILBOX);
-    console.log(`[Inbox Send] User: ${admin.username}, From: ${fromEmail}, To: ${to} via Resend`);
+    logger.info(`[Inbox Send] User: ${admin.username}, From: ${fromEmail}, To: ${to} via Resend`);
 
     try {
         const result = await sendEmailViaResend({
@@ -275,15 +276,15 @@ router.post('/email/send', async (req: Request, res: Response) => {
         });
 
         if (result.success) {
-            console.log(`[Inbox Send] ✅ Success! Email sent to ${to}, ID: ${result.messageId}`);
+            logger.info(`[Inbox Send] ✅ Success! Email sent to ${to}, ID: ${result.messageId}`);
             return res.json({ success: true, message: 'E-Mail gesendet', messageId: result.messageId });
         } else {
-            console.error('[Inbox Send] ❌ Failed:', result.error);
+            logger.error('[Inbox Send] ❌ Failed:', result.error);
             return res.status(500).json({ error: result.error || 'E-Mail konnte nicht gesendet werden' });
         }
 
     } catch (error: any) {
-        console.error('[Inbox Send] Error:', error.message);
+        logger.error('[Inbox Send] Error:', error.message);
         return res.status(500).json({ error: error.message || 'E-Mail-Versand fehlgeschlagen' });
     }
 });
@@ -317,7 +318,7 @@ router.post('/email/ai-reply', async (req: Request, res: Response) => {
         return res.json({ reply });
 
     } catch (error: any) {
-        console.error('AI reply error:', error);
+        logger.error('AI reply error:', error);
         return res.status(500).json({ error: error.message });
     }
 });
@@ -357,7 +358,7 @@ router.patch('/email/:uid/read', async (req: Request, res: Response) => {
         return res.json({ success: true });
 
     } catch (error: any) {
-        console.error('Mark read error:', error);
+        logger.error('Mark read error:', error);
         return res.status(500).json({ error: error.message });
     }
 });
@@ -396,7 +397,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         return res.json({ success: true, message: 'IMAP-Zugang konfiguriert' });
 
     } catch (error: any) {
-        console.error('IMAP setup error:', error);
+        logger.error('IMAP setup error:', error);
         return res.status(500).json({ error: error.message });
     }
 });

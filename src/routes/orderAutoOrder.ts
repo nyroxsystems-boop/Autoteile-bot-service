@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import { logger } from "@utils/logger";
 import { getOrderById, listShopOffersByOrderId } from "@adapters/supabaseService";
+import { logger } from "@utils/logger";
 import { autoOrder, selectBestOffer } from "@core/orderLogicService";
 
 const router = Router();
@@ -8,7 +10,7 @@ router.post("/:id/auto-order", async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    console.log("[OrderAutoOrder] triggered", { orderId: id });
+    logger.info("[OrderAutoOrder] triggered", { orderId: id });
     const order = await getOrderById(id);
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
@@ -16,7 +18,7 @@ router.post("/:id/auto-order", async (req: Request, res: Response) => {
 
     // Angebote laden
     const offers = await listShopOffersByOrderId(order.id);
-    console.log("[OrderAutoOrder] offers loaded", { orderId: id, offersCount: offers.length });
+    logger.info("[OrderAutoOrder] offers loaded", { orderId: id, offersCount: offers.length });
     if (offers.length === 0) {
       return res.status(400).json({ error: "No offers available" });
     }
@@ -25,7 +27,7 @@ router.post("/:id/auto-order", async (req: Request, res: Response) => {
     if (!best) {
       return res.status(400).json({ error: "Could not determine best offer" });
     }
-    console.log("[OrderAutoOrder] selecting offer", {
+    logger.info("[OrderAutoOrder] selecting offer", {
       orderId: id,
       offer: {
         shopName: (best as any)?.shopName ?? (best as any)?.shop_name ?? null,
@@ -34,7 +36,7 @@ router.post("/:id/auto-order", async (req: Request, res: Response) => {
     });
 
     const result = await autoOrder(order.id, best);
-    console.log("[OrderAutoOrder] success", {
+    logger.info("[OrderAutoOrder] success", {
       orderId: id,
       confirmation: result.confirmation,
       status: "ordered"
@@ -47,7 +49,7 @@ router.post("/:id/auto-order", async (req: Request, res: Response) => {
       price: result.price
     });
   } catch (error: any) {
-    console.error("Error in auto-order:", { orderId: id, error: error?.message ?? String(error) });
+    logger.error("Error in auto-order:", { orderId: id, error: error?.message ?? String(error) });
     res.status(500).json({
       error: "Auto-order failed",
       details: error.message

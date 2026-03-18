@@ -85,10 +85,26 @@ function buildGermanPrompt(req: OEMResolverRequest): string {
     const part = req.partQuery.rawText;
     const formatHint = BRAND_FORMAT_HINTS[brand.toUpperCase()] || '';
 
+    // Position Handling
+    const positonTexts: Record<string, string> = {
+        'front': 'VORDERACHSE / VORNE',
+        'rear': 'HINTERACHSE / HINTEN',
+        'left': 'LINKS',
+        'right': 'RECHTS',
+        'front-left': 'VORN LINKS',
+        'front-right': 'VORN RECHTS',
+        'rear-left': 'HINTEN LINKS',
+        'rear-right': 'HINTEN RECHTS',
+    };
+    const positionCtx = req.partQuery.position && req.partQuery.position !== 'any'
+        ? `ACHTUNG POSITION: Das Teil muss exakt für die Position "${positonTexts[req.partQuery.position]}" passen!`
+        : '';
+
     return `Du bist ein Automobil-Recherche-Agent. Deine Aufgabe ist es, die ECHTE OEM-Teilenummer zu finden — nicht zu raten.
 
 FAHRZEUG: ${vehicle}
 TEIL: ${part}
+${positionCtx}
 
 STRATEGIE (in dieser Reihenfolge):
 1. Suche ZUERST auf Herstellerkatalogen: realoem.com (BMW), 7zap.com (VAG), catcar.info (Mercedes)
@@ -98,11 +114,12 @@ ${formatHint ? `4. Erwartetes Nummernformat: ${formatHint}` : ''}
 
 REGELN:
 - NUR OEM/OE-Nummern vom Hersteller ${brand}. KEINE Aftermarket (Brembo, TRW, Bosch, Febi, Meyle = FALSCH)
+- Wenn eine Position gefragt ist (z.B. vorne/hinten, links/rechts), MUSST du die Nummer für genau diese Position finden
 - Wenn du KEINE sichere Nummer findest, antworte mit "oem_numbers": []
 - NIEMALS eine Nummer erfinden. Eine leere Antwort ist besser als eine falsche
 
 Antworte NUR als JSON:
-{"oem_numbers":[{"number":"OEM-NUMMER","source_url":"URL wo du die Nummer gefunden hast","description":"Beschreibung","confidence":"high/medium/low"}],"notes":""}`;
+{"oem_numbers":[{"number":"OEM-NUMMER","source_url":"URL wo du die Nummer gefunden hast","description":"Beschreibung inklusive Position","confidence":"high/medium/low"}],"notes":""}`;
 }
 
 function buildEnglishPrompt(req: OEMResolverRequest): string {
@@ -111,10 +128,26 @@ function buildEnglishPrompt(req: OEMResolverRequest): string {
     const part = req.partQuery.rawText;
     const formatHint = BRAND_FORMAT_HINTS[brand.toUpperCase()] || '';
 
+    // Position Handling
+    const positonTexts: Record<string, string> = {
+        'front': 'FRONT AXLE / FRONT',
+        'rear': 'REAR AXLE / REAR',
+        'left': 'LEFT',
+        'right': 'RIGHT',
+        'front-left': 'FRONT LEFT',
+        'front-right': 'FRONT RIGHT',
+        'rear-left': 'REAR LEFT',
+        'rear-right': 'REAR RIGHT',
+    };
+    const positionCtx = req.partQuery.position && req.partQuery.position !== 'any'
+        ? `ATTENTION POSITION: The part must be exactly for the "${positonTexts[req.partQuery.position]}" position!`
+        : '';
+
     return `You are an automotive parts research agent. Your task is to find the REAL OEM part number — not to guess.
 
 VEHICLE: ${vehicle}
 PART: ${part}
+${positionCtx}
 
 STRATEGY (in this order):
 1. Search manufacturer catalogs FIRST: realoem.com (BMW), 7zap.com (VAG), catcar.info (Mercedes)
@@ -124,11 +157,12 @@ ${formatHint ? `4. Expected number format: ${formatHint}` : ''}
 
 RULES:
 - ONLY genuine OEM/OE numbers from ${brand}. NO aftermarket (Brembo, TRW, Bosch, Febi, Meyle = WRONG)
+- If a specific position is requested (e.g. front/rear, left/right), you MUST find the number for exactly that position
 - If you cannot find a reliable number, respond with "oem_numbers": []
 - NEVER invent a number. An empty answer is better than a wrong one
 
 Reply ONLY as JSON:
-{"oem_numbers":[{"number":"OEM-NUMBER","source_url":"URL where you found it","description":"description","confidence":"high/medium/low"}],"notes":""}`;
+{"oem_numbers":[{"number":"OEM-NUMBER","source_url":"URL where you found it","description":"detailed description with position","confidence":"high/medium/low"}],"notes":""}`;
 }
 
 // ============================================================================

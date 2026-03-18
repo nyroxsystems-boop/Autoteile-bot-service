@@ -1,7 +1,10 @@
 // WAWI API Client
 // Handles communication with the WAWI backend for order data retrieval
 
-const WAWI_BASE_URL = process.env.WAWI_API_URL || 'https://wawi-new-production.up.railway.app';
+const WAWI_BASE_URL = process.env.WAWI_API_URL;
+if (!WAWI_BASE_URL) {
+    logger.warn('[WAWI Client] ⚠️  WAWI_API_URL not set — WAWI integration disabled');
+}
 const SERVICE_TOKEN = process.env.WAWI_SERVICE_TOKEN;
 
 export interface WAWIOrder {
@@ -49,7 +52,7 @@ export async function fetchOrderFromWAWI(orderId: string): Promise<WAWIOrder> {
         const order = await response.json();
         return order;
     } catch (error: any) {
-        console.error(`[WAWI Client] Failed to fetch order ${orderId}:`, error.message);
+        logger.error(`[WAWI Client] Failed to fetch order ${orderId}:`, error.message);
         throw error;
     }
 }
@@ -68,7 +71,7 @@ export async function fetchOrderItemsFromWAWI(orderId: string): Promise<WAWIOrde
         });
 
         if (!response.ok) {
-            console.warn(`[WAWI Client] Failed to fetch items for order ${orderId}: ${response.status}`);
+            logger.warn(`[WAWI Client] Failed to fetch items for order ${orderId}: ${response.status}`);
             return [];
         }
 
@@ -77,7 +80,7 @@ export async function fetchOrderItemsFromWAWI(orderId: string): Promise<WAWIOrde
         const items = Array.isArray(data) ? data : (data.results || []);
         return items;
     } catch (error: any) {
-        console.error(`[WAWI Client] Failed to fetch items for order ${orderId}:`, error.message);
+        logger.error(`[WAWI Client] Failed to fetch items for order ${orderId}:`, error.message);
         return [];
     }
 }
@@ -106,11 +109,11 @@ export async function updateOrderStatusInWAWI(orderId: string, status: string, i
             throw new Error(`WAWI API error: ${response.status} ${response.statusText}`);
         }
 
-        console.log(`✅ Order ${orderId} status updated to '${status}' in WAWI`);
+        logger.info(`✅ Order ${orderId} status updated to '${status}' in WAWI`);
     } catch (error: any) {
-        console.error(`[WAWI Client] Failed to update order ${orderId}:`, error.message);
+        logger.error(`[WAWI Client] Failed to update order ${orderId}:`, error.message);
         // Don't throw - log error but don't block invoice creation
-        console.warn(`⚠️ Invoice created but order status update failed`);
+        logger.warn(`⚠️ Invoice created but order status update failed`);
     }
 }
 
@@ -122,7 +125,7 @@ export async function checkOrderHasInvoice(orderId: string): Promise<boolean> {
         const order = await fetchOrderFromWAWI(orderId);
         return !!order.generated_invoice_id;
     } catch (error) {
-        console.error(`[WAWI Client] Failed to check invoice status for order ${orderId}`);
+        logger.error(`[WAWI Client] Failed to check invoice status for order ${orderId}`);
         return false;
     }
 }

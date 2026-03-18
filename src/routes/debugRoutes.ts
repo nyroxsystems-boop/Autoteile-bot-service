@@ -1,5 +1,6 @@
 // Debug Routes for Testing
 import { Router, Request, Response } from 'express';
+import { logger } from "@utils/logger";
 import { getDesignSettings } from '../services/invoicing/designSettingsService';
 import { fetchBillingDesign } from '../services/invoicing/billingDesignAdapter';
 
@@ -13,15 +14,15 @@ router.get('/design/:tenantId', async (req: Request, res: Response) => {
     try {
         const tenantId = req.params.tenantId;
 
-        console.log(`[Debug] Fetching design for tenant: ${tenantId}`);
+        logger.info(`[Debug] Fetching design for tenant: ${tenantId}`);
 
         // Test direct database query
         const dbSettings = await getDesignSettings(tenantId);
-        console.log(`[Debug] DB Settings:`, dbSettings);
+        logger.info(`[Debug] DB Settings:`, dbSettings);
 
         // Test adapter
         const adapterSettings = await fetchBillingDesign(tenantId);
-        console.log(`[Debug] Adapter Settings:`, adapterSettings);
+        logger.info(`[Debug] Adapter Settings:`, adapterSettings);
 
         res.json({
             tenantId,
@@ -30,7 +31,7 @@ router.get('/design/:tenantId', async (req: Request, res: Response) => {
             match: JSON.stringify(dbSettings) === JSON.stringify(adapterSettings)
         });
     } catch (error: any) {
-        console.error('[Debug] Error:', error);
+        logger.error('[Debug] Error:', error);
         res.status(500).json({ error: error.message, stack: error.stack });
     }
 });

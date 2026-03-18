@@ -1,0 +1,27 @@
+# Bot Worker — separate process for background job processing
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+
+# Only install production dependencies
+COPY --from=builder /app/package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled output
+COPY --from=builder /app/dist/ ./dist/
+
+# Worker entry point (not index.js)
+CMD ["node", "dist/worker.js"]
+
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "process.exit(0)"

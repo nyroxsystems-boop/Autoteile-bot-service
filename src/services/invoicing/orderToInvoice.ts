@@ -2,6 +2,7 @@
 // Automatically creates invoices when orders are completed
 
 import { createInvoice } from './invoiceService';
+import { logger } from "@utils/logger";
 import { db } from '@core/database';
 import type { CreateInvoiceRequest, TaxCode } from '../../types/tax';
 import {
@@ -18,7 +19,7 @@ import {
  */
 export async function createInvoiceFromOrder(tenantId: string, orderId: string): Promise<any> {
     try {
-        console.log(`[Invoice] Creating invoice for order ${orderId}, tenant: ${tenantId}`);
+        logger.info(`[Invoice] Creating invoice for order ${orderId}, tenant: ${tenantId}`);
 
         // Step 1: Check if invoice already exists in Bot-Service database
         const existingInvoice = await db.get<{ id: string; invoice_number: string }>(
@@ -27,14 +28,14 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
         );
 
         if (existingInvoice) {
-            console.log(`[Invoice] Invoice already exists for order ${orderId}: ${existingInvoice.invoice_number}`);
+            logger.info(`[Invoice] Invoice already exists for order ${orderId}: ${existingInvoice.invoice_number}`);
             return existingInvoice;
         }
 
         // Step 2: Check if order already has invoice in WAWI
         const hasInvoiceInWAWI = await checkOrderHasInvoice(orderId);
         if (hasInvoiceInWAWI) {
-            console.log(`[Invoice] Order ${orderId} already has invoice in WAWI`);
+            logger.info(`[Invoice] Order ${orderId} already has invoice in WAWI`);
             throw new Error('Rechnung existiert bereits für diesen Auftrag');
         }
 
@@ -79,7 +80,7 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
         // Step 7: Create invoice in Bot-Service database
         const invoice = await createInvoice(tenantId, invoiceData);
 
-        console.log(`✅ Invoice ${invoice.invoice_number} created for order ${orderId}`);
+        logger.info(`✅ Invoice ${invoice.invoice_number} created for order ${orderId}`);
 
         // Step 8: Update order status in WAWI (non-blocking)
         await updateOrderStatusInWAWI(orderId, 'invoiced', invoice.invoice_number);
@@ -87,7 +88,7 @@ export async function createInvoiceFromOrder(tenantId: string, orderId: string):
         return invoice;
 
     } catch (error: any) {
-        console.error(`[Invoice] Failed to create invoice from order ${orderId}:`, error.message);
+        logger.error(`[Invoice] Failed to create invoice from order ${orderId}:`, error.message);
         throw error;
     }
 }
@@ -101,7 +102,7 @@ export async function handleOrderStatusChange(tenantId: string, orderId: string,
         try {
             await createInvoiceFromOrder(tenantId, orderId);
         } catch (error) {
-            console.error(`Auto-invoice creation failed for order ${orderId}:`, error);
+            logger.error(`Auto-invoice creation failed for order ${orderId}:`, error);
             // Don't throw - log error but don't block order update
         }
     }
@@ -113,8 +114,8 @@ export async function handleOrderStatusChange(tenantId: string, orderId: string,
  * Use createInvoiceFromOrder() for individual orders instead.
  */
 export async function syncOrdersToInvoices(tenantId: string): Promise<{ created: number; skipped: number; errors: number }> {
-    console.warn('[Invoice] syncOrdersToInvoices is deprecated - WAWI API endpoint for order listing is not available');
-    console.warn('[Invoice] Use createInvoiceFromOrder() for individual orders instead');
+    logger.warn('[Invoice] syncOrdersToInvoices is deprecated - WAWI API endpoint for order listing is not available');
+    logger.warn('[Invoice] Use createInvoiceFromOrder() for individual orders instead');
 
     // Return empty stats - this function cannot work without a WAWI API endpoint to list orders
     // The local 'orders' table does not exist in the Bot-Service database

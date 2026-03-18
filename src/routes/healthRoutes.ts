@@ -2,6 +2,7 @@
 // Extended health checks for diagnostics and monitoring
 
 import { Router, Request, Response } from 'express';
+import { logger } from "@utils/logger";
 import { getDb } from '../services/core/database';
 
 const router = Router();
@@ -46,7 +47,7 @@ router.get('/migrations', async (req: Request, res: Response) => {
             invoice_count: parseInt(invoiceCount.rows[0].count)
         });
     } catch (error: any) {
-        console.error('[Health] Migration check failed:', error);
+        logger.error('[Health] Migration check failed:', error);
         res.status(500).json({
             status: 'error',
             error: error.message,
@@ -65,7 +66,7 @@ router.get('/db', async (req: Request, res: Response) => {
         await pool.query('SELECT 1');
         res.json({ status: 'ok', message: 'Database connection successful' });
     } catch (error: any) {
-        console.error('[Health] Database check failed:', error);
+        logger.error('[Health] Database check failed:', error);
         res.status(500).json({
             status: 'error',
             error: error.message

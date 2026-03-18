@@ -4,9 +4,10 @@
  */
 
 import * as db from '../services/core/database';
+import { logger } from "@utils/logger";
 
 export async function runMigration(): Promise<void> {
-    console.log('🔄 Running migration: Email Assignments...');
+    logger.info('🔄 Running migration: Email Assignments...');
 
     // Create email_assignments table
     await db.run(`
@@ -21,22 +22,22 @@ export async function runMigration(): Promise<void> {
             created_at TEXT NOT NULL
         )
     `);
-    console.log('✅ Created email_assignments table');
+    logger.info('✅ Created email_assignments table');
 
     // Create index for faster lookups
     await db.run(`
         CREATE INDEX IF NOT EXISTS idx_email_assignments_mailbox 
         ON email_assignments(mailbox)
     `);
-    console.log('✅ Created mailbox index');
+    logger.info('✅ Created mailbox index');
 
     await db.run(`
         CREATE INDEX IF NOT EXISTS idx_email_assignments_assigned_to 
         ON email_assignments(assigned_to)
     `);
-    console.log('✅ Created assigned_to index');
+    logger.info('✅ Created assigned_to index');
 
-    console.log('✅ Migration complete: Email Assignments');
+    logger.info('✅ Migration complete: Email Assignments');
 }
 
 export default runMigration;

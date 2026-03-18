@@ -1,5 +1,7 @@
 import { insertShopOffers } from "../adapters/supabaseService";
+import { logger } from "@utils/logger";
 import { ApifyClient } from "../communication/apifyClient";
+import { logger } from "@utils/logger";
 
 export interface ScrapedOffer {
   shopName: string;
@@ -26,7 +28,7 @@ export interface ShopAdapter {
 import { ScraperAPIScraper } from "./scrapers/scraperApiScraper";
 
 function buildAdapters(): ShopAdapter[] {
-  console.log("[SCRAPE] Using ScraperAPI (Safe for Render)");
+  logger.info("[SCRAPE] Using ScraperAPI (Safe for Render)");
 
   return [
     new ScraperAPIScraper("Autodoc", "autodoc")
@@ -39,7 +41,7 @@ function buildAdaptersWithVehicleData(vehicleData?: {
   year?: number;
   engine?: string;
 }): ShopAdapter[] {
-  console.log("[SCRAPE] Using ScraperAPI (Safe for Render)");
+  logger.info("[SCRAPE] Using ScraperAPI (Safe for Render)");
 
   const adapters: ShopAdapter[] = [
     new ScraperAPIScraper("Autodoc", "autodoc")
@@ -68,26 +70,26 @@ export async function scrapeOffersForOrder(
     engine?: string;
   }
 ) {
-  console.log("[SCRAPE] start", { orderId, oemNumber, hasVehicleData: !!vehicleData });
+  logger.info("[SCRAPE] start", { orderId, oemNumber, hasVehicleData: !!vehicleData });
   const allOffers: ScrapedOffer[] = [];
 
   // STEP 1: Check dealer's own inventory FIRST
   try {
-    console.log("[SCRAPE] Checking dealer inventory first...");
+    logger.info("[SCRAPE] Checking dealer inventory first...");
     const inventoryOffer = await checkDealerInventory(oemNumber);
     if (inventoryOffer) {
-      console.log("[SCRAPE] ✅ Found in dealer inventory!", { oemNumber, price: inventoryOffer.price });
+      logger.info("[SCRAPE] ✅ Found in dealer inventory!", { oemNumber, price: inventoryOffer.price });
       allOffers.push(inventoryOffer);
 
       // If found in stock, save immediately and return (no need to scrape external shops)
       await insertShopOffers(orderId, oemNumber, allOffers);
-      console.log("[SCRAPE] done (from inventory)", { orderId, offersSaved: allOffers.length });
+      logger.info("[SCRAPE] done (from inventory)", { orderId, offersSaved: allOffers.length });
       return allOffers;
     } else {
-      console.log("[SCRAPE] Not in dealer inventory, checking external shops...");
+      logger.info("[SCRAPE] Not in dealer inventory, checking external shops...");
     }
   } catch (err) {
-    console.warn("[SCRAPE] Inventory check failed, continuing with external shops", { error: (err as any)?.message });
+    logger.warn("[SCRAPE] Inventory check failed, continuing with external shops", { error: (err as any)?.message });
   }
 
   // STEP 2: Build adapters based on available data
@@ -96,9 +98,9 @@ export async function scrapeOffersForOrder(
   // STEP 3: Scrape external shops
   for (const adapter of externalAdapters) {
     try {
-      console.log("[SCRAPE] calling adapter", { adapter: adapter.name, orderId, oemNumber });
+      logger.info("[SCRAPE] calling adapter", { adapter: adapter.name, orderId, oemNumber });
       const offers = await adapter.fetchOffers(oemNumber);
-      console.log("[SCRAPE] adapter finished", {
+      logger.info("[SCRAPE] adapter finished", {
         adapter: adapter.name,
         orderId,
         oemNumber,
@@ -106,35 +108,35 @@ export async function scrapeOffersForOrder(
       });
       allOffers.push(...offers);
     } catch (err) {
-      console.error("[SCRAPE] error", { adapter: adapter.name, orderId, oemNumber, error: (err as any)?.message });
+      logger.error("[SCRAPE] error", { adapter: adapter.name, orderId, oemNumber, error: (err as any)?.message });
     }
   }
 
   // STEP 4: AI Price Finder fallback (when scrapers return 0 results)
   if (allOffers.length === 0) {
-    console.log("[SCRAPE] 🤖 ScraperAPI returned 0 results — trying AI Price Finder...");
+    logger.info("[SCRAPE] 🤖 ScraperAPI returned 0 results — trying AI Price Finder...");
     try {
       const { findPricesWithAi } = await import("./scrapers/aiPriceFinder");
       const aiOffers = await findPricesWithAi(oemNumber, vehicleData);
       if (aiOffers.length > 0) {
-        console.log("[SCRAPE] ✅ AI Price Finder found offers!", { count: aiOffers.length });
+        logger.info("[SCRAPE] ✅ AI Price Finder found offers!", { count: aiOffers.length });
         allOffers.push(...aiOffers);
       } else {
-        console.warn("[SCRAPE] AI Price Finder also found nothing", { oemNumber });
+        logger.warn("[SCRAPE] AI Price Finder also found nothing", { oemNumber });
       }
     } catch (aiErr) {
-      console.error("[SCRAPE] AI Price Finder failed", { error: (aiErr as any)?.message });
+      logger.error("[SCRAPE] AI Price Finder failed", { error: (aiErr as any)?.message });
     }
   }
 
   if (allOffers.length === 0) {
-    console.warn("[SCRAPE] no offers found from any source", { orderId, oemNumber });
+    logger.warn("[SCRAPE] no offers found from any source", { orderId, oemNumber });
     return [];
   }
 
-  console.log("[SCRAPE] inserting offers into DB", { orderId, offersCount: allOffers.length });
+  logger.info("[SCRAPE] inserting offers into DB", { orderId, offersCount: allOffers.length });
   await insertShopOffers(orderId, oemNumber, allOffers);
-  console.log("[SCRAPE] done", { orderId, offersCount: allOffers.length });
+  logger.info("[SCRAPE] done", { orderId, offersCount: allOffers.length });
   return allOffers;
 }
 
@@ -154,27 +156,27 @@ async function checkDealerInventory(oemNumber: string): Promise<ScrapedOffer | n
   const tenantId = process.env.MERCHANT_ID || "public";
 
   try {
-    console.log("[WAWI] Checking inventory for OEM:", oemNumber);
+    logger.info("[WAWI] Checking inventory for OEM:", oemNumber);
 
     // 1. Suche Teil in InvenTree nach OEM-Nummer
     const part = await findPartByOem(tenantId, oemNumber);
 
     if (!part) {
-      console.log("[WAWI] Part not found in InvenTree:", oemNumber);
+      logger.info("[WAWI] Part not found in InvenTree:", oemNumber);
       return null;
     }
 
-    console.log("[WAWI] Part found:", { pk: part.pk, name: part.name });
+    logger.info("[WAWI] Part found:", { pk: part.pk, name: part.name });
 
     // 2. Prüfe Lagerbestand für dieses Teil
     const stockItem = await getStockItemForPart(tenantId, part.pk);
 
     if (!stockItem || stockItem.quantity <= 0) {
-      console.log("[WAWI] Part found but out of stock:", { pk: part.pk, quantity: stockItem?.quantity || 0 });
+      logger.info("[WAWI] Part found but out of stock:", { pk: part.pk, quantity: stockItem?.quantity || 0 });
       return null;
     }
 
-    console.log("[WAWI] ✅ Part in stock!", {
+    logger.info("[WAWI] ✅ Part in stock!", {
       pk: part.pk,
       name: part.name,
       quantity: stockItem.quantity
@@ -188,7 +190,7 @@ async function checkDealerInventory(oemNumber: string): Promise<ScrapedOffer | n
 
     // Fallback: Wenn kein Preis definiert, kann nicht verkauft werden
     if (sellingPrice <= 0) {
-      console.warn("[WAWI] Part has no selling price defined:", part.pk);
+      logger.warn("[WAWI] Part has no selling price defined:", part.pk);
       return null;
     }
 
@@ -208,7 +210,7 @@ async function checkDealerInventory(oemNumber: string): Promise<ScrapedOffer | n
 
   } catch (err: any) {
     // Bei Fehler: Log + graceful degradation zu externen Shops
-    console.error("[WAWI] Inventory check failed:", err.message);
+    logger.error("[WAWI] Inventory check failed:", err.message);
     logger?.warn?.("WAWI inventory check failed, falling back to external", {
       oem: oemNumber,
       error: err.message
