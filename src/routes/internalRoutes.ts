@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import { logger } from "@utils/logger";
 import { refreshOffersForOrder } from '../services/intelligence/productResolutionService';
 import { logger } from "@utils/logger";
 import { getOrderById } from '../services/adapters/supabaseService';

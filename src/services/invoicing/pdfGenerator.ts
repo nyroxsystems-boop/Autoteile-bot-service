@@ -47,8 +47,8 @@ export async function generateInvoicePDF(tenantId: string, invoice: Invoice): Pr
             if (profile) {
                 companyInfo = {
                     ...DEFAULT_COMPANY,
-                    tax_number: profile.tax_number,
-                    vat_id: profile.vat_id
+                    tax_number: profile.tax_number ?? undefined,
+                    vat_id: profile.vat_id ?? undefined
                 };
             }
 

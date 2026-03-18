@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { logger } from "@utils/logger";
 import * as db from "../services/core/database";
 import { logger } from "@utils/logger";
 import { randomUUID } from 'crypto';

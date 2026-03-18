@@ -153,10 +153,10 @@ router.get('/export/:year/:month', async (req: Request, res: Response) => {
 
         // For now, return JSON (PDF generation can be added later)
         res.json({
+            ...calculation,
             period: `${month}/${year}`,
             period_start: periodStart,
             period_end: periodEnd,
-            ...calculation
         });
     } catch (error: any) {
         logger.error('Error exporting monthly report:', error);

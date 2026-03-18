@@ -57,6 +57,7 @@
     "dist",
     "src/test_legacy",
     "**/_deprecated/**",
+    "**/__benchmarks__/**",
     "**/*.spec.ts",
     "**/*.test.ts"
   ]

@@ -3,8 +3,8 @@ import { connection } from "./connection";
 
 export const BOT_QUEUE_NAME = "bot-message-queue";
 
-export const botQueue = new Queue(BOT_QUEUE_NAME, {
-    connection,
+export const botQueue = connection ? new Queue(BOT_QUEUE_NAME, {
+    connection: connection!,
     // #2 FIX: Exponential backoff + DLQ — prevents retry storms & credit waste
     defaultJobOptions: {
         attempts: 3,
@@ -15,7 +15,7 @@ export const botQueue = new Queue(BOT_QUEUE_NAME, {
         removeOnComplete: { count: 100 },  // Keep last 100 completed
         removeOnFail: { count: 500 },      // Keep last 500 failed (DLQ visibility)
     },
-});
+}) : null;
 
 export interface BotJobData {
     from: string;

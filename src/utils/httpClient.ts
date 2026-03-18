@@ -1,5 +1,4 @@
 import axios, { AxiosResponse, AxiosInstance } from "axios";
-import { logger } from "@utils/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { logger } from "@utils/logger";
 

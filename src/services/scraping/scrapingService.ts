@@ -1,5 +1,4 @@
 import { insertShopOffers } from "../adapters/supabaseService";
-import { logger } from "@utils/logger";
 import { ApifyClient } from "../communication/apifyClient";
 import { logger } from "@utils/logger";
 

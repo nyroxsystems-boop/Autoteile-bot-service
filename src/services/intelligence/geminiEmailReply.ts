@@ -1,3 +1,5 @@
+import { logger } from "@utils/logger";
+
 /**
  * Gemini Email Reply Service
  * AI-powered email reply generation

@@ -1,3 +1,5 @@
+import { logger } from "@utils/logger";
+
 // WAWI API Client
 // Handles communication with the WAWI backend for order data retrieval
 

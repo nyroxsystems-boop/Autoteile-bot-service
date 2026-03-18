@@ -17,10 +17,11 @@ import type {
  * Get tax profile for tenant
  */
 export async function getTaxProfile(tenantId: string): Promise<TaxProfile | null> {
-    return db.get<TaxProfile>(
+    const result = await db.get<TaxProfile>(
         'SELECT * FROM tax_profiles WHERE tenant_id = ?',
         [tenantId]
     );
+    return result ?? null;
 }
 
 /**

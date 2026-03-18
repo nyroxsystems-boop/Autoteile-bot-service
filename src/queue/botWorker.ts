@@ -224,7 +224,7 @@ const worker = new Worker<BotJobData>(
         }
     },
     {
-        connection,
+        connection: connection!,
         concurrency: 3,
         // #2 FIX: Default job options with exponential backoff
         settings: {},

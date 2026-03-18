@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import { logger } from "@utils/logger";
 import * as path from 'path';
 import { logger } from "@utils/logger";
 import type { Pool } from 'pg';

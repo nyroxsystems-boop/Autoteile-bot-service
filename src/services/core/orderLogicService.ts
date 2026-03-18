@@ -1,5 +1,4 @@
 import { insertOrder, getOrderById, updateOrderStatus, findOrCreateOrder, updateOrder, updateOrderData, listShopOffersByOrderId } from '@adapters/supabaseService';
-import { logger } from "@utils/logger";
 import { Order, Message, Vehicle, ShopOffer } from '../../types/models';
 import { logger } from "@utils/logger";
 

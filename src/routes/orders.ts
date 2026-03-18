@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import { logger } from "@utils/logger";
 import { insertOrder, listOrders, getOrderById } from "@adapters/supabaseService";
 import { logger } from "@utils/logger";
 

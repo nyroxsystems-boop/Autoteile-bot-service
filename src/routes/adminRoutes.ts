@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { logger } from "@utils/logger";
 import { validate, validateParams } from '../middleware/validate';
 import { logger } from "@utils/logger";
 import { createUserSchema, resetUserPasswordSchema, updateTenantLimitsSchema, createTenantSchema, seedOemDatabaseSchema, idParamSchema, tenantDeviceParamSchema } from '../middleware/schemas';

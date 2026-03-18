@@ -1,6 +1,6 @@
 type LogLevel = "debug" | "info" | "warn" | "error";
 
-type Meta = Record<string, unknown> | Error | undefined;
+type Meta = Record<string, unknown> | Error | unknown;
 
 /**
  * Structured logger with component tagging.
