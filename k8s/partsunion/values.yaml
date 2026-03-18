@@ -1,0 +1,31 @@
+
+replicaCount: 2
+workerReplicaCount: 2
+
+image:
+  repository: ghcr.io/partsunion/api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+workerImage:
+  repository: ghcr.io/partsunion/bot-worker
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 3000
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+pgbouncer:
+  enabled: true
+  poolMode: transaction
+  maxClientConn: 1000
+
+backup:
+  enabled: true
+  schedule: "0 2 * * *" # Every day at 2am

@@ -1,0 +1,37 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "partsunion.fullname" . }}-api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "partsunion.name" . }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ include "partsunion.name" . }}-api
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: DATABASE_URL
+              {{- if .Values.pgbouncer.enabled }}
+              value: "postgres://user:pass@{{ include "partsunion.fullname" . }}-pgbouncer:5432/db"
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: partsunion-secrets
+                  key: database-url
+              {{- end }}
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi

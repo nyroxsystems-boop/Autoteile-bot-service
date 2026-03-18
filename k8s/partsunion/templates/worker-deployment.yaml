@@ -1,0 +1,21 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "partsunion.fullname" . }}-worker
+spec:
+  replicas: {{ .Values.workerReplicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "partsunion.name" . }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "partsunion.name" . }}-worker
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-worker
+          image: "{{ .Values.workerImage.repository }}:{{ .Values.workerImage.tag }}"
+          envFrom:
+            - secretRef:
+                name: partsunion-secrets

@@ -1,0 +1,25 @@
+
+{{- if .Values.pgbouncer.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "partsunion.fullname" . }}-pgbouncer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: {{ include "partsunion.name" . }}-pgbouncer
+  template:
+    metadata:
+      labels:
+        app: {{ include "partsunion.name" . }}-pgbouncer
+    spec:
+      containers:
+        - name: pgbouncer
+          image: edoburu/pgbouncer:latest
+          env:
+            - name: POOL_MODE
+              value: {{ .Values.pgbouncer.poolMode }}
+            - name: MAX_CLIENT_CONN
+              value: "{{ .Values.pgbouncer.maxClientConn }}"
+{{- end -}}
