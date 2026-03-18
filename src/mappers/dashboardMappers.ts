@@ -1,11 +1,11 @@
 import type {
-import { logger } from "@utils/logger";
   DashboardOrder,
   DashboardOrderPart,
   DashboardShopOffer,
   DashboardVehicle,
   DashboardMessage
 } from "../types/dashboard";
+import { logger } from "@utils/logger";
 
 export function mapOrderRowToDashboardOrder(row: any, vehicleRow?: any | null): DashboardOrder {
   logger.info("[DashboardMapper] mapOrderRowToDashboardOrder input row:", {

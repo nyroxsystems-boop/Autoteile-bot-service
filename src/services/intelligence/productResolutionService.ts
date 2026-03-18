@@ -1,5 +1,4 @@
 import type {
-import { logger } from "@utils/logger";
   Order as DomainOrder,
   Supplier,
   SupplierScraperInput,
