@@ -8,7 +8,11 @@ import type { B2BSupplierConfig, B2BPartSearchResult, B2BPartOffer } from './typ
  */
 export function applyMargin(
     purchasePrice: number,
-    config: B2BSupplierConfig
+    config: B2BSupplierConfig,
+    options?: {
+        tier?: string;
+        quantity?: number;
+    }
 ): { sellingPrice: number; marginAmount: number; marginPercent: number } {
     let marginAmount: number;
 
@@ -20,7 +24,29 @@ export function applyMargin(
         marginAmount = purchasePrice * (config.margin_value / 100);
     }
 
-    // Ensure minimum margin
+    // Calculate combined discount from tier and quantity
+    let combinedDiscountPercent = 0;
+
+    // 1. Customer Tier Discount
+    if (options?.tier) {
+        const tierInfo = getPriceTierInfo(options.tier);
+        combinedDiscountPercent += tierInfo.discount;
+    }
+
+    // 2. Quantity Discount (Staffelpreise)
+    const qty = options?.quantity || 1;
+    if (qty >= 50) {
+        combinedDiscountPercent += 10;
+    } else if (qty >= 10) {
+        combinedDiscountPercent += 5;
+    }
+
+    // Apply combined discount to the margin (protecting the purchase price)
+    if (combinedDiscountPercent > 0) {
+        marginAmount = marginAmount * (1 - (combinedDiscountPercent / 100));
+    }
+
+    // Ensure minimum margin applies even AFTER discounts
     if (marginAmount < config.minimum_margin) {
         marginAmount = config.minimum_margin;
     }
@@ -89,10 +115,11 @@ function applyRounding(
  */
 export function convertToOffers(
     results: B2BPartSearchResult[],
-    config: B2BSupplierConfig
+    config: B2BSupplierConfig,
+    options?: { tier?: string; quantity?: number }
 ): B2BPartOffer[] {
     return results.map(result => {
-        const { sellingPrice, marginAmount, marginPercent } = applyMargin(result.purchasePrice, config);
+        const { sellingPrice, marginAmount, marginPercent } = applyMargin(result.purchasePrice, config, options);
 
         return {
             ...result,

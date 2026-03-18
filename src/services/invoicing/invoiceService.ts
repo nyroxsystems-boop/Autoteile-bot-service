@@ -12,30 +12,25 @@ import type {
     TaxCode,
     InvoiceStatus
 } from '../../types/tax';
+import { auditLog } from '../compliance/auditService';
+import { logger } from '@utils/logger';
 
-/**
- * Generate next invoice number for tenant
- * Format: INV-YYYY-XXXX (e.g., INV-2026-0001)
- */
 export async function generateInvoiceNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
-    const prefix = `INV-${year}-`;
+    const prefix = `RE-${year}-`;
 
-    // Get the highest invoice number for this year
-    const result = await db.get<{ max_num: string }>(
-        `SELECT invoice_number as max_num FROM invoices 
-         WHERE tenant_id = ? AND invoice_number LIKE ? 
-         ORDER BY invoice_number DESC LIMIT 1`,
-        [tenantId, `${prefix}%`]
+    // Atomic increment for GoBD compliance
+    const result = await db.get<{ last_value: number }>(
+        `INSERT INTO invoice_sequences (tenant_id, year, last_value)
+         VALUES (?, ?, 1)
+         ON CONFLICT (tenant_id, year)
+         DO UPDATE SET last_value = invoice_sequences.last_value + 1
+         RETURNING last_value`,
+        [tenantId, year]
     );
 
-    let nextNumber = 1;
-    if (result?.max_num) {
-        const numPart = result.max_num.replace(prefix, '');
-        nextNumber = parseInt(numPart, 10) + 1;
-    }
-
-    return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
+    const nextNumber = result?.last_value || 1;
+    return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
 }
 
 /**
@@ -149,6 +144,26 @@ export async function createInvoice(tenantId: string, data: CreateInvoiceRequest
                 now
             ]
         );
+    }
+
+    // GoBD Audit Log
+    try {
+        await auditLog(
+            'invoice.created',
+            'invoice',
+            id,
+            'system', // Or get user ID if available
+            tenantId,
+            {
+                changes: {
+                    invoice_number: { before: null, after: invoice_number },
+                    gross_amount: { before: null, after: totals.gross_amount },
+                    status: { before: null, after: 'draft' }
+                }
+            }
+        );
+    } catch (err: any) {
+        logger.error('[InvoiceService] Failed to create audit log for invoice creation', err.message || err);
     }
 
     // Return created invoice with lines
@@ -374,16 +389,25 @@ export async function cancelInvoice(tenantId: string, invoiceId: string): Promis
         ['canceled', now, invoiceId, tenantId]
     );
 
+    // GoBD Audit Log
+    try {
+        await auditLog(
+            'invoice.cancelled',
+            'invoice',
+            invoiceId,
+            'system', // Should ideally come from req.user
+            tenantId,
+            {
+                changes: {
+                    status: { before: 'draft', after: 'canceled' }
+                }
+            }
+        );
+    } catch (err: any) {
+        logger.error('[InvoiceService] Failed to create audit log for invoice cancellation', err.message || err);
+    }
+
     return getInvoiceById(tenantId, invoiceId);
 }
 
-/**
- * Delete invoice (hard delete - use with caution!)
- */
-export async function deleteInvoice(tenantId: string, invoiceId: string): Promise<void> {
-    // Invoice lines will be deleted automatically via CASCADE
-    await db.run(
-        `DELETE FROM invoices WHERE id = ? AND tenant_id = ?`,
-        [invoiceId, tenantId]
-    );
-}
+

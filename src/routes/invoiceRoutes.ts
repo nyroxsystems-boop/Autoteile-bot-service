@@ -10,8 +10,7 @@ import {
     listInvoices,
     updateInvoice,
     markInvoiceAsPaid,
-    cancelInvoice,
-    deleteInvoice
+    cancelInvoice
 } from '../services/invoicing/invoiceService';
 import {
     upsertDesignSettings,
@@ -43,6 +42,27 @@ const requireTenant = (req: Request, res: Response, next: Function) => {
 };
 
 router.use(requireTenant);
+
+/**
+ * GET /api/invoices/export/datev
+ * Export invoices in DATEV CSV format
+ */
+router.get('/export/datev', async (req: Request, res: Response) => {
+    try {
+        const month = req.query.month ? parseInt(req.query.month as string) : new Date().getMonth() + 1;
+        const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+
+        const { generateDatevExport } = await import('../services/compliance/datevExport');
+        const csvContent = await generateDatevExport({ month, year, tenantId: req.tenantId! });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="DATEV-Export-${year}-${month.toString().padStart(2, '0')}.csv"`);
+        res.send(csvContent);
+    } catch (error: any) {
+        logger.error('Error generating DATEV export:', error);
+        res.status(500).json({ error: 'Failed to generate DATEV export', message: error.message });
+    }
+});
 
 /**
  * GET /api/invoices
@@ -142,13 +162,11 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
  * Delete invoice (hard delete)
  */
 router.delete('/:id', async (req: Request, res: Response) => {
-    try {
-        await deleteInvoice(req.tenantId!, req.params.id);
-        res.status(204).send();
-    } catch (error: any) {
-        logger.error('Error deleting invoice:', error);
-        res.status(500).json({ error: 'Failed to delete invoice', message: error.message });
-    }
+    // GoBD Compliance: Invoices cannot be physically deleted, only canceled.
+    res.status(403).json({ 
+        error: 'GoBD Compliance', 
+        message: 'Rechnungen dürfen aufgrund gesetzlicher Aufbewahrungspflichten (GoBD) nicht gelöscht werden. Bitte nutzen Sie die Stornieren-Funktion.' 
+    });
 });
 
 /**

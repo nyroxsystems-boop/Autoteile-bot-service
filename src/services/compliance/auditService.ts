@@ -57,13 +57,10 @@ export interface AuditEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Lazy Supabase accessor
+// Postgres Database Accessor
 // ---------------------------------------------------------------------------
-
-function getSupa(): { supabaseAdmin: any } {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require('../adapters/supabaseService');
-}
+import { db } from '@core/database';
+import { randomUUID } from 'crypto';
 
 // ---------------------------------------------------------------------------
 // Audit Service
@@ -98,20 +95,24 @@ export async function auditLog(
   };
 
   try {
-    const supa = getSupa();
-    await supa.supabaseAdmin
-      .from('audit_log')
-      .insert({
-        action: entry.action,
-        entity_type: entry.entityType,
-        entity_id: entry.entityId,
-        user_id: entry.userId,
-        merchant_id: entry.merchantId,
-        changes: entry.changes ? JSON.stringify(entry.changes) : null,
-        metadata: entry.metadata ? JSON.stringify(entry.metadata) : null,
-        ip: entry.ip || null,
-        created_at: entry.timestamp,
-      });
+    await db.run(
+        `INSERT INTO audit_log (
+            id, action, entity_type, entity_id, user_id, 
+            merchant_id, changes, metadata, ip, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            randomUUID(),
+            entry.action,
+            entry.entityType,
+            entry.entityId,
+            entry.userId,
+            entry.merchantId,
+            entry.changes ? JSON.stringify(entry.changes) : null,
+            entry.metadata ? JSON.stringify(entry.metadata) : null,
+            entry.ip || null,
+            entry.timestamp
+        ]
+    );
 
     logger.info('[Audit] Entry recorded', {
       action: entry.action,
@@ -147,25 +148,61 @@ export async function queryAuditLog(filters: {
   offset?: number;
 }): Promise<{ entries: AuditEntry[]; total: number }> {
   try {
-    const supa = getSupa();
-    let query = supa.supabaseAdmin
-      .from('audit_log')
-      .select('*', { count: 'exact' })
-      .eq('merchant_id', filters.merchantId)
-      .order('created_at', { ascending: false });
+    let sql = `SELECT * FROM audit_log WHERE merchant_id = ?`;
+    const params: any[] = [filters.merchantId];
+    let countSql = `SELECT count(*) as total FROM audit_log WHERE merchant_id = ?`;
+    const countParams: any[] = [filters.merchantId];
 
-    if (filters.entityType) query = query.eq('entity_type', filters.entityType);
-    if (filters.entityId) query = query.eq('entity_id', filters.entityId);
-    if (filters.action) query = query.eq('action', filters.action);
-    if (filters.userId) query = query.eq('user_id', filters.userId);
-    if (filters.startDate) query = query.gte('created_at', filters.startDate);
-    if (filters.endDate) query = query.lte('created_at', filters.endDate);
-    if (filters.limit) query = query.limit(filters.limit);
-    if (filters.offset) query = query.range(filters.offset, (filters.offset + (filters.limit || 50)) - 1);
+    if (filters.entityType) {
+        sql += ` AND entity_type = ?`;
+        countSql += ` AND entity_type = ?`;
+        params.push(filters.entityType);
+        countParams.push(filters.entityType);
+    }
+    if (filters.entityId) {
+        sql += ` AND entity_id = ?`;
+        countSql += ` AND entity_id = ?`;
+        params.push(filters.entityId);
+        countParams.push(filters.entityId);
+    }
+    if (filters.action) {
+        sql += ` AND action = ?`;
+        countSql += ` AND action = ?`;
+        params.push(filters.action);
+        countParams.push(filters.action);
+    }
+    if (filters.userId) {
+        sql += ` AND user_id = ?`;
+        countSql += ` AND user_id = ?`;
+        params.push(filters.userId);
+        countParams.push(filters.userId);
+    }
+    if (filters.startDate) {
+        sql += ` AND created_at >= ?`;
+        countSql += ` AND created_at >= ?`;
+        params.push(filters.startDate);
+        countParams.push(filters.startDate);
+    }
+    if (filters.endDate) {
+        sql += ` AND created_at <= ?`;
+        countSql += ` AND created_at <= ?`;
+        params.push(filters.endDate);
+        countParams.push(filters.endDate);
+    }
 
-    const { data, count, error } = await query;
+    sql += ` ORDER BY created_at DESC`;
 
-    if (error) throw error;
+    if (filters.limit) {
+        sql += ` LIMIT ?`;
+        params.push(filters.limit);
+    }
+    if (filters.offset) {
+        sql += ` OFFSET ?`;
+        params.push(filters.offset);
+    }
+
+    const data = await db.all<any>(sql, params);
+    const countResult = await db.get<{ total: number }>(countSql, countParams);
 
     return {
       entries: (data || []).map((row: any) => ({
@@ -175,12 +212,12 @@ export async function queryAuditLog(filters: {
         entityId: row.entity_id,
         userId: row.user_id,
         merchantId: row.merchant_id,
-        changes: row.changes ? JSON.parse(row.changes) : undefined,
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+        changes: typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes,
+        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
         ip: row.ip,
         timestamp: row.created_at,
       })),
-      total: count || 0,
+      total: countResult?.total ? Number(countResult.total) : 0,
     };
   } catch (err: any) {
     logger.error('[Audit] Query failed', { error: err?.message });
