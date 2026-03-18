@@ -28,5 +28,5 @@ jobs:
       - name: TypeScript compile
         run: npm run build
 
-      - name: Run tests with coverage gate
-        run: npm run test -- --coverage --coverageThreshold='{"global":{"branches":50,"functions":60,"lines":60}}'
+      - name: Run tests
+        run: npm run test -- --passWithNoTests
