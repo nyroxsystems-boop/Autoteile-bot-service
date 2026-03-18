@@ -69,14 +69,14 @@ const DB_PATH = path.join(
 // ============================================================================
 
 class OEMDatabase {
-    private db: Database.Database | null = null;
+    private db: Database | null = null;
     private initialized = false;
 
     constructor() {
         // Lazy init
     }
 
-    private ensureInit(): Database.Database {
+    private ensureInit(): Database {
         if (this.db && this.initialized) return this.db;
 
         // Ensure directory exists

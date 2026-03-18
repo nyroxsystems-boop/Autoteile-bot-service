@@ -10,7 +10,8 @@ declare module 'better-sqlite3' {
         (...args: Parameters<T>): ReturnType<T>;
     }
 
-    interface DatabaseInstance {
+    class Database {
+        constructor(filename: string, options?: any);
         prepare(sql: string): Statement;
         exec(sql: string): this;
         close(): void;
@@ -18,15 +19,5 @@ declare module 'better-sqlite3' {
         transaction<T extends (...args: any[]) => any>(fn: T): Transaction<T>;
     }
 
-    interface DatabaseConstructor {
-        new (filename: string, options?: any): DatabaseInstance;
-        (filename: string, options?: any): DatabaseInstance;
-    }
-
-    namespace Database {
-        type Database = DatabaseInstance;
-    }
-
-    const Database: DatabaseConstructor;
     export = Database;
 }
