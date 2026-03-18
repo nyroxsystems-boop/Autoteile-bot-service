@@ -1,141 +1,52 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: PartsUnion WhatsApp Bot API
+  title: PartsUnion B2B Core API
   description: |
-    B2B Auto Parts WhatsApp Bot Service API.
+    Comprehensive API Documentation for the PartsUnion B2B Platform (Backend).
     
-    Features:
-    - WhatsApp message handling via Twilio
-    - Vehicle document OCR extraction
-    - OEM part number resolution (multi-source)
-    - Shop offer scraping and comparison
-    - Order management and status tracking
-    - WAWI/InvenTree inventory integration
-  version: 2.0.0
+    This API drives the conversational AI WhatsApp Bot, the APEX OEM Resolution Pipeline,
+    and all Dashboard capabilities including Orders, Invoices (GoBD compliant), and GDPR Data Processing.
+  version: 2.1.0
   contact:
-    name: PartsUnion Support
-    email: support@partsunion.de
+    name: PartsUnion Platform Engineering
+    email: engineering@partsunion.de
 
 servers:
-  - url: https://bot-service.onrender.com
-    description: Production
+  - url: https://api.partsunion.com
+    description: Production Environment
+  - url: https://api-staging.partsunion.com
+    description: Staging Environment
   - url: http://localhost:3001
     description: Local Development
 
 tags:
-  - name: Orders
-    description: Order management endpoints
-  - name: OEM
-    description: OEM part number resolution
-  - name: Bot
-    description: WhatsApp bot endpoints
   - name: Auth
-    description: Authentication endpoints
-  - name: Health
-    description: Service health checks
+    description: Stateless JWT Authentication & Tenant Management
+  - name: Orders
+    description: B2B Order and fulfillment tracking
+  - name: Invoices
+    description: GoBD-compliant invoicing and billing
+  - name: OEM
+    description: APEX Engine (Database + AI Resolution)
+  - name: GDPR
+    description: DSGVO Compliance (Data export and deletion)
+  - name: Suppliers
+    description: Shop offer scraping and supplier API integrations
+  - name: Webhook
+    description: Twilio WhatsApp inbound hooks
+
+security:
+  - bearerAuth: []
 
 paths:
-  /api/orders:
-    get:
-      summary: List orders
-      tags: [Orders]
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [new, pending, confirmed, processing, shipped, delivered]
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-      responses:
-        '200':
-          description: List of orders
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Order'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/orders/{orderId}:
-    get:
-      summary: Get order by ID
-      tags: [Orders]
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: orderId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Order details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Order'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/oem/resolve:
-    post:
-      summary: Resolve OEM part number
-      description: Multi-source OEM resolution with consensus validation
-      tags: [OEM]
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OEMResolverRequest'
-      responses:
-        '200':
-          description: OEM resolution result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OEMResolverResult'
-
-  /webhook/whatsapp:
-    post:
-      summary: Twilio WhatsApp Webhook
-      description: Receives incoming WhatsApp messages from Twilio
-      tags: [Bot]
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                From:
-                  type: string
-                Body:
-                  type: string
-                NumMedia:
-                  type: string
-      responses:
-        '200':
-          description: TwiML response
-          content:
-            application/xml:
-              schema:
-                type: string
-
+  # ==============================
+  # AUTHENTICATION
+  # ==============================
   /api/auth/login:
     post:
-      summary: User login
+      summary: Authenticate User
       tags: [Auth]
+      security: []
       requestBody:
         required: true
         content:
@@ -152,7 +63,7 @@ paths:
                   format: password
       responses:
         '200':
-          description: Login successful
+          description: Successfully authenticated
           content:
             application/json:
               schema:
@@ -163,19 +74,192 @@ paths:
                   user:
                     $ref: '#/components/schemas/User'
         '401':
-          description: Invalid credentials
+          description: Invalid Credentials
 
-  /health:
+  # ==============================
+  # ORDERS
+  # ==============================
+  /api/orders:
     get:
-      summary: Health check
-      tags: [Health]
+      summary: List all tenant orders
+      tags: [Orders]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, pending, ordered, shipped, delivered, canceled]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
       responses:
         '200':
-          description: Service healthy
+          description: Array of Orders
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthStatus'
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+
+  /api/orders/{orderId}/auto-order:
+    post:
+      summary: Trigger B2B Auto-Order Pipeline
+      description: Re-evaluates offers and initiates automatic purchase via configured WWS/Shop integration.
+      tags: [Orders]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully ordered
+        '400':
+          description: No valid offers available
+
+  # ==============================
+  # INVOICES & GOBD
+  # ==============================
+  /api/invoices:
+    get:
+      summary: List Invoices
+      tags: [Invoices]
+      responses:
+        '200':
+          description: List of GoBD Invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+
+  /api/invoices/{invoiceId}:
+    delete:
+      summary: Delete Invoice (BLOCKED - GoBD)
+      description: Hard deletes are mathematically disabled at the router level for GoBD WORM compliance. Use Cancel instead.
+      tags: [Invoices]
+      responses:
+        '403':
+          description: Forbidden. Hard deletes are illegal.
+
+  /api/invoices/{invoiceId}/cancel:
+    post:
+      summary: Cancel Invoice
+      tags: [Invoices]
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice successfully canceled (Storno)
+
+  /api/invoices/export/datev:
+    get:
+      summary: Download DATEV Export
+      tags: [Invoices]
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: integer
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: CSV file in DATEV configuration
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  # ==============================
+  # GDPR / DSGVO
+  # ==============================
+  /api/v1/gdpr/customers/{phone}:
+    get:
+      summary: Export Customer Data (Art. 20 GDPR)
+      tags: [GDPR]
+      parameters:
+        - name: phone
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Complete structural JSON dump of customer PII
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Right to be Forgotten (Art. 17 GDPR)
+      tags: [GDPR]
+      parameters:
+        - name: phone
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully anonymized / deleted PII
+
+  # ==============================
+  # AI OEM PIPELINE
+  # ==============================
+  /api/oem/resolve:
+    post:
+      summary: Execute APEX Pipeline
+      tags: [OEM]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OEMResolverRequest'
+      responses:
+        '200':
+          description: Highest confidence OEM match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OEMResolverResult'
+
+  # ==============================
+  # WEBHOOKS
+  # ==============================
+  /webhook/whatsapp:
+    post:
+      summary: Twilio Inbound Webhook
+      tags: [Webhook]
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                From:
+                  type: string
+                Body:
+                  type: string
+      responses:
+        '200':
+          description: Acknowledged (TwiML)
 
 components:
   securitySchemes:
@@ -185,25 +269,51 @@ components:
       bearerFormat: JWT
 
   schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, user, viewer]
+
     Order:
       type: object
       properties:
         id:
           type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
         status:
-          type: string
-          enum: [new, pending, confirmed, processing, shipped, delivered]
-        contact_number:
-          type: string
-        vehicle_description:
-          type: string
-        part_description:
           type: string
         oem_number:
           type: string
-        created_at:
+        total_price:
+          type: number
+
+    Invoice:
+      type: object
+      properties:
+        id:
           type: string
-          format: date-time
+          format: uuid
+        invoice_number:
+          type: string
+          example: 'RE-2026-00001'
+        status:
+          type: string
+          enum: [draft, final, canceled]
+        gross_amount:
+          type: number
 
     OEMResolverRequest:
       type: object
@@ -213,8 +323,6 @@ components:
           type: object
           properties:
             rawText:
-              type: string
-            normalizedPart:
               type: string
         vehicle:
           type: object
@@ -227,10 +335,6 @@ components:
               type: integer
             vin:
               type: string
-            hsn:
-              type: string
-            tsn:
-              type: string
 
     OEMResolverResult:
       type: object
@@ -239,58 +343,6 @@ components:
           type: string
         confidence:
           type: number
-        status:
+        source:
           type: string
-          enum: [vetted, reliable, low_confidence, no_match]
-        sourceCount:
-          type: integer
-        candidates:
-          type: array
-          items:
-            type: object
-
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-        email:
-          type: string
-        username:
-          type: string
-        role:
-          type: string
-
-    HealthStatus:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [ok, degraded, unhealthy]
-        uptime:
-          type: number
-        version:
-          type: string
-        database:
-          type: string
-          enum: [connected, disconnected]
-
-  responses:
-    Unauthorized:
-      description: Authentication required
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
+          enum: [DATABASE, GEMINI, CLAUDE]
