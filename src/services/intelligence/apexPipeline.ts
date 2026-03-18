@@ -45,6 +45,7 @@ import { recordOemResolution } from "./oemMetrics";
 import { trackOemResolutionResult } from "@core/alertService";
 import { learnFromResolution } from "./oemLearner";
 import { trackResolution } from "./accuracyTracker";
+import { withSpan } from "@utils/apm";
 
 // ============================================================================
 // Configuration
@@ -83,35 +84,42 @@ async function phase1DatabaseLookup(req: OEMResolverRequest): Promise<{
     earlyExit: boolean;
     topCandidate?: OEMCandidate;
 }> {
-    const startTime = Date.now();
+    return withSpan('apex.phase1_db_lookup', { oem: (req as any).oemNumber || (req as any).oem || '' }, async (span) => {
+        const startTime = Date.now();
 
-    try {
-        const candidates = await databaseSource.resolveCandidates(req);
-        const elapsed = Date.now() - startTime;
+        try {
+            const candidates = await databaseSource.resolveCandidates(req);
+            const elapsed = Date.now() - startTime;
+            span.setTag('candidates_count', candidates.length);
 
-        // Check for high-confidence DB hit
-        const top = candidates
-            .filter(c => c.confidence >= DB_ACCEPT_THRESHOLD)
-            .sort((a, b) => b.confidence - a.confidence)[0];
+            // Check for high-confidence DB hit
+            const top = candidates
+                .filter(c => c.confidence >= DB_ACCEPT_THRESHOLD)
+                .sort((a, b) => b.confidence - a.confidence)[0];
 
-        if (top) {
-            logger.info("[APEX P1] ⚡ Database HIT — skipping AI", {
-                oem: top.oem,
-                confidence: top.confidence,
+            if (top) {
+                logger.info("[APEX P1] ⚡ Database HIT — skipping AI", {
+                    oem: top.oem,
+                    confidence: top.confidence,
+                    elapsed,
+                });
+                span.setTag('hit', true);
+                span.setTag('top_confidence', top.confidence);
+                return { candidates, earlyExit: true, topCandidate: top };
+            }
+
+            logger.info("[APEX P1] Database miss — continuing to Phase 2", {
+                candidateCount: candidates.length,
                 elapsed,
             });
-            return { candidates, earlyExit: true, topCandidate: top };
+            span.setTag('hit', false);
+            return { candidates, earlyExit: false };
+        } catch (err: any) {
+            logger.warn("[APEX P1] Database lookup failed", { error: err?.message });
+            span.setTag('error', true);
+            return { candidates: [], earlyExit: false };
         }
-
-        logger.info("[APEX P1] Database miss — continuing to Phase 2", {
-            candidateCount: candidates.length,
-            elapsed,
-        });
-        return { candidates, earlyExit: false };
-    } catch (err: any) {
-        logger.warn("[APEX P1] Database lookup failed", { error: err?.message });
-        return { candidates: [], earlyExit: false };
-    }
+    });
 }
 
 // ============================================================================
@@ -122,48 +130,55 @@ async function phase2GeminiSearch(req: OEMResolverRequest, dbCandidates: OEMCand
     candidates: OEMCandidate[];
     topCandidate?: OEMCandidate;
 }> {
-    const startTime = Date.now();
+    return withSpan('apex.phase2_gemini_search', { partName: req.partQuery.rawText || '' }, async (span) => {
+        const startTime = Date.now();
 
-    try {
-        const geminiCandidates = await geminiGroundedOemSource.resolveCandidates(req);
-        const elapsed = Date.now() - startTime;
+        try {
+            const geminiCandidates = await geminiGroundedOemSource.resolveCandidates(req);
+            const elapsed = Date.now() - startTime;
 
-        // Merge with any DB candidates (lower confidence)
-        const allCandidates = [...geminiCandidates, ...dbCandidates];
+            // Merge with any DB candidates (lower confidence)
+            const allCandidates = [...geminiCandidates, ...dbCandidates];
 
-        // Deduplicate: keep highest confidence per OEM
-        const deduped = new Map<string, OEMCandidate>();
-        for (const c of allCandidates) {
-            const key = c.oem.replace(/[-\s.]/g, "").toUpperCase();
-            const existing = deduped.get(key);
-            if (!existing || c.confidence > existing.confidence) {
-                deduped.set(key, c);
+            // Deduplicate: keep highest confidence per OEM
+            const deduped = new Map<string, OEMCandidate>();
+            for (const c of allCandidates) {
+                const key = c.oem.replace(/[-\s.]/g, "").toUpperCase();
+                const existing = deduped.get(key);
+                if (!existing || c.confidence > existing.confidence) {
+                    deduped.set(key, c);
+                }
             }
+
+            const merged = Array.from(deduped.values())
+                .filter(c => !isAftermarketNumber(c.oem))
+                .sort((a, b) => b.confidence - a.confidence);
+
+            const top = merged[0];
+
+            logger.info("[APEX P2] Gemini search complete", {
+                geminiCount: geminiCandidates.length,
+                mergedCount: merged.length,
+                topOem: top?.oem,
+                topConf: top?.confidence,
+                elapsed,
+            });
+
+            span.setTag('candidates_count', merged.length);
+            span.setTag('top_confidence', top?.confidence || 0);
+            span.setTag('top_oem', top?.oem || 'N/A');
+
+            return { candidates: merged, topCandidate: top };
+        } catch (err: any) {
+            logger.error("[APEX P2] Gemini search failed", { error: err?.message });
+            span.setTag('error', true);
+            return { candidates: dbCandidates, topCandidate: dbCandidates[0] };
         }
-
-        const merged = Array.from(deduped.values())
-            .filter(c => !isAftermarketNumber(c.oem))
-            .sort((a, b) => b.confidence - a.confidence);
-
-        const top = merged[0];
-
-        logger.info("[APEX P2] Gemini search complete", {
-            geminiCount: geminiCandidates.length,
-            mergedCount: merged.length,
-            topOem: top?.oem,
-            topConf: top?.confidence,
-            elapsed,
-        });
-
-        return { candidates: merged, topCandidate: top };
-    } catch (err: any) {
-        logger.error("[APEX P2] Gemini search failed", { error: err?.message });
-        return { candidates: dbCandidates, topCandidate: dbCandidates[0] };
-    }
+    });
 }
 
 // ============================================================================
-// PHASE 3: Claude Adversarial Validation
+// PHASE 3: Claude Adversary (Validation)
 // ============================================================================
 
 async function phase3ClaudeAdversary(
@@ -176,8 +191,13 @@ async function phase3ClaudeAdversary(
     claudeVerdict: string;
     debateUsed: boolean;
 }> {
-    const startTime = Date.now();
-    const brand = req.vehicle.make || "";
+    return withSpan('apex.phase3_claude_adversary', {
+        vehicle_brand: req.vehicle.make || "",
+        top_oem_candidate: topCandidate.oem,
+        candidate_confidence: topCandidate.confidence
+    }, async (span) => {
+        const startTime = Date.now();
+        const brand = req.vehicle.make || "";
 
     // Check if Claude is available
     const claudeReady = await isClaudeAvailable();
@@ -288,6 +308,9 @@ async function phase3ClaudeAdversary(
 
     } catch (err: any) {
         logger.error("[APEX P3] Claude adversary failed", { error: err?.message });
+        span.setTag('error', true);
+        span.setTag('error_message', err?.message);
+        
         // Fallback: accept Gemini result with slight penalty
         return {
             finalOem: topCandidate.confidence >= PIPELINE_ACCEPT_THRESHOLD ? topCandidate.oem : undefined,
@@ -296,10 +319,11 @@ async function phase3ClaudeAdversary(
             debateUsed: false,
         };
     }
+    });
 }
 
 // ============================================================================
-// PHASE 4: Self-Learning Flywheel
+// PHASE 4: Self-Learning Flywheel (Feedback Loop)
 // ============================================================================
 
 async function phase4Learn(
