@@ -81,6 +81,10 @@ router.post("/", async (req, res) => {
 
   // Add to Queue
   try {
+    if (!botQueue) {
+      logger.error("[Twilio Webhook] Queue unavailable (Redis not connected)");
+      return res.status(503).send("Queue unavailable");
+    }
     await botQueue.add("whatsapp-msg", {
       from,
       text: text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : ""),
