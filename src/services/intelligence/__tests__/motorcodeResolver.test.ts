@@ -1,4 +1,4 @@
-import { resolveMotorcode } from '../motorcodeResolver';
+import { resolveByMotorcode } from '../motorcodeResolver';
 import { geminiGroundedOemSource } from '../sources/geminiGroundedOemSource';
 
 jest.mock('../sources/geminiGroundedOemSource', () => ({
@@ -16,16 +16,16 @@ describe('motorcodeResolver', () => {
 
     it('should return motorcode when Gemini finds it', async () => {
         mockGemini.resolveCandidates.mockResolvedValue([
-            { oem: 'B48B20', confidence: 0.9, source: 'gemini', method: 'ai' }
+            { oem: 'B48B20', confidence: 0.9, source: 'gemini' }
         ]);
 
-        const result = await resolveMotorcode({ make: 'BMW', model: '320i', year: 2020 });
+        const result = await resolveByMotorcode({ make: 'BMW', model: '320i', year: 2020 });
         expect(result).toBe('B48B20');
     });
 
     it('should return null when Gemini cannot find motorcode', async () => {
         mockGemini.resolveCandidates.mockResolvedValue([]);
-        const result = await resolveMotorcode({ make: 'Unknown', model: 'Car' });
+        const result = await resolveByMotorcode({ make: 'Unknown', model: 'Car' });
         expect(result).toBeNull();
     });
 });

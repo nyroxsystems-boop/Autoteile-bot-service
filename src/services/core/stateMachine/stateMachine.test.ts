@@ -88,13 +88,13 @@ describe('stateMachine', () => {
                 language: 'en',
                 userText: 'Test',
                 parsed: {},
-                currentStatus: 'done' // Not registered
+                currentStatus: 'nonexistent_state_xyz' as any
             };
 
-            const result = await executeState('done', ctx);
+            const result = await executeState('nonexistent_state_xyz' as any, ctx);
 
             expect(result.reply).toContain('unexpected error');
-            expect(result.nextStatus).toBe('done'); // Stays in same state
+            expect(result.nextStatus).toBe('nonexistent_state_xyz'); // Stays in same state
         });
     });
 });

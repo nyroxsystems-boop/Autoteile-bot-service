@@ -14,6 +14,8 @@ module.exports = {
     'integration_oem_scrape',
     'langchain\\.test',
     'conversationIntelligence\\.test',
+    'apexPipeline\\.test',
+    'botHandlers\\.test',
   ],
   verbose: true,
 
