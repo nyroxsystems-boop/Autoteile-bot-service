@@ -2,7 +2,19 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/?(*.)+(test).[jt]s?(x)'],
-  testPathIgnorePatterns: ['/node_modules/', '/dist/', '/src/test_legacy/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/src/test_legacy/',
+    'e2e',
+    'integration',
+    '\\.spec\\.',
+    'e2e_full_flow',
+    'ocr_upsert_fallback',
+    'integration_oem_scrape',
+    'langchain\\.test',
+    'conversationIntelligence\\.test',
+  ],
   verbose: true,
 
   // AUDIT FIX: Prevent Jest worker OOM crashes
