@@ -60,7 +60,7 @@ router.post("/users", validate(createUserSchema.extend({ tenant_id: require('zod
                     code: "USER_LIMIT_REACHED"
                 });
             }
-        } catch { /* limit check is best-effort */ }
+        } catch (err) { logger.warn('[Admin] User limit check failed (best-effort)', { error: err }); }
     }
 
     const id = randomUUID();

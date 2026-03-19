@@ -178,7 +178,8 @@ export function safeParseVehicleJson(text: string): VehicleOcrResult {
             emissionClass: obj.emissionClass ?? null,
             rawText: obj.rawText ?? "",
         };
-    } catch {
+    } catch (err) {
+        logger.debug('[OCR] Vehicle JSON parse failed', { error: err });
         return empty;
     }
 }
@@ -255,7 +256,8 @@ function safeParseNlpJson(text: string): NlpResult {
             vehiclePatch: obj.vehiclePatch ?? {},
             clarificationQuestion: obj.clarificationQuestion ?? null,
         };
-    } catch {
+    } catch (err) {
+        logger.debug('[OCR] NLP JSON parse failed', { error: err });
         return empty;
     }
 }

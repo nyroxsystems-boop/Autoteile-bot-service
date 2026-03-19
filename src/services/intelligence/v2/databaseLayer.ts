@@ -150,8 +150,8 @@ export function lookupFromDatabase(req: OEMResolverRequest): DbLookupResult {
             }
           }
         }
-      } catch {
-        // FTS failure is non-critical
+      } catch (err) {
+        logger.debug('[v2 DB] FTS query failed (non-critical)', { error: err });
       }
     }
 

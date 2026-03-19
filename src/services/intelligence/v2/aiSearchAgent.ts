@@ -230,7 +230,8 @@ function parseAiResponse(text: string): ParsedOemResult[] {
         }
       }
     }
-  } catch {
+  } catch (err) {
+    logger.debug('[v2 AI] JSON parse failed, using regex fallback', { error: err });
     // Strategy 2: Regex extraction fallback
     extractOemsFromText(text, results);
   }

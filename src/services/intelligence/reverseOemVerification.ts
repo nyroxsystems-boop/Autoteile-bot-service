@@ -209,7 +209,8 @@ function parseReverseResult(text: string): ParsedReverse | null {
             isOem: data.is_oem !== false, // Default to true if not specified
             brand: String(data.brand || ""),
         };
-    } catch {
+    } catch (err) {
+        logger.debug('[ReverseOEM] Parse error — returning null', { error: err });
         return null;
     }
 }

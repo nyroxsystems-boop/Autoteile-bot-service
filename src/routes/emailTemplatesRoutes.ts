@@ -30,7 +30,8 @@ async function getAdminUsername(req: Request): Promise<string> {
             [token]
         );
         return session?.username || 'Unknown';
-    } catch {
+    } catch (err) {
+        logger.debug('[Email] Admin username lookup failed', { error: err });
         return 'Unknown';
     }
 }
@@ -219,7 +220,8 @@ router.get("/templates", async (req: Request, res: Response) => {
             `SELECT * FROM email_templates ORDER BY created_at DESC LIMIT 50`
         );
         return res.json(templates);
-    } catch {
+    } catch (err) {
+        logger.debug('[Email] Templates table may not exist', { error: err });
         // Table might not exist yet
         return res.json([]);
     }

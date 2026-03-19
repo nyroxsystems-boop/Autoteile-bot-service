@@ -265,7 +265,8 @@ function parseReverseResponse(text: string): ParsedReverseData | null {
       isOem: data.is_oem !== false,
       brand: String(data.brand || ''),
     };
-  } catch {
+  } catch (err) {
+    logger.debug('[v2 Validate] Reverse response parse failed', { error: err });
     return null;
   }
 }

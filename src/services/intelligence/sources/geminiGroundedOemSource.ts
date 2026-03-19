@@ -205,7 +205,8 @@ function parseResponse(text: string): ParsedOem[] {
                 }
             }
         }
-    } catch {
+    } catch (err) {
+        logger.debug('[GeminiOEM] JSON parse failed, falling back to regex', { error: err });
         // Strategy 2: Regex extraction
         extractFromText(text, results);
     }
@@ -414,8 +415,8 @@ Antworte als JSON:
                             }
                         }
                     }
-                } catch {
-                    // Verification parse failed — no boost
+                } catch (err) {
+                    logger.debug('[GeminiGrounded] Verification parse failed — no boost', { error: err });
                 }
             }
         }

@@ -2,8 +2,15 @@ type LogLevel = "debug" | "info" | "warn" | "error";
 
 type Meta = Record<string, unknown> | Error | unknown;
 
+// Log level hierarchy: debug < info < warn < error
+const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+const currentLevel: LogLevel = (process.env.LOG_LEVEL as LogLevel) || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+
 /**
- * Structured logger with component tagging.
+ * Structured logger with component tagging, PII redaction, and level filtering.
+ *
+ * Environment:
+ *   LOG_LEVEL=debug|info|warn|error (default: 'info' in production, 'debug' in dev)
  *
  * Usage:
  *   logger.info({ component: "DashboardAPI", orderId }, "Fetched order");
@@ -15,6 +22,9 @@ function log(
   maybeMessage?: string | Meta,
   maybeMeta?: Meta
 ) {
+  // Skip logs below configured level
+  if (LOG_LEVELS[level] < LOG_LEVELS[currentLevel]) return;
+
   const message =
     typeof metaOrMessage === "string"
       ? typeof maybeMessage === "string"
@@ -38,8 +48,10 @@ function log(
     ...(meta ? { meta: serializeMeta(meta) } : {})
   };
 
+  // Use appropriate console method for log level
+  const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   // eslint-disable-next-line no-console
-  console.log(JSON.stringify(payload));
+  consoleFn(JSON.stringify(payload));
 }
 
 function serializeMeta(meta: Meta) {

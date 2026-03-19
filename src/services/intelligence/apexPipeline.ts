@@ -627,8 +627,8 @@ function buildResult(
             variantDetected: false,
             deepResolutionUsed: false,
         });
-    } catch {
-        // non-critical
+    } catch (err) {
+        logger.debug('[APEX] Telemetry tracking failed (non-critical)', { error: err });
     }
 
     logger.info("[APEX] ✅ Pipeline complete", {
