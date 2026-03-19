@@ -87,7 +87,7 @@ router.post("/login", validate(flexLoginSchema), async (req: Request, res: Respo
                     [String(merchantId)]
                 );
                 if (settings) maxDevices = settings.max_devices || 2;
-            } catch { /* table might not exist yet */ }
+            } catch (err) { logger.warn('[Auth] Table check error', { error: err }); }
 
             // Count active devices for this tenant (excluding this device if already registered)
             const activeDevicesResult = await db.get<any>(
@@ -164,7 +164,7 @@ router.post("/login", validate(flexLoginSchema), async (req: Request, res: Respo
             if (companyUsers && companyUsers.length > 0) {
                 tenantName = companyUsers[0]?.name || tenantName;
             }
-        } catch { /* fallback to default */ }
+        } catch (err) { logger.warn('[Auth] Tenant lookup error', { error: err }); }
 
         // Issue JWT tokens alongside legacy session
         const jwtTokens = jwtService.generateTokenPair({
@@ -234,7 +234,7 @@ router.post("/logout", async (req: Request, res: Response) => {
             // Deactivate device session
             try {
                 await db.run('UPDATE user_sessions SET is_active = 0 WHERE token = ?', [token]);
-            } catch { /* best effort */ }
+            } catch (err) { logger.warn('[Auth] Password migration error', { error: err }); }
 
             logger.info('✅ User logged out, device session deactivated');
         } catch (error) {

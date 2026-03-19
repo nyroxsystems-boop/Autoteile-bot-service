@@ -13,6 +13,8 @@
 // Re-export all database functions from the InvenTree adapter
 export * from "./realInvenTreeAdapter";
 
+import { logger } from "@utils/logger";
+
 // Re-export conversation status type
 export { ConversationStatus } from "./wawiAdapter";
 
@@ -31,7 +33,8 @@ export async function persistOemMetadata(orderId: string, meta: Record<string, u
   try {
     const { updateOrderData } = await import("./realInvenTreeAdapter");
     await updateOrderData(orderId, { oem_metadata: meta });
-  } catch {
+  } catch (err) {
+    logger.warn('[Supabase] Connection test error', { error: err });
     // Silent fallback for testing environments
   }
 }
@@ -46,7 +49,8 @@ export async function updateOrderScrapeTask(orderId: string, payload: Record<str
   try {
     const { updateOrderData } = await import("./realInvenTreeAdapter");
     await updateOrderData(orderId, { scrape_task: payload });
-  } catch {
+  } catch (err) {
+    logger.warn('[Supabase] Init error', { error: err });
     // Silent fallback for testing environments
   }
 }

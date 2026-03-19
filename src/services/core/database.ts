@@ -29,13 +29,18 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3)
 // Create connection pool
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes('render.com') || process.env.DATABASE_URL?.includes('railway.app')
+    ssl: process.env.DATABASE_SSL === 'true'
         ? { rejectUnauthorized: false }
         : undefined,
     max: 20, // Maximum number of connections
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
+
+/** Close the connection pool (used for graceful shutdown) */
+export async function closePool(): Promise<void> {
+    await pool.end();
+}
 
 // Simple ID generator
 const generateId = () => crypto.randomUUID();
@@ -90,8 +95,8 @@ export async function initDb(): Promise<void> {
             }
         }
 
-        // Seed demo data (orders, products) if enabled
-        if (process.env.SEED_DEMO_DATA !== 'false') {
+        // Seed demo data (orders, products) only when explicitly enabled
+        if (process.env.SEED_DEMO_DATA === 'true') {
             await seedDemoData();
         }
 

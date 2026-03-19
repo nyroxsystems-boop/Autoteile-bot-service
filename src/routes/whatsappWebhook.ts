@@ -49,7 +49,8 @@ function validateTwilioSignature(req: express.Request): boolean {
   const expected = crypto.createHmac("sha1", authToken).update(data).digest("base64");
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
-  } catch {
+  } catch (err) {
+    logger.warn('[Webhook] Signature comparison error', { error: err });
     return false;
   }
 }

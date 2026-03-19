@@ -116,7 +116,8 @@ class RedisStore implements RateLimitStore {
         try {
             const data = await this.redis.get(`rl:${key}`);
             return data ? JSON.parse(data) : null;
-        } catch {
+        } catch (err) {
+          logger.warn('[RateLimiter] Redis increment error', { error: err });
             return null;
         }
     }
@@ -162,7 +163,7 @@ class RedisStore implements RateLimitStore {
         if (!this.connected || !this.redis) return;
         try {
             await this.redis.del(`rl:${key}`);
-        } catch { /* best effort */ }
+        } catch (err) { logger.warn('[RateLimiter] Redis reset error', { error: err }); }
     }
 
     async clear(): Promise<void> {

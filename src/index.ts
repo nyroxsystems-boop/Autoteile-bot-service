@@ -213,6 +213,48 @@ if (process.env.NODE_ENV !== 'production') {
   app.use("/simulate/whatsapp", authMiddleware, simulateWhatsappRouter);
 }
 
+// ──────────────────────────────────────────────────
+// GLOBAL ERROR HANDLERS (P0: prevent silent crashes)
+// ──────────────────────────────────────────────────
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error('[FATAL] Unhandled promise rejection', { reason });
+});
+
+process.on('uncaughtException', (error: Error) => {
+  logger.error('[FATAL] Uncaught exception — shutting down', { error: error.message, stack: error.stack });
+  process.exit(1);
+});
+
+// ──────────────────────────────────────────────────
+// ENV VALIDATION (P0: fail-fast on missing config)
+// ──────────────────────────────────────────────────
+function validateEnv(): void {
+  const missing: string[] = [];
+  const requiredInProd = ['JWT_SECRET', 'DATABASE_URL'];
+  const recommended = ['GEMINI_API_KEY', 'TWILIO_AUTH_TOKEN', 'REDIS_URL'];
+
+  if (process.env.NODE_ENV === 'production') {
+    for (const key of requiredInProd) {
+      if (!process.env[key]) missing.push(key);
+    }
+    if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+      logger.error('[ENV] JWT_SECRET must be at least 32 characters in production');
+      missing.push('JWT_SECRET (too short)');
+    }
+    if (missing.length > 0) {
+      logger.error('[ENV] Missing required environment variables', { missing });
+      process.exit(1);
+    }
+    for (const key of recommended) {
+      if (!process.env[key]) {
+        logger.warn(`[ENV] ⚠️  Recommended variable ${key} is not set`);
+      }
+    }
+  }
+}
+
+validateEnv();
+
 // Serverstart
 initDb().then(async () => {
   // Run tax module migrations
@@ -238,10 +280,39 @@ initDb().then(async () => {
     logger.error('Email assignments migration failed (non-critical):', err);
   });
 
-  app.listen(env.port, () => {
+  const server = app.listen(env.port, () => {
     logger.info(`Bot service listening on port ${env.port}`);
   });
+
+  // ──────────────────────────────────────────────────
+  // GRACEFUL SHUTDOWN (P0: prevent data loss on deploy)
+  // ──────────────────────────────────────────────────
+  const shutdown = async (signal: string) => {
+    logger.info(`[Shutdown] Received ${signal}, graceful shutdown starting...`);
+
+    // 1. Stop accepting new connections
+    server.close(() => {
+      logger.info('[Shutdown] HTTP server closed');
+    });
+
+    // 2. Close database pool
+    try {
+      const { closePool } = await import('./services/core/database');
+      await closePool();
+      logger.info('[Shutdown] Database pool closed');
+    } catch (err) {
+      logger.error('[Shutdown] Error closing database pool', { error: err });
+    }
+
+    logger.info('[Shutdown] Graceful shutdown complete');
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
 }).catch(err => {
   logger.error("Failed to init database", err);
   process.exit(1);
 });
+
