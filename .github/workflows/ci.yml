@@ -33,7 +33,7 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm run test -- --passWithNoTests
+        run: npx jest --config jest.config.js --passWithNoTests
 
       - name: Check for empty catches
         run: |
