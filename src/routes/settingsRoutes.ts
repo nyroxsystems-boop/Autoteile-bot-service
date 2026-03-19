@@ -4,6 +4,8 @@
 import { Router, Request, Response } from 'express';
 import { logger } from "@utils/logger";
 import { getDesignSettings, upsertDesignSettings } from '../services/invoicing/designSettingsService';
+import { validate } from '../middleware/validate';
+import { updateBillingSettingsSchema } from '../middleware/schemas';
 
 const router = Router();
 
@@ -77,7 +79,7 @@ router.get('/billing/:tenantId', async (req: Request, res: Response) => {
  * PUT /api/settings/billing/:tenantId
  * Update billing/design settings for a tenant
  */
-router.put('/billing/:tenantId', async (req: Request, res: Response) => {
+router.put('/billing/:tenantId', validate(updateBillingSettingsSchema), async (req: Request, res: Response) => {
     try {
         const { tenantId } = req.params;
         logger.info(`[Settings] Updating billing settings for tenant: ${tenantId}`);

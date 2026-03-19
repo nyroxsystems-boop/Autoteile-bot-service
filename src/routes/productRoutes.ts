@@ -3,6 +3,8 @@ import { Router } from 'express';
 import * as adapter from '@adapters/inventreeAdapter';
 import { logger } from '@utils/logger';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { validate } from '../middleware/validate';
+import { createProductSchema, stockActionSchema } from '../middleware/schemas';
 
 const router = Router();
 
@@ -41,7 +43,7 @@ router.get('/', async (req: any, res) => {
 });
 
 // POST /products - Create Product (Isolated)
-router.post('/', async (req: any, res) => {
+router.post('/', validate(createProductSchema), async (req: any, res) => {
     try {
         const product = await adapter.createPart(req.tenantId, req.body);
         res.status(201).json(product);
@@ -78,7 +80,7 @@ router.patch('/:id', async (req: any, res) => {
 });
 
 // POST /products/:id/stock - Adjust Stock (WWS)
-router.post('/:id/stock', async (req: any, res) => {
+router.post('/:id/stock', validate(stockActionSchema), async (req: any, res) => {
     const { action, quantity } = req.body;
     if (!['add', 'remove', 'count'].includes(action) || typeof quantity !== 'number') {
         return res.status(400).json({ error: "Invalid action or quantity" });

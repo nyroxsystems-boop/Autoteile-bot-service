@@ -198,3 +198,95 @@ export const tenantDeviceParamSchema = z.object({
     id: z.coerce.number().int().positive(),
     deviceId: z.string().min(1),
 });
+
+// ── Settings (Billing) Routes ──
+
+export const updateBillingSettingsSchema = z.object({
+    company_name: z.string().max(255).optional(),
+    address_line1: z.string().max(500).optional(),
+    city: z.string().max(100).optional(),
+    postal_code: z.string().max(20).optional(),
+    invoice_color: z.string().max(20).optional(),
+    accent_color: z.string().max(20).optional(),
+    invoice_font: z.string().max(50).optional(),
+    logo_position: z.enum(['left', 'center', 'right']).optional(),
+    number_position: z.enum(['left', 'right']).optional(),
+    address_layout: z.enum(['single-column', 'two-column']).optional(),
+    table_style: z.enum(['grid', 'minimal', 'striped']).optional(),
+    logo_base64: z.string().max(500000).optional(), // base64 image can be large
+});
+
+// ── CRM Routes ──
+
+export const createLeadSchema = z.object({
+    company: z.string().max(255).optional(),
+    contactPerson: z.string().max(255).optional(),
+    email: z.string().email().max(255).optional().or(z.literal('')),
+    phone: z.string().max(30).optional(),
+    website: z.string().max(255).optional(),
+    status: z.string().max(50).optional(),
+    value: z.number().min(0).optional(),
+    source: z.string().max(100).optional(),
+    notes: z.string().max(2000).optional(),
+});
+
+export const updateLeadSchema = z.object({
+    company: z.string().max(255).optional(),
+    email: z.string().email().max(255).optional().or(z.literal('')),
+    status: z.string().max(50).optional(),
+    value: z.number().min(0).optional(),
+    notes: z.string().max(2000).optional(),
+});
+
+// ── Inbox Routes ──
+
+export const emailAssignSchema = z.object({
+    messageId: z.string().min(1, 'Message ID erforderlich'),
+    mailbox: z.string().max(50).optional(),
+    assignedTo: z.string().max(100).optional(),
+    status: z.enum(['open', 'in_progress', 'done']).optional(),
+    notes: z.string().max(2000).optional(),
+});
+
+export const emailSendSchema = z.object({
+    to: z.string().email('Ungültige Empfänger-Adresse'),
+    subject: z.string().min(1, 'Betreff erforderlich').max(500),
+    body: z.string().min(1, 'Nachricht erforderlich').max(50000),
+    htmlContent: z.string().max(100000).optional(),
+    useSharedMailbox: z.boolean().optional(),
+    replyToMessageId: z.string().optional(),
+});
+
+export const emailAiReplySchema = z.object({
+    originalEmail: z.object({
+        from: z.string().optional(),
+        subject: z.string().optional(),
+        body: z.string().min(1),
+    }),
+    prompt: z.string().max(1000).optional(),
+    tone: z.enum(['professional', 'friendly', 'formal', 'casual']).optional(),
+});
+
+export const imapSetupSchema = z.object({
+    imapPassword: z.string().min(1, 'IMAP-Passwort erforderlich').max(256),
+});
+
+// ── Product Stock Routes ──
+
+export const stockActionSchema = z.object({
+    action: z.enum(['add', 'remove', 'count']),
+    quantity: z.number().int().min(0),
+});
+
+// ── OEM Feedback Routes ──
+
+export const oemFeedbackSchema = z.object({
+    orderId: z.string().min(1),
+    oemNumber: z.string().min(1),
+    isCorrect: z.boolean(),
+    correctedOem: z.string().max(50).optional(),
+    vehicleBrand: z.string().max(50).optional(),
+    vehicleModel: z.string().max(100).optional(),
+    vehicleYear: z.coerce.number().int().min(1900).max(2030).optional(),
+    partDescription: z.string().max(500).optional(),
+});

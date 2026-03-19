@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import * as adapter from '@adapters/inventreeAdapter';
 import { logger } from '@utils/logger';
+import { validate } from '../middleware/validate';
+import { createLeadSchema, updateLeadSchema } from '../middleware/schemas';
 
 export function createCrmRouter() {
     const router = Router();
@@ -35,7 +37,7 @@ export function createCrmRouter() {
     });
 
     // POST /leads - Create a new Lead
-    router.post('/leads', async (req, res) => {
+    router.post('/leads', validate(createLeadSchema), async (req, res) => {
         try {
             const body = req.body;
             // Map CRM Lead -> InvenTree Company

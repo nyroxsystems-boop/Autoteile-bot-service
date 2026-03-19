@@ -3,6 +3,8 @@
 
 import { Router, Request, Response } from 'express';
 import { logger } from "@utils/logger";
+import { validate } from '../middleware/validate';
+import { createInvoiceSchema } from '../middleware/schemas';
 import {
     createInvoice,
     getInvoiceById,
@@ -91,7 +93,7 @@ router.get('/', async (req: Request, res: Response) => {
  * POST /api/invoices
  * Create new invoice
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', validate(createInvoiceSchema), async (req: Request, res: Response) => {
     try {
         const invoice = await createInvoice(req.tenantId!, req.body);
         res.status(201).json(invoice);

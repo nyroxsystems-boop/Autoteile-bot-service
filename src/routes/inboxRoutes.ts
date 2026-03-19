@@ -16,6 +16,8 @@ import {
 import { sendEmailViaResend, isResendConfigured } from '../services/core/resendEmailService';
 import { generateEmailReply } from '../services/intelligence/geminiEmailReply';
 import { encrypt, decrypt, isEncrypted } from '../utils/encryption';
+import { validate } from '../middleware/validate';
+import { emailAssignSchema, emailSendSchema, emailAiReplySchema, imapSetupSchema } from '../middleware/schemas';
 
 const router = Router();
 
@@ -198,7 +200,7 @@ router.get('/email/:uid', async (req: Request, res: Response) => {
  * POST /api/inbox/email/:uid/assign
  * Assign email to an admin
  */
-router.post('/email/:uid/assign', async (req: Request, res: Response) => {
+router.post('/email/:uid/assign', validate(emailAssignSchema), async (req: Request, res: Response) => {
     const admin = await getAdminFromToken(req);
     if (!admin) {
         return res.status(401).json({ error: 'Nicht authentifiziert' });
@@ -240,7 +242,7 @@ router.post('/email/:uid/assign', async (req: Request, res: Response) => {
  * POST /api/inbox/email/send
  * Send an email (reply or new)
  */
-router.post('/email/send', async (req: Request, res: Response) => {
+router.post('/email/send', validate(emailSendSchema), async (req: Request, res: Response) => {
     const admin = await getAdminFromToken(req);
     if (!admin) {
         return res.status(401).json({ error: 'Nicht authentifiziert' });
@@ -294,7 +296,7 @@ router.post('/email/send', async (req: Request, res: Response) => {
  * POST /api/inbox/email/ai-reply
  * Generate AI reply suggestion
  */
-router.post('/email/ai-reply', async (req: Request, res: Response) => {
+router.post('/email/ai-reply', validate(emailAiReplySchema), async (req: Request, res: Response) => {
     const admin = await getAdminFromToken(req);
     if (!admin) {
         return res.status(401).json({ error: 'Nicht authentifiziert' });
@@ -367,7 +369,7 @@ router.patch('/email/:uid/read', async (req: Request, res: Response) => {
  * POST /api/inbox/setup
  * Setup personal mailbox (store IMAP password)
  */
-router.post('/setup', async (req: Request, res: Response) => {
+router.post('/setup', validate(imapSetupSchema), async (req: Request, res: Response) => {
     const admin = await getAdminFromToken(req);
     if (!admin) {
         return res.status(401).json({ error: 'Nicht authentifiziert' });
