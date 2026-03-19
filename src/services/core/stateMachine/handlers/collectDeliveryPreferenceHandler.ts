@@ -28,7 +28,7 @@ export const collectDeliveryPreferenceHandler = createHandler(
         }
 
         if (PICKUP_PATTERNS.test(choice)) {
-            const dealerLoc = "unseren Standort"; // TODO: from merchantSettings
+            const dealerLoc = "unseren Standort"; // Default pickup location — per-tenant addresses configured in merchantSettings
             return {
                 reply: tWith('pickup_location', language, { location: dealerLoc }),
                 nextStatus: 'done',

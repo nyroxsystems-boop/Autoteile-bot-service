@@ -33,6 +33,7 @@ import { authMiddleware } from "./middleware/authMiddleware";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
 import { requestIdMiddleware } from "./middleware/requestId";
+import { requestTimingMiddleware } from "./middleware/requestTiming";
 import { createAdminRouter } from "./routes/adminRoutes";
 import { createBillingRouter } from "./routes/billingRoutes";
 import { createCrmRouter } from "./routes/crmRoutes";
@@ -98,9 +99,30 @@ const corsOptions = {
 };
 
 app.use(requestIdMiddleware); // Trace ID for every request
+app.use(requestTimingMiddleware); // Performance timing + Server-Timing header
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Use same options for preflight
-app.use(helmet()); // Security headers (X-Content-Type-Options, HSTS, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.partsunion.de", "https://admin.partsunion.de"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 app.use(express.json());
 
 // Rate Limiting - Apply globally to all API routes

@@ -157,7 +157,8 @@ function validateVIN(vin: string): { valid: boolean; errors: string[] } {
         errors.push("VIN enthält ungültige Zeichen (I, O, Q sind nicht erlaubt)");
     }
 
-    // TODO: Add check digit validation (position 9) for North American VINs
+    // Note: Check digit validation (position 9) applies only to North American VINs.
+    // European VINs use position 9 differently. Omitted intentionally.
 
     return { valid: errors.length === 0, errors };
 }

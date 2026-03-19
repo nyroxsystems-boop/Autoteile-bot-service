@@ -135,3 +135,40 @@ router.get('/db', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+/**
+ * GET /health/ready — Kubernetes readiness probe
+ * Returns 200 only when the service can handle requests.
+ * Used by load balancers to check if they should route traffic here.
+ */
+router.get('/ready', async (req: Request, res: Response) => {
+    try {
+        const pool = getDb();
+        const start = Date.now();
+        await pool.query('SELECT 1');
+        const latency = Date.now() - start;
+
+        // Consider unhealthy if DB latency > 5 seconds
+        if (latency > 5000) {
+            return res.status(503).json({
+                ready: false,
+                reason: `Database latency too high: ${latency}ms`,
+            });
+        }
+
+        res.json({ ready: true, latencyMs: latency });
+    } catch (error: any) {
+        res.status(503).json({
+            ready: false,
+            reason: error.message || 'Database unreachable',
+        });
+    }
+});
+
+/**
+ * GET /health/live — Kubernetes liveness probe
+ * Always returns 200 if the process is running.
+ */
+router.get('/live', (_req: Request, res: Response) => {
+    res.json({ alive: true, uptime: Math.floor(process.uptime()) });
+});

@@ -21,12 +21,40 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high || true
 
       - name: TypeScript compile
         run: npm run build
 
       - name: Run tests
         run: npm run test -- --passWithNoTests
+
+      - name: Check for empty catches
+        run: |
+          if grep -rn 'catch\s*{' src/ --include="*.ts" | grep -v '_deprecated/' | grep -v '.test.' | grep -v node_modules; then
+            echo "❌ Found empty catch blocks!"
+            exit 1
+          fi
+          echo "✅ No empty catch blocks"
+
+      - name: Check for rejectUnauthorized false
+        run: |
+          if grep -rn 'rejectUnauthorized:\s*false' src/ --include="*.ts" | grep -v '_deprecated/' | grep -v '.test.' | grep -v node_modules; then
+            echo "❌ Found hardcoded rejectUnauthorized: false!"
+            exit 1
+          fi
+          echo "✅ No hardcoded rejectUnauthorized: false"
+
+      - name: Check for leaked secrets
+        run: |
+          if grep -rn 'sk-[a-zA-Z0-9]\{20,\}' src/ --include="*.ts" | grep -v '_deprecated/' | grep -v node_modules; then
+            echo "❌ Found potential API key in source!"
+            exit 1
+          fi
+          echo "✅ No leaked secrets in source"

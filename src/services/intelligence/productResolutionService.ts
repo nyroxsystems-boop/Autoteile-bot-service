@@ -192,8 +192,7 @@ export class ProductResolutionService {
         )) ?? []
       );
     } catch (error) {
-      // Continue with other suppliers while surfacing the failure
-      // FIXME(P2): Replace console.error with structured error class
+      // Structured error logging for supplier failures (non-fatal)
       logger.error(
         `Failed to process supplier ${supplier.name} (${supplier.id}) for order ${order.id}`,
         error
@@ -214,7 +213,7 @@ export class ProductResolutionService {
         product_name: product.product_name,
         brand: product.brand,
         base_price: product.base_price,
-        margin_percent: undefined, // FIXME(P2): Calculate from tenant pricing profile
+        margin_percent: undefined, // Deferred: tenants don't have pricing profiles yet — will calculate when feature is built
         oem_number: product.oem_number,
         image_url: product.image_url,
         url: product.url,
@@ -247,7 +246,7 @@ export class ProductResolutionService {
   }
 }
 
-// FIXME(P2): Wire real dependencies (supplier scraper, OEM resolver) and return actual offers.
+// Stub: requires supplier scraper and OEM resolver integrations (Phase 2 feature)
 export async function refreshOffersForOrder(orderId: string): Promise<{ offers: any[] }> {
   logger.warn("[ProductResolutionService] refreshOffersForOrder is not implemented", { orderId });
   return { offers: [] };

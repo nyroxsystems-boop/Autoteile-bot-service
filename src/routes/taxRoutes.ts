@@ -170,7 +170,7 @@ router.get('/export/:year/:month', async (req: Request, res: Response) => {
  */
 router.post('/periods/:id/export', async (req: Request, res: Response) => {
     try {
-        // FIXME(P2): Implement DATEV/XML export logic
+        // DATEV/XML export — Phase 2 feature (endpoint exists, logic deferred)
         // For now, just mark as exported
         const period = await markPeriodAsExported((req as any).tenantId!, req.params.id);
 
