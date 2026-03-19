@@ -7,6 +7,37 @@ import { getDb } from '../services/core/database';
 
 const router = Router();
 
+// ── Singleton Redis connection for health checks ──
+let healthRedis: any = null;
+let healthRedisReady = false;
+
+function getHealthRedis(): any {
+    if (healthRedis) return healthRedis;
+    const url = process.env.REDIS_URL;
+    if (!url) return null;
+
+    try {
+        const IORedis = require('ioredis');
+        healthRedis = new IORedis(url, {
+            connectTimeout: 3000,
+            lazyConnect: true,
+            maxRetriesPerRequest: 1,
+            retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 2000)),
+        });
+        healthRedis.on('connect', () => { healthRedisReady = true; });
+        healthRedis.on('error', (err: Error) => {
+            healthRedisReady = false;
+            logger.debug('[Health] Redis connection error', { error: err.message });
+        });
+        healthRedis.on('close', () => { healthRedisReady = false; });
+        healthRedis.connect().catch(() => { healthRedisReady = false; });
+        return healthRedis;
+    } catch (err) {
+        logger.warn('[Health] Failed to create Redis client', { error: err });
+        return null;
+    }
+}
+
 /**
  * GET /health — Comprehensive health check
  */
@@ -25,19 +56,15 @@ router.get('/', async (req: Request, res: Response) => {
         overallStatus = 'degraded';
     }
 
-    // 2. Redis check
+    // 2. Redis check (singleton connection — no leak)
     const redisStart = Date.now();
     try {
-        if (process.env.REDIS_URL) {
-            const IORedis = require('ioredis');
-            const redis = new IORedis(process.env.REDIS_URL, {
-                connectTimeout: 3000,
-                lazyConnect: true,
-            });
-            await redis.connect();
+        const redis = getHealthRedis();
+        if (redis && healthRedisReady) {
             await redis.ping();
             checks.redis = { status: 'ok', latencyMs: Date.now() - redisStart };
-            await redis.quit();
+        } else if (redis) {
+            checks.redis = { status: 'connecting', detail: 'Redis client initializing' };
         } else {
             checks.redis = { status: 'not_configured', detail: 'REDIS_URL not set' };
         }

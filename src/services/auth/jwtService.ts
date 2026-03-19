@@ -30,7 +30,10 @@ if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
 }
 
 if (!process.env.JWT_REFRESH_SECRET && process.env.NODE_ENV === 'production') {
-  logger.error('[JWT] WARNING: JWT_REFRESH_SECRET not set — using derived secret. Set a separate JWT_REFRESH_SECRET for best security.');
+  logger.error('[JWT] CRITICAL: JWT_REFRESH_SECRET not set in production — using derived secret is insecure!');
+  logger.error('[JWT] Generate one with: openssl rand -hex 64');
+  logger.error('[JWT] Refusing to start with derived refresh secret in production.');
+  process.exit(1);
 }
 
 // ---------------------------------------------------------------------------

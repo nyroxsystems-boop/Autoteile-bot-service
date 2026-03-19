@@ -12,6 +12,7 @@ import { resolveOEM } from '../services/intelligence/oemService';
 import { getOrderById, updateOrderOEM } from '../services/adapters/supabaseService';
 import * as analytics from '@core/analyticsService';
 import * as inventree from '@adapters/inventreeAdapter';
+import { getDb } from '../services/core/database';
 
 export function createDashboardRouter(): Router {
   const router = Router();
@@ -132,6 +133,7 @@ export function createDashboardRouter(): Router {
   router.get("/stats", async (req: Request, res: Response) => {
     try {
       const orders = await wawi.listOrders();
+      const pool = getDb();
 
       // Count orders by status
       const ordersNew = orders.filter(o => o.status === 'new').length;
@@ -148,22 +150,91 @@ export function createDashboardRouter(): Router {
         return orderDate >= today;
       }).length;
 
+      // Revenue from invoices (today)
+      let revenueToday = 0;
+      let invoicesDraft = 0;
+      let invoicesIssued = 0;
+      try {
+        const invoiceStats = await pool.query(
+          `SELECT 
+            COALESCE(SUM(CASE WHEN created_at::date = CURRENT_DATE AND status != 'cancelled' THEN total_amount ELSE 0 END), 0) as revenue_today,
+            COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as drafts,
+            COALESCE(SUM(CASE WHEN status = 'issued' THEN 1 ELSE 0 END), 0) as issued
+           FROM invoices`
+        );
+        if (invoiceStats.rows[0]) {
+          revenueToday = parseFloat(invoiceStats.rows[0].revenue_today) || 0;
+          invoicesDraft = parseInt(invoiceStats.rows[0].drafts) || 0;
+          invoicesIssued = parseInt(invoiceStats.rows[0].issued) || 0;
+        }
+      } catch (err) {
+        logger.debug('[Stats] Invoice query failed (table may not exist)', { error: err });
+      }
+
+      // Revenue history (last 30 days)
+      let revenueHistory: { date: string; amount: number }[] = [];
+      try {
+        const historyResult = await pool.query(
+          `SELECT created_at::date as day, COALESCE(SUM(total_amount), 0) as amount
+           FROM invoices WHERE status != 'cancelled' AND created_at >= NOW() - INTERVAL '30 days'
+           GROUP BY day ORDER BY day`
+        );
+        revenueHistory = historyResult.rows.map(r => ({
+          date: r.day.toISOString().split('T')[0],
+          amount: parseFloat(r.amount) || 0
+        }));
+      } catch (err) {
+        logger.debug('[Stats] Revenue history query failed', { error: err });
+      }
+
+      // Top customers from orders (by order count)
+      const customerMap = new Map<string, { name: string; orders: number; lastOrder: string }>();
+      orders.forEach(o => {
+        const contact = o.customerContact || o.customerPhone;
+        if (!contact) return;
+        const existing = customerMap.get(contact);
+        if (existing) {
+          existing.orders++;
+          if (o.createdAt > existing.lastOrder) existing.lastOrder = o.createdAt;
+        } else {
+          customerMap.set(contact, {
+            name: o.contact?.name || contact,
+            orders: 1,
+            lastOrder: o.createdAt || new Date().toISOString()
+          });
+        }
+      });
+      const topCustomers = Array.from(customerMap.entries())
+        .sort((a, b) => b[1].orders - a[1].orders)
+        .slice(0, 5)
+        .map(([id, data]) => ({ id, name: data.name, orderCount: data.orders, lastOrder: data.lastOrder }));
+
+      // Recent activities from latest orders
+      const activities = orders.slice(0, 10).map(o => ({
+        id: o.id,
+        type: o.status === 'new' ? 'new_order' : o.status === 'done' ? 'order_completed' : 'order_updated',
+        description: `${o.contact?.name || o.customerPhone || 'Kunde'}: ${o.part?.partText || o.requestedPartName || 'Anfrage'}`,
+        timestamp: o.createdAt || new Date().toISOString(),
+        status: o.status
+      }));
+
       const stats = {
         ordersNew,
         ordersInProgress,
         ordersDone,
         ordersTotal: orders.length,
         ordersToday,
-        invoicesDraft: 0,
-        invoicesIssued: 0,
-        revenueToday: 0, // Will be calculated when invoice system is live
+        invoicesDraft,
+        invoicesIssued,
+        revenueToday,
         lastSync: new Date().toISOString(),
-        revenueHistory: [],
-        topCustomers: [],
-        activities: []
+        revenueHistory,
+        topCustomers,
+        activities
       };
       return res.status(200).json(stats);
     } catch (err: any) {
+      logger.error('[Dashboard] Stats error', { error: err?.message });
       return res.status(500).json({ error: "Failed to fetch stats" });
     }
   });
@@ -211,12 +282,56 @@ export function createDashboardRouter(): Router {
     }
   });
 
-  // Conversations endpoint
+  // Conversations endpoint — aggregates orders by customer
   router.get("/conversations", async (_req: Request, res: Response) => {
     try {
-      // Return empty array for now - conversations are tracked via order messages
-      return res.status(200).json([]);
+      const orders = await wawi.listOrders();
+      
+      // Group orders by customer contact to create "conversations"
+      const conversationMap = new Map<string, any>();
+      
+      for (const order of orders) {
+        const contactId = order.customerContact || order.customerPhone;
+        if (!contactId) continue;
+        
+        if (!conversationMap.has(contactId)) {
+          conversationMap.set(contactId, {
+            id: order.id,
+            contact: {
+              name: order.contact?.name || contactId,
+              wa_id: contactId,
+            },
+            state_json: {
+              status: order.status,
+              last_text: order.part?.partText || order.requestedPartName || '',
+              oem_list: order.oem_number ? [order.oem_number] : [],
+              history: [],
+            },
+            last_message_at: order.createdAt || new Date().toISOString(),
+            orders_count: 1,
+          });
+        } else {
+          const conv = conversationMap.get(contactId);
+          conv.orders_count++;
+          // Add OEM numbers
+          if (order.oem_number && !conv.state_json.oem_list.includes(order.oem_number)) {
+            conv.state_json.oem_list.push(order.oem_number);
+          }
+          // Use most recent order date
+          if (order.createdAt > conv.last_message_at) {
+            conv.last_message_at = order.createdAt;
+            conv.state_json.status = order.status;
+            conv.state_json.last_text = order.part?.partText || order.requestedPartName || conv.state_json.last_text;
+          }
+        }
+      }
+      
+      const conversations = Array.from(conversationMap.values())
+        .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+      
+      return res.status(200).json(conversations);
     } catch (err: any) {
+      logger.error('[Dashboard] Conversations error', { error: err?.message });
       return res.status(500).json({ error: "Failed to fetch conversations" });
     }
   });
