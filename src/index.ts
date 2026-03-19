@@ -32,6 +32,7 @@ import settingsRouter from "./routes/settingsRoutes";
 import { authMiddleware } from "./middleware/authMiddleware";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { apiLimiter, authLimiter, webhookLimiter } from "./middleware/rateLimiter";
+import { requestIdMiddleware } from "./middleware/requestId";
 import { createAdminRouter } from "./routes/adminRoutes";
 import { createBillingRouter } from "./routes/billingRoutes";
 import { createCrmRouter } from "./routes/crmRoutes";
@@ -96,6 +97,7 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+app.use(requestIdMiddleware); // Trace ID for every request
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Use same options for preflight
 app.use(helmet()); // Security headers (X-Content-Type-Options, HSTS, etc.)

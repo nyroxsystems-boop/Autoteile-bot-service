@@ -56,8 +56,15 @@ export async function getConversion(): Promise<ConversionStats> {
     const offers = (await db.get<any>("SELECT COUNT(DISTINCT order_id) as c FROM shop_offers"))?.c || 0;
     const orders = (await db.get<any>("SELECT COUNT(*) as c FROM orders WHERE status = 'done'"))?.c || 0;
 
-    // 2. History (Last 7 Days)
-    const history = []; // TODO: Implement daily grouping SQL
+    // Daily conversion history (last 7 days)
+    const historyRows = await db.all<any>(
+        `SELECT DATE(created_at) as date, COUNT(*) as val
+         FROM orders
+         WHERE created_at >= NOW() - INTERVAL '7 days'
+         GROUP BY DATE(created_at)
+         ORDER BY date`
+    );
+    const history = (historyRows || []).map((r: any) => ({ date: r.date, val: Number(r.val) }));
 
     return {
         funnel: [

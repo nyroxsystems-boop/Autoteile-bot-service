@@ -12,3 +12,6 @@ dist/
 oem-data/*.sqlite
 oem-data/*.sqlite-wal
 oem-data/*.sqlite-shm
+.env.staging
+crm.db
+env.production.txt
