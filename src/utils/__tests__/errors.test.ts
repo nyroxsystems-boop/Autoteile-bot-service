@@ -24,14 +24,14 @@ describe('AppError', () => {
   });
 
   it('should accept custom status code and error code', () => {
-    const err = new AppError('Custom error', 418, 'TEAPOT');
+    const err = new AppError('Custom error', 'TEAPOT', 418);
     expect(err.statusCode).toBe(418);
     expect(err.code).toBe('TEAPOT');
   });
 
   it('should store context', () => {
     const ctx = { userId: '123', orderId: 'abc' };
-    const err = new AppError('Error', 500, 'ERR', ctx);
+    const err = new AppError('Error', 'ERR', 500, ctx);
     expect(err.context).toEqual(ctx);
   });
 });
