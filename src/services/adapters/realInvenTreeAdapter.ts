@@ -10,9 +10,6 @@ dotenv.config();
 const BASE_URL = process.env.INVENTREE_BASE_URL;
 const API_TOKEN = process.env.INVENTREE_API_TOKEN;
 
-// Permissive Agent for Render/Dev environments
-// const httpsAgent = new https.Agent({ rejectUnauthorized: false }); // REMOVED FOR SECURITY
-
 // API Client for WWS
 const api = axios.create({
     baseURL: BASE_URL,
@@ -21,7 +18,6 @@ const api = axios.create({
         'Content-Type': 'application/json'
     },
     timeout: 5000,
-    // httpsAgent // Removed
 });
 
 
