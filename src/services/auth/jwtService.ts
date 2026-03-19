@@ -107,7 +107,8 @@ function verifyToken(token: string, secret: string): TokenPayload | null {
     }
 
     return payload;
-  } catch {
+  } catch (err) {
+    logger.debug('[JWT] Token decode failed', { error: err });
     return null;
   }
 }
@@ -150,8 +151,8 @@ async function getBlacklistRedis(): Promise<any> {
     redisAvailable = true;
     logger.info('[JWT] Redis blacklist connected');
     return blacklistRedis;
-  } catch {
-    logger.warn('[JWT] Redis unavailable for blacklist, using in-memory fallback');
+  } catch (err) {
+    logger.warn('[JWT] Redis unavailable for blacklist, using in-memory fallback', { error: err });
     return null;
   }
 }
@@ -170,7 +171,8 @@ async function addToBlacklist(jti: string, expSeconds: number): Promise<void> {
     if (redis) {
       await redis.setex(`jwt:bl:${jti}`, ttl, '1');
     }
-  } catch {
+  } catch (err) {
+    logger.debug('[JWT] Redis blacklist write failed, memory fallback is set', { error: err });
     // Memory fallback is already set
   }
 }
@@ -190,7 +192,8 @@ async function isBlacklisted(jti: string): Promise<boolean> {
         return true;
       }
     }
-  } catch {
+  } catch (err) {
+    logger.debug('[JWT] Redis blacklist read failed, using memory only', { error: err });
     // Fall through to memory-only check
   }
 

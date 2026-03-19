@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN mkdir -p oem-data
 RUN npm run build
 
 # Production stage
-FROM node:20-slim AS production
+FROM node:22-slim AS production
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
@@ -33,6 +33,7 @@ USER appuser
 
 EXPOSE 3000
 ENV NODE_ENV=production
+ENV LOG_LEVEL=info
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "const http=require('http');http.get('http://localhost:3000/health',(r)=>{process.exit(r.statusCode===200?0:1)})"

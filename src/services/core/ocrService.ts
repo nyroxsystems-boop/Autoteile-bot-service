@@ -123,7 +123,8 @@ export function safeParseVehicleJson(text: string): VehicleOcrResult {
             emissionClass: typeof parsed.emissionClass === "string" ? parsed.emissionClass : null,
             rawText: typeof parsed.rawText === "string" ? parsed.rawText : ""
         };
-    } catch {
+    } catch (err) {
+        logger.debug('[OCR] Vehicle JSON parse failed', { error: err });
         return empty;
     }
 }

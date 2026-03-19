@@ -41,7 +41,7 @@ export async function resolveAftermarketToOEM(req: OEMResolverRequest): Promise<
       confidence: c.confidence || 0.6,
       meta: { reason: c.reason }
     }));
-  } catch { return []; }
+  } catch (err) { logger.debug('[PartMatch] Aftermarket reverse lookup failed', { error: err }); return []; }
 }
 
 export async function filterByPartMatch(candidates: OEMCandidate[], req: any): Promise<OEMCandidate[]> {

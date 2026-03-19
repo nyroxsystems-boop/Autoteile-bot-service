@@ -29,7 +29,8 @@ function parseJsonField<T>(value: any, fallback: T): T {
     if (typeof value === "string") {
         try {
             return JSON.parse(value) as T;
-        } catch {
+        } catch (err) {
+            logger.debug('[Adapter] JSON field parse failed, using fallback', { error: err });
             return fallback;
         }
     }
