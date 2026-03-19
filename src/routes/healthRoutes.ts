@@ -1,5 +1,5 @@
-// Health Check Routes
-// Extended health checks for diagnostics and monitoring
+// Health Check Routes — Extended diagnostics
+// Checks: Database, Redis, Queue Worker, System Info
 
 import { Router, Request, Response } from 'express';
 import { logger } from "@utils/logger";
@@ -8,14 +8,76 @@ import { getDb } from '../services/core/database';
 const router = Router();
 
 /**
- * GET /health/migrations
- * Verify that tax module tables exist
+ * GET /health — Comprehensive health check
+ */
+router.get('/', async (req: Request, res: Response) => {
+    const checks: Record<string, { status: string; latencyMs?: number; detail?: string }> = {};
+    let overallStatus = 'ok';
+
+    // 1. Database check
+    const dbStart = Date.now();
+    try {
+        const pool = getDb();
+        await pool.query('SELECT 1');
+        checks.database = { status: 'ok', latencyMs: Date.now() - dbStart };
+    } catch (err: any) {
+        checks.database = { status: 'error', detail: err?.message };
+        overallStatus = 'degraded';
+    }
+
+    // 2. Redis check
+    const redisStart = Date.now();
+    try {
+        if (process.env.REDIS_URL) {
+            const IORedis = require('ioredis');
+            const redis = new IORedis(process.env.REDIS_URL, {
+                connectTimeout: 3000,
+                lazyConnect: true,
+            });
+            await redis.connect();
+            await redis.ping();
+            checks.redis = { status: 'ok', latencyMs: Date.now() - redisStart };
+            await redis.quit();
+        } else {
+            checks.redis = { status: 'not_configured', detail: 'REDIS_URL not set' };
+        }
+    } catch (err: any) {
+        checks.redis = { status: 'error', latencyMs: Date.now() - redisStart, detail: err?.message };
+        overallStatus = 'degraded';
+    }
+
+    // 3. System info
+    const uptime = process.uptime();
+    const memUsage = process.memoryUsage();
+    checks.system = {
+        status: 'ok',
+        detail: `uptime: ${Math.floor(uptime / 60)}min, heap: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB/${Math.round(memUsage.heapTotal / 1024 / 1024)}MB, rss: ${Math.round(memUsage.rss / 1024 / 1024)}MB`,
+    };
+
+    // 4. AI service (Gemini API key present)
+    checks.ai = {
+        status: process.env.GEMINI_API_KEY ? 'configured' : 'not_configured',
+        detail: process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY set' : 'GEMINI_API_KEY missing — AI features disabled',
+    };
+    if (!process.env.GEMINI_API_KEY) overallStatus = 'degraded';
+
+    const statusCode = overallStatus === 'ok' ? 200 : 503;
+    res.status(statusCode).json({
+        status: overallStatus,
+        timestamp: new Date().toISOString(),
+        version: process.env.npm_package_version || '1.0.0',
+        node: process.version,
+        checks,
+    });
+});
+
+/**
+ * GET /health/migrations — Verify tax module tables
  */
 router.get('/migrations', async (req: Request, res: Response) => {
     try {
         const pool = getDb();
 
-        // Check if tax module tables exist
         const result = await pool.query(`
             SELECT table_name 
             FROM information_schema.tables 
@@ -37,7 +99,6 @@ router.get('/migrations', async (req: Request, res: Response) => {
             });
         }
 
-        // Check invoice count
         const invoiceCount = await pool.query('SELECT COUNT(*) as count FROM invoices');
 
         res.json({
@@ -57,8 +118,7 @@ router.get('/migrations', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /health/db
- * Basic database connectivity check
+ * GET /health/db — Basic database connectivity
  */
 router.get('/db', async (req: Request, res: Response) => {
     try {

@@ -221,7 +221,7 @@ router.post("/logout", async (req: Request, res: Response) => {
     // Also blacklist JWT if present
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const bearerToken = authHeader.substring(7);
-        jwtService.blacklistToken(bearerToken);
+        await jwtService.blacklistToken(bearerToken);
     }
 
     if (authHeader && authHeader.startsWith('Token ')) {
@@ -256,7 +256,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
         return res.status(400).json({ error: "refreshToken is required" });
     }
 
-    const newTokens = jwtService.rotateRefreshToken(refreshToken);
+    const newTokens = await jwtService.rotateRefreshToken(refreshToken);
     if (!newTokens) {
         return res.status(401).json({ error: "Invalid or expired refresh token" });
     }

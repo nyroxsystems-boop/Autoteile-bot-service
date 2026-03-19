@@ -130,29 +130,20 @@ class RedisStore implements RateLimitStore {
 
         try {
             const redisKey = `rl:${key}`;
-            const now = Date.now();
-            const resetAt = now + windowMs;
+            const ttlSeconds = Math.ceil(windowMs / 1000);
 
-            // Use Redis MULTI for atomic increment
-            const current = await this.redis.get(redisKey);
-            let entry: RateLimitEntry;
-
-            if (current) {
-                entry = JSON.parse(current);
-                if (entry.resetAt < now) {
-                    // Window expired, reset
-                    entry = { count: 1, resetAt };
-                } else {
-                    entry.count++;
-                }
-            } else {
-                entry = { count: 1, resetAt };
+            // Atomic: INCR returns new count, EXPIRE sets TTL only on first access
+            const count = await this.redis.incr(redisKey);
+            if (count === 1) {
+                // First request in this window — set expiry
+                await this.redis.expire(redisKey, ttlSeconds);
             }
 
-            const ttlSeconds = Math.ceil(windowMs / 1000);
-            await this.redis.setEx(redisKey, ttlSeconds, JSON.stringify(entry));
+            // Calculate resetAt from Redis TTL
+            const ttl = await this.redis.ttl(redisKey);
+            const resetAt = Date.now() + (ttl > 0 ? ttl * 1000 : windowMs);
 
-            return entry;
+            return { count, resetAt };
         } catch (err: any) {
             logger.error('[RateLimit] Redis increment failed', { error: err?.message });
             return { count: 1, resetAt: Date.now() + windowMs };

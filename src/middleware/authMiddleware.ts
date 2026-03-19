@@ -40,7 +40,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // ─── 1. Bearer: JWT or Service Token ───────────────────────
     if (type === "Bearer") {
         // 1a. Try JWT first
-        const jwtPayload = jwtService.verifyAccessToken(token);
+        const jwtPayload = await jwtService.verifyAccessToken(token);
         if (jwtPayload) {
             req.user = {
                 id: jwtPayload.sub,
