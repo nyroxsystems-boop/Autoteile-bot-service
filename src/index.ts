@@ -216,6 +216,30 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // ──────────────────────────────────────────────────
+// GLOBAL EXPRESS ERROR HANDLER (P1: structured error responses)
+// Must be registered AFTER all routes
+// ──────────────────────────────────────────────────
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const statusCode = err.statusCode || err.status || 500;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  logger.error('[Express] Unhandled route error', {
+    method: req.method,
+    path: req.path,
+    statusCode,
+    error: err.message,
+    stack: isProduction ? undefined : err.stack,
+    requestId: req.headers['x-request-id'],
+  });
+
+  res.status(statusCode).json({
+    error: isProduction ? 'Internal server error' : err.message,
+    code: err.code || 'INTERNAL_ERROR',
+    ...(isProduction ? {} : { stack: err.stack }),
+  });
+});
+
+// ──────────────────────────────────────────────────
 // GLOBAL ERROR HANDLERS (P0: prevent silent crashes)
 // ──────────────────────────────────────────────────
 process.on('unhandledRejection', (reason: unknown) => {

@@ -210,7 +210,7 @@ const worker = new Worker<BotJobData>(
                 if (result.orderId) {
                     await updateOrderData(result.orderId, { lastBotMessage: result.reply });
                 }
-            } catch (_) { /* non-critical */ }
+            } catch (err) { logger.debug('[BotWorker] Failed to persist lastBotMessage', { error: (err as any)?.message }); }
 
         } catch (err: any) {
             logger.error("Bot worker failed", {

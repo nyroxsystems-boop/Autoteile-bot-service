@@ -30,7 +30,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_SSL === 'true'
-        ? { rejectUnauthorized: false }
+        ? { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' }
         : undefined,
     max: 20, // Maximum number of connections
     idleTimeoutMillis: 30000,

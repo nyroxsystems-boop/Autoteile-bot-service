@@ -16,6 +16,16 @@ import { logger } from '@utils/logger';
 // Configuration
 // ============================================================================
 
+/** Escape HTML special chars to prevent XSS in email templates */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 const STRATO_HOST = 'smtp.strato.de';
 const STRATO_PORT = 587;
 const STRATO_EMAIL = process.env.STRATO_EMAIL || 'info@partsunion.de';
@@ -37,7 +47,7 @@ function getTransporter(): nodemailer.Transporter | null {
       port: STRATO_PORT,
       secure: false,
       auth: { user: STRATO_EMAIL, pass: STRATO_PASSWORD },
-      tls: { rejectUnauthorized: false },
+      tls: { rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' },
     });
   }
   return transporter;
@@ -80,12 +90,12 @@ export function escalateToDealer(data: EscalationData): void {
   </div>
   <div style="padding: 24px;">
     <table style="width:100%; border-collapse:collapse;">
-      <tr><td style="padding:8px 0; color:#64748b; width:140px;">Ticket-ID:</td><td style="padding:8px 0; font-weight:600;">${data.orderId}</td></tr>
-      <tr><td style="padding:8px 0; color:#64748b;">Kunde:</td><td style="padding:8px 0;">${data.customerPhone}</td></tr>
-      <tr><td style="padding:8px 0; color:#64748b;">Grund:</td><td style="padding:8px 0; color:#dc2626; font-weight:600;">${data.reason}</td></tr>
-      ${data.vehicleSummary ? `<tr><td style="padding:8px 0; color:#64748b;">Fahrzeug:</td><td style="padding:8px 0;">${data.vehicleSummary}</td></tr>` : ''}
-      ${data.partDescription ? `<tr><td style="padding:8px 0; color:#64748b;">Teil:</td><td style="padding:8px 0;">${data.partDescription}</td></tr>` : ''}
-      ${data.oemNumber ? `<tr><td style="padding:8px 0; color:#64748b;">OEM-Nr:</td><td style="padding:8px 0; font-family:monospace;">${data.oemNumber} (${Math.round((data.oemConfidence || 0) * 100)}%)</td></tr>` : ''}
+      <tr><td style="padding:8px 0; color:#64748b; width:140px;">Ticket-ID:</td><td style="padding:8px 0; font-weight:600;">${escapeHtml(data.orderId)}</td></tr>
+      <tr><td style="padding:8px 0; color:#64748b;">Kunde:</td><td style="padding:8px 0;">${escapeHtml(data.customerPhone)}</td></tr>
+      <tr><td style="padding:8px 0; color:#64748b;">Grund:</td><td style="padding:8px 0; color:#dc2626; font-weight:600;">${escapeHtml(data.reason)}</td></tr>
+      ${data.vehicleSummary ? `<tr><td style="padding:8px 0; color:#64748b;">Fahrzeug:</td><td style="padding:8px 0;">${escapeHtml(data.vehicleSummary)}</td></tr>` : ''}
+      ${data.partDescription ? `<tr><td style="padding:8px 0; color:#64748b;">Teil:</td><td style="padding:8px 0;">${escapeHtml(data.partDescription)}</td></tr>` : ''}
+      ${data.oemNumber ? `<tr><td style="padding:8px 0; color:#64748b;">OEM-Nr:</td><td style="padding:8px 0; font-family:monospace;">${escapeHtml(data.oemNumber)} (${Math.round((data.oemConfidence || 0) * 100)}%)</td></tr>` : ''}
       <tr><td style="padding:8px 0; color:#64748b;">Sprache:</td><td style="padding:8px 0;">${data.language || 'de'}</td></tr>
     </table>
     <p style="margin-top:20px; padding:16px; background:#fef3c7; border-radius:8px; color:#92400e;">
@@ -164,11 +174,11 @@ export function notifyDealerNewOrder(data: OrderNotificationData): void {
   </div>
   <div style="padding: 24px;">
     <table style="width:100%; border-collapse:collapse;">
-      <tr><td style="padding:8px 0; color:#64748b; width:140px;">Bestellnr:</td><td style="padding:8px 0; font-weight:600; font-size:16px;">${data.orderId}</td></tr>
-      <tr><td style="padding:8px 0; color:#64748b;">Kunde:</td><td style="padding:8px 0;">${data.customerPhone}</td></tr>
-      <tr><td style="padding:8px 0; color:#64748b;">Fahrzeug:</td><td style="padding:8px 0; font-weight:600;">${data.vehicleSummary}</td></tr>
-      <tr><td style="padding:8px 0; color:#64748b;">Teil:</td><td style="padding:8px 0;">${data.partDescription}</td></tr>
-      ${data.oemNumber ? `<tr><td style="padding:8px 0; color:#64748b;">OEM-Nr:</td><td style="padding:8px 0; font-family:monospace; font-weight:600;">${data.oemNumber}</td></tr>` : ''}
+      <tr><td style="padding:8px 0; color:#64748b; width:140px;">Bestellnr:</td><td style="padding:8px 0; font-weight:600; font-size:16px;">${escapeHtml(data.orderId)}</td></tr>
+      <tr><td style="padding:8px 0; color:#64748b;">Kunde:</td><td style="padding:8px 0;">${escapeHtml(data.customerPhone)}</td></tr>
+      <tr><td style="padding:8px 0; color:#64748b;">Fahrzeug:</td><td style="padding:8px 0; font-weight:600;">${escapeHtml(data.vehicleSummary)}</td></tr>
+      <tr><td style="padding:8px 0; color:#64748b;">Teil:</td><td style="padding:8px 0;">${escapeHtml(data.partDescription)}</td></tr>
+      ${data.oemNumber ? `<tr><td style="padding:8px 0; color:#64748b;">OEM-Nr:</td><td style="padding:8px 0; font-family:monospace; font-weight:600;">${escapeHtml(data.oemNumber)}</td></tr>` : ''}
     </table>
     
     <div style="margin-top:20px; padding:16px; background:#f0fdf4; border-radius:8px; border:1px solid #bbf7d0;">

@@ -831,7 +831,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
       // For confirm_vehicle and other non-orchestrated states, use simple legacy parsing
       try {
         parsed = await parseUserMessage(userText);
-      } catch (e) { }
+      } catch (e) { logger.warn('[BotLogic] parseUserMessage fallback failed', { error: (e as any)?.message }); }
     }
 
     // requestedPart aus Usertext merken und persistieren
@@ -1498,7 +1498,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
               const collectAttempts = (orderData?.offerCollectAttempts ?? 0) + 1;
               try {
                 await updateOrderData(order.id, { offerCollectAttempts: collectAttempts });
-              } catch (_) { }
+              } catch (err) { logger.debug('[BotLogic] Failed to persist offerCollectAttempts', { error: (err as any)?.message }); }
 
               if (collectAttempts >= 3) {
                 // After 3 attempts, escalate to human
@@ -1512,7 +1512,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
               break;
             }
             // Reset counter on success
-            try { await updateOrderData(order.id, { offerCollectAttempts: 0 }); } catch (_) { }
+            try { await updateOrderData(order.id, { offerCollectAttempts: 0 }); } catch (err) { logger.debug('[BotLogic] Failed to reset offerCollectAttempts', { error: (err as any)?.message }); }
 
             if (sorted.length === 1) {
               const offer = sorted[0] as any;
@@ -1731,7 +1731,7 @@ Wenn keine OEM-Nummer erkennbar: {"oem": null, "description": "...", "confidence
           if (!orderData?.pendingBindingConfirmation) {
             try {
               await updateOrderData(order.id, { pendingBindingConfirmation: true });
-            } catch (_) { }
+            } catch (err) { logger.debug('[BotLogic] Failed to persist bindingConfirmation flag', { error: (err as any)?.message }); }
             replyText = t('binding_order_confirm', language);
             nextStatus = "await_offer_confirmation";
             // The next time user says "ja" with pendingBindingConfirmation=true, we'll process it

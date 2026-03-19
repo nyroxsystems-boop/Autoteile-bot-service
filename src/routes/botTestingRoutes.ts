@@ -114,7 +114,7 @@ router.post("/chat", async (req: Request, res: Response) => {
             if (result.orderId) {
                 await updateOrderData(result.orderId, { lastBotMessage: result.reply });
             }
-        } catch (_) { /* non-critical */ }
+        } catch (err) { logger.debug('[BotTesting] Failed to persist lastBotMessage', { error: (err as any)?.message }); }
 
         // Get order details for debugging
         let orderDetails = null;
@@ -129,12 +129,12 @@ router.post("/chat", async (req: Request, res: Response) => {
                     let orderData: any = {};
                     try {
                         orderData = typeof raw.order_data === 'string' ? JSON.parse(raw.order_data) : (raw.order_data || {});
-                    } catch (_) { }
+                    } catch (err) { logger.debug('[BotTesting] order_data JSON parse failed', { error: (err as any)?.message }); }
 
                     let vehicleData: any = {};
                     try {
                         vehicleData = typeof raw.vehicle_data === 'string' ? JSON.parse(raw.vehicle_data) : (raw.vehicle_data || {});
-                    } catch (_) { }
+                    } catch (err) { logger.debug('[BotTesting] vehicle_data JSON parse failed', { error: (err as any)?.message }); }
 
                     orderDetails = {
                         ...raw,
@@ -215,7 +215,7 @@ router.post("/reset", async (req: Request, res: Response) => {
                     [normalizedFrom]
                 );
                 ordersReset = -1; // unknown count
-            } catch (_) { /* non-critical */ }
+            } catch (err) { logger.debug('[BotTesting] DB reset fallback failed', { error: (err as any)?.message }); }
             logger.warn("[BotTesting] DB order reset partial", { error: dbErr?.message });
         }
 
@@ -225,7 +225,7 @@ router.post("/reset", async (req: Request, res: Response) => {
                 `DELETE FROM conversations WHERE contact_phone = ?`,
                 [normalizedFrom]
             );
-        } catch (_) { /* table may not exist — non-critical */ }
+        } catch (err) { logger.debug('[BotTesting] conversations table cleanup failed', { error: (err as any)?.message }); }
 
         // 4. Clear messages for this contact
         try {
@@ -233,7 +233,7 @@ router.post("/reset", async (req: Request, res: Response) => {
                 `DELETE FROM messages WHERE phone_number = ?`,
                 [normalizedFrom]
             );
-        } catch (_) { /* non-critical */ }
+        } catch (err) { logger.debug('[BotTesting] messages cleanup failed', { error: (err as any)?.message }); }
 
         logger.info("[BotTesting] Full session reset", { from: normalizedFrom, ordersReset });
 

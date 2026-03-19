@@ -131,8 +131,25 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
         return next();
     }
 
-    if (!authHeader || !authHeader.startsWith('Token ')) {
+    if (!authHeader) {
         logger.debug(`[Admin Auth] Missing Authorization header for ${req.path}`);
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    // Support both "Token <session>" and "Bearer <jwt>" auth
+    if (authHeader.startsWith('Bearer ')) {
+        // JWT path — check if user has admin role (already validated by authMiddleware)
+        if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
+            return next();
+        }
+        // If user exists but isn't admin
+        if (req.user) {
+            return res.status(403).json({ error: "Admin-Berechtigung erforderlich" });
+        }
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+    }
+
+    if (!authHeader.startsWith('Token ')) {
         return res.status(401).json({ error: "Nicht authentifiziert" });
     }
 

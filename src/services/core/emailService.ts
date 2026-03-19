@@ -28,7 +28,9 @@ const createTransporter = () => {
             pass: STRATO_PASSWORD
         },
         tls: {
-            rejectUnauthorized: false
+            // Use default TLS validation (rejectUnauthorized: true)
+            // Only set to false if SMTP_REJECT_UNAUTHORIZED=false for self-signed certs
+            rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false'
         }
     });
 };
