@@ -39,8 +39,13 @@ import { withConversationLock } from './lockService';
 
 // Lazy accessor so tests can mock `supabaseService` after this module was loaded.
 function getSupa() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require("../adapters/supabaseService");
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("../adapters/supabaseService");
+  } catch (err: any) {
+    logger.error('[BotLogic] Failed to load supabaseService module', { error: err?.message });
+    throw new Error('Database adapter unavailable — cannot process message');
+  }
 }
 
 // =================================================================
@@ -206,9 +211,11 @@ async function runOemLookupAndScraping(
     }
 
     // Fix 4: Escalate to dealer when bot can't find the part
+    // B4 FIX: Get real customer phone from order
+    const orderForPhone = await getSupa().getOrderById(orderId);
     escalateToDealer({
       orderId,
-      customerPhone: 'unknown', // will be enriched by caller
+      customerPhone: orderForPhone?.customer_contact || 'unknown',
       reason: 'OEM-Nummer nicht sicher gefunden',
       vehicleSummary: `${vehicleForOem.make || '?'} ${vehicleForOem.model || '?'} (${vehicleForOem.year || '?'})`,
       partDescription: partDescription || partText,

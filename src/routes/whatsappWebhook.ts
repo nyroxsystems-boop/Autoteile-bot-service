@@ -80,28 +80,42 @@ router.post("/", async (req, res) => {
 
   logger.info("[Twilio Webhook] Enqueuing job", { from, textShort: text.slice(0, 50), media: numMedia });
 
-  // Add to Queue
+  // B1 FIX: Try queue first, fall back to synchronous processing if Redis is down
+  const jobData = {
+    from,
+    text: text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : ""),
+    orderId: null,
+    mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
+    messageSid: messageSid || undefined
+  };
+
   try {
     if (!botQueue) {
-      logger.error("[Twilio Webhook] Queue unavailable (Redis not connected)");
-      return res.status(503).send("Queue unavailable");
+      throw new Error('Queue not initialized');
     }
-    await botQueue.add("whatsapp-msg", {
-      from,
-      text: text || (mediaUrls.length > 0 ? "IMAGE_MESSAGE" : ""),
-      orderId: null, // logic to find orderId is inside handleIncomingBotMessage usually, or we pass null
-      mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
-      messageSid: messageSid || undefined
-    });
-
-    // Determine if we should send an immediate "typing" or "processing" status?
-    // For now, just return 200 OK. Twilio expects TwiML or empty.
-    // An empty response tells Twilio "We got it, no immediate reply".
-    // We will reply asynchronously via the Worker.
+    await botQueue.add("whatsapp-msg", jobData);
     res.type("text/xml").send("<Response></Response>");
   } catch (err: any) {
-    logger.error("[Twilio Webhook] Failed to enqueue", { error: err?.message });
-    res.status(500).send("Internal Error");
+    logger.warn("[Twilio Webhook] Queue unavailable, falling back to sync processing", { error: err?.message });
+
+    // Synchronous fallback — process the message directly
+    try {
+      const { handleIncomingBotMessage } = require("../services/core/botLogicService");
+      const result = await handleIncomingBotMessage({
+        from: jobData.from,
+        text: jobData.text,
+        orderId: jobData.orderId ?? undefined,
+        mediaUrls: jobData.mediaUrls,
+      });
+
+      // Reply inline via TwiML
+      const escapedReply = (result.reply || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const twiml = `<Response><Message>${escapedReply}</Message></Response>`;
+      res.type("text/xml").send(twiml);
+    } catch (syncErr: any) {
+      logger.error("[Twilio Webhook] Sync fallback also failed", { error: syncErr?.message });
+      res.type("text/xml").send("<Response><Message>Ein technisches Problem ist aufgetreten. Bitte versuchen Sie es erneut.</Message></Response>");
+    }
   }
 });
 

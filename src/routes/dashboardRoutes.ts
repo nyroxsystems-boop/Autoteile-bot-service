@@ -365,6 +365,62 @@ export function createDashboardRouter(): Router {
     }
   });
 
+  // D10 FIX: publish-offers endpoint (was missing, frontend calls /api/orders/:id/publish-offers)
+  router.post('/orders/:id/publish-offers', authMiddleware, async (req: Request, res: Response) => {
+    const orderId = req.params.id;
+    const { offerIds } = req.body;
+
+    if (!orderId || !Array.isArray(offerIds)) {
+      return res.status(400).json({ error: 'orderId and offerIds[] required' });
+    }
+
+    try {
+      // Update order status to indicate offers have been published to customer
+      await wawi.updateOrderStatus(orderId, 'offers_sent');
+      logger.info('[Dashboard] Offers published', { orderId, offerIds });
+      return res.status(200).json({ success: true });
+    } catch (err: any) {
+      logger.error('Error publishing offers:', err);
+      return res.status(500).json({ error: 'Failed to publish offers' });
+    }
+  });
+
+  // A1: Maintenance mode endpoint
+  router.get('/admin/maintenance', authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const settings = await wawi.getMerchantSettings('admin');
+      return res.status(200).json({ enabled: settings?.maintenanceMode || false });
+    } catch (err: any) {
+      return res.status(200).json({ enabled: false });
+    }
+  });
+
+  router.put('/admin/maintenance', authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      await wawi.upsertMerchantSettings('admin', { maintenanceMode: !!enabled });
+      logger.info('[Admin] Maintenance mode updated', { enabled: !!enabled });
+      return res.status(200).json({ success: true, enabled: !!enabled });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to update maintenance mode' });
+    }
+  });
+
+  // A2: System language endpoint
+  router.put('/admin/language', authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { language } = req.body;
+      if (!language || !['de', 'en', 'tr'].includes(language)) {
+        return res.status(400).json({ error: 'Invalid language. Supported: de, en, tr' });
+      }
+      await wawi.upsertMerchantSettings('admin', { systemLanguage: language });
+      logger.info('[Admin] System language updated', { language });
+      return res.status(200).json({ success: true, language });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to update language' });
+    }
+  });
+
   return router;
 }
 

@@ -22,6 +22,11 @@ export interface MerchantSettings {
     shop_type?: 'shopify' | 'woocommerce';
     shop_url?: string;
     shop_api_key?: string;
+
+    // Admin Settings
+    maintenanceMode?: boolean;
+    systemLanguage?: string;
+    wholesalers?: any[];
 }
 
 function parseJsonField<T>(value: any, fallback: T): T {

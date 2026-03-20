@@ -140,7 +140,7 @@ export const oemLookupHandler = createHandler(
             // Low confidence → escalate to dealer
             escalateToDealer({
                 orderId,
-                customerPhone: 'unknown',
+                customerPhone: (order as any)?.customer_contact || 'unknown',
                 reason: 'OEM-Nummer nicht sicher gefunden',
                 vehicleSummary: `${vehicleForOem.make || '?'} ${vehicleForOem.model || '?'} (${vehicleForOem.year || '?'})`,
                 partDescription: partText,
