@@ -63,7 +63,13 @@ const ABUSIVE_WORDS = [
     "hurensohn", "arschloch", "fotze", "verpiss", "scheiss", "scheiße",
     "wichser", "missgeburt", "bastard", "vollidiot",
     // English
-    "fuck", "bitch", "shit", "idiot", "asshole", "moron", "retard"
+    "fuck", "bitch", "shit", "idiot", "asshole", "moron", "retard",
+    // Turkish (B5 FIX: multilingual abuse detection)
+    "orospu", "siktir", "amk", "piç", "gerizekalı", "aptal", "salak",
+    // Kurdish
+    "kûre", "bêşeref", "bênamûs", "kêmasî",
+    // Polish
+    "kurwa", "cholera", "dupek", "idiota", "debil", "spierdalaj",
 ];
 
 /**

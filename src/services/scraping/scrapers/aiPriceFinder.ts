@@ -129,7 +129,8 @@ function parseAiPriceResponse(text: string, oemNumber: string): ScrapedOffer[] {
         imageUrl: null,
         rating: null,
         isRecommended: false,
-      });
+        isEstimated: true, // B8 FIX: Flag AI-generated prices as estimated
+      } as ScrapedOffer & { isEstimated: boolean });
     }
 
     // Deduplicate by shop
